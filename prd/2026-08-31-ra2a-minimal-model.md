@@ -9,10 +9,10 @@
 
 ## 请求方评审摘要
 
-- 已确认：局域网运行、多设备安装 Codex App 与本 MCP、自动发现、定向向指定 session 注入消息。
+- 已确认：局域网运行、多设备安装 Codex App 与本 MCP、自动发现、定向向指定 session 注入消息；服务轻量、低依赖、自愈，并支持 macOS、Linux、Windows 与 Agent 友好安装。
 - 建议的最小闭环：单一信任组、仅处理在线且空闲的 session、无离线队列、回复也是一条新消息。
-- 实施前必须确认：信任边界、忙碌 session 的处理、session 暴露范围。
-- 当前状态原因：目标已清楚，但上述三项会直接改变安全性和用户可见行为。
+- 实施前必须确认：信任边界、忙碌 session 的处理、session 暴露范围、平台版本与架构基线、轻量资源预算。
+- 当前状态原因：目标已清楚，但上述事项会直接改变安全性、兼容范围和发布门槛。
 
 ## 1. 一句话模型
 
@@ -33,7 +33,7 @@ RA2A 不是任务平台、消息队列或多 Agent 编排框架。
 
 ### 成功标准
 
-两台设备无需中心服务器，仅共享最少配置，即可完成一次 A → B → A 的消息往返。
+两台设备无需中心服务器，仅共享最少配置，即可完成一次 A → B → A 的消息往返；短暂网络中断恢复后，无需重启或重新配置即可再次通信。
 
 ## 3. 极简领域模型
 
@@ -75,6 +75,8 @@ RA2A Node 只有三个职责：
 3. 通过本机 Codex App Server 列出 session、恢复 session、启动新回合。
 
 不设置中心节点。所有节点对等。
+
+核心服务必须保持轻量：不引入数据库，不依赖常驻的第三方基础服务，优先交付单一可执行程序。除 Codex 本身外，应尽量避免要求用户预装语言运行时或包管理器。
 
 ## 5. 极简交互面
 
@@ -129,11 +131,15 @@ message-id: <uuid>
 ### Node
 
 ```text
-unknown → online → offline
+unknown → online → reconnecting
+             ▲          │
+             └──────────┘
 ```
 
 - mDNS 发现并鉴权成功后为 `online`。
-- 广播过期或连接失败后为 `offline`，从可选目标中移除。
+- 广播过期或连接失败后进入 `reconnecting`，暂时从可选目标中移除。
+- 服务持续重新发现和重连；网络恢复后自动回到 `online`，无需人工重启、重新安装或重新配置。
+- 本机 Codex App Server 连接中断时遵循同样规则；恢复前报告明确的本地不可用状态。
 
 ### Message
 
@@ -149,7 +155,28 @@ sending → accepted
 
 第一版不自动重试，避免超时后产生重复消息。
 
-## 8. 最小安全模型
+这里的“不自动重试”只约束结果未知的消息投递，不限制节点发现、健康检查和连接的自动恢复。
+
+## 8. 安装与平台体验
+
+第一版必须支持：
+
+- macOS；
+- Linux；
+- Windows。
+
+各平台协议、配置语义和 MCP 工具行为必须一致。平台差异仅允许存在于安装、服务托管和路径表达上。
+
+安装体验要求：
+
+- macOS/Linux 提供 `install.sh`，Windows 提供 `install.ps1`；
+- 脚本支持无交互执行、重复执行和明确退出码，便于人和 Agent 调用；
+- 脚本失败时说明失败原因、已完成的操作以及可执行的恢复步骤；
+- 脚本不得把密钥写入日志，不得静默修改与 RA2A 无关的系统配置；
+- README 必须给出复制即可执行的安装、验证、升级和卸载步骤，并明确平台前置条件；
+- 若某个平台不得不增加额外依赖，README 必须显式说明，不得在安装过程中隐式拉取不相关运行时。
+
+## 9. 最小安全模型
 
 建议所有节点配置同一个随机共享密钥，形成一个完全互信的 RA2A 信任组：
 
@@ -160,7 +187,7 @@ sending → accepted
 
 共享密钥不是可省略的装饰：向 Codex session 注入文本可能触发文件、网络或终端操作，因此“同一局域网”不能直接等同于“可信”。
 
-## 9. 明确不做
+## 10. 明确不做
 
 第一版不包含：
 
@@ -176,7 +203,7 @@ sending → accepted
 - 用户体系、复杂配对流程和细粒度权限；
 - 自动等待远端任务完成。
 
-## 10. 验收标准
+## 11. 验收标准
 
 1. Given 两台设备运行 RA2A 且共享密钥一致，when Agent A 调用 `list_targets`，then 能看到设备 B 及其可达 session。
 2. Given session B 在线且空闲，when Agent A 向其地址调用 `send_message`，then session B 出现包含来源地址和正文的新用户回合并开始处理。
@@ -185,8 +212,12 @@ sending → accepted
 5. Given 目标 session 正在运行，when 收到新消息，then 返回明确的 `SESSION_BUSY`，且不修改当前回合。
 6. Given 目标设备离线，when 广播过期，then 该节点不再出现在 `list_targets` 的可用目标中。
 7. Given 发送请求超时，then 返回 `DELIVERY_UNKNOWN`，且发送端不自动重试。
+8. Given 节点因短暂网络波动失联，when 网络恢复，then 节点自动重新发现并恢复通信，无需重启服务或修改配置。
+9. Given 一台受支持平台的新设备已安装 Codex，when 用户或 Agent 按 README 执行对应安装脚本，then 能以无交互方式完成安装并得到可验证的成功或明确失败结果。
+10. Given 同一版本分别运行在 macOS、Linux 和 Windows，when 执行发现与消息投递，then 对外协议和 MCP 工具行为一致。
+11. Given 发布构建完成，then README 或发布说明记录产物大小、空闲内存和空闲 CPU 的实测值，使“轻量”可以持续比较而非仅凭主观判断。
 
-## 11. Confirmed Product Decisions
+## 12. Confirmed Product Decisions
 
 > PROTECTED USER-AUTHORITY SECTION
 > 本节中的行，未经用户对具体决策变更的明确批准，不得创建、修改、删除、重新解释或替代。Agent 不得自行批准。
@@ -197,14 +228,21 @@ sending → accepted
 | PD2 | 安装本 MCP 与 Codex App 的设备能够互相发现 | 提供节点发现能力 | 不要求用户手填每个对端地址才能完成基本发现 | 用户明确要求双方互相发现 | 两台同网设备默认不可见 | user-confirmed-direct: “双方能够通过这个 mcp 互相发现对方” | active |
 | PD3 | 可以向指定 session 注入一条消息 | session 必须可寻址，消息必须定向投递 | 不得只支持设备级广播或不可选择目标 | 这是核心交互闭环 | 只能发给设备或随机 session | user-confirmed-direct: “向指定的 session 注入一条消息” | active |
 | PD4 | 目标是让多设备、多 Agent 协作 | 保留消息来源和可回复地址 | 不得把产品退化为仅供人阅读的局域网聊天 | 回复寻址是最小协作闭环的一部分 | 接收 Agent 无法回复来源 Agent | user-confirmed-direct: “局域网内的多个设备的多个 agent 能互相协作起来” | active |
+| PD5 | 服务要尽可能轻量 | 控制运行资源和交付体积，并公开实测结果 | 不得无证据引入重型运行时或常驻基础服务 | 局域网多端常驻需要低开销 | 空闲服务持续产生明显负载且无测量数据 | user-confirmed-direct: “该服务要尽可能的轻量” | active |
+| PD6 | 服务具备网络自愈能力 | 网络恢复后自动重新发现和连接 | 不得要求用户因暂时断线重启或重新配置 | 网络波动不应造成永久失联 | 网络恢复后节点仍不可达直至人工干预 | user-confirmed-direct: “服务具备自愈能力避免网络波动导致的断线后不可恢复” | active |
+| PD7 | 提供 Agent 友好的安装脚本和 README 安装说明 | 提供跨平台脚本、无交互模式、明确结果与恢复说明 | 不得只提供人工拼装步骤或隐式失败 | 人和 Agent 都应可靠完成部署 | README 命令不可复制执行，或脚本必须依赖人工问答 | user-confirmed-direct: “提供友好的安装脚本，并在 readme 中介绍安装方式，agent 友好” | active |
+| PD8 | 尽量低依赖 | 优先单一产物并最小化外部运行依赖 | 不得为便利随意叠加语言运行时、数据库或基础服务 | 降低安装、维护和跨平台成本 | 基础启动需要多个与核心能力无关的服务 | user-confirmed-direct: “尽量低依赖” | active |
+| PD9 | 支持 macOS、Linux、Windows 部署 | 三个平台保持一致协议和核心行为 | 不得把任一指定平台降为未支持状态 | 用户明确要求多端部署 | 发布版本缺少任一平台可用产物 | user-confirmed-direct: “支持多端部署， macos、linux、windows” | active |
 
-## 12. 待确认决策与风险
+## 13. 待确认决策与风险
 
 ### 实施前需用户确认
 
 1. **信任边界**：是否接受“共享一个密钥的节点完全互信”？建议接受，这是不省略安全底线情况下最小的模型。
 2. **忙碌处理**：目标 session 忙碌时返回 `SESSION_BUSY`，还是允许通过 `turn/steer` 干预当前回合？建议第一版返回忙碌。
 3. **暴露范围**：是否向信任组暴露所有未归档 session 的 ID、标题和状态？建议第一版如此；若标题也敏感，则必须增加 session 显式加入机制。
+4. **平台基线**：macOS、Linux、Windows 的最低版本以及必须发布的 CPU 架构尚未确认。
+5. **轻量预算**：产物大小、空闲内存、空闲 CPU 的硬上限尚未确认；实施计划应先测量最小原型，再请求确认发布门槛。
 
 ### 技术风险
 
@@ -212,14 +250,17 @@ sending → accepted
 - 当前 Codex 源码的 App Server MCP 调用路径会把调用方 `threadId` 写入 MCP 请求 `_meta`；实现前必须在目标 Codex App 版本做一次探针验证。若普通 MCP 调用未携带该字段，`send_message` 必须临时增加显式 `from` 参数。
 - Codex App 与外部客户端共享或连接同一个 App Server 时的并发行为，需要用两个真实 session 做最小集成验证，不能仅靠协议单元测试推断。
 
-## 13. 实施约束
+## 14. 实施约束
 
 - 以 Codex App Server 作为唯一 session 集成边界，不读取或修改 Codex 内部会话文件。
 - `turn/start` 用于真正触发接收 Agent；不使用只写模型历史但不启动回合的 `thread/inject_items`。
 - 先实现双机、单条文本、空闲 session 的端到端闭环，再考虑任何扩展。
 - 第一版最多一个可执行程序、一个配置文件、两个 MCP 工具、两个局域网接口。
+- 网络发现和连接采用有上限的退避与抖动自动恢复，不采用高频忙轮询。
+- 依赖选择必须说明必要性；标准库或已有系统能力能够充分解决时，不增加第三方依赖。
+- 三个平台共享同一核心实现和协议测试，不维护三套行为不同的产品实现。
 
-## 14. 参考依据
+## 15. 参考依据
 
 - OpenAI Codex App Server 文档：<https://developers.openai.com/codex/app-server>
 - OpenAI Codex 源码中的 MCP `threadId` 元数据注入路径：<https://github.com/openai/codex/blob/main/codex-rs/app-server/src/request_processors/mcp_processor.rs>
