@@ -2,6 +2,8 @@
 
 RA2A 是一个运行在局域网内的 MCP，目标是让多台设备上的多个 Codex Agent 能够互相发现，并向指定 Codex session 定向发送消息。
 
+第一版仅面向 **Codex App**（OpenAI 桌面 App 中的 Codex 使用界面），不承诺兼容 Codex CLI、IDE 扩展、云任务或其他 MCP Host。
+
 当前处于产品设计阶段。极简模型与待确认决策见：
 
 - [RA2A 局域网 Agent 通信（极简闭环）](prd/2026-08-31-ra2a-minimal-model.md)
@@ -21,6 +23,12 @@ RA2A 是一个运行在局域网内的 MCP，目标是让多台设备上的多�
 - 来源地址保留与双向回复
 
 暂不包含中心服务、离线消息、持久队列、工作流编排和公网通信。
+
+## 可行性状态
+
+依据 OpenAI 官方文档，Codex App 可安装本地 MCP，App Server 也提供 thread 枚举、恢复、状态读取和启动新回合所需的方法，因此接收端主链路具备协议基础。
+
+目前整体判定为 **条件可行**：官方文档没有承诺外部进程可附着正在运行的 Codex App 实例并保持 UI 状态同步，也没有定义 MCP 工具调用一定携带来源 session ID。实现前必须通过真实 Codex App 完成这两项 Go/No-Go 探针。详细证据和验收门槛见 [PRD 的官方文档可行性判定](prd/2026-08-31-ra2a-minimal-model.md#13-官方文档可行性判定)。
 
 ## 安装
 

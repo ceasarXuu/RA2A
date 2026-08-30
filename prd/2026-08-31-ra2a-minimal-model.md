@@ -9,16 +9,19 @@
 
 ## 请求方评审摘要
 
-- 已确认：局域网运行、多设备安装 Codex App 与本 MCP、自动发现、定向向指定 session 注入消息；服务轻量、低依赖、自愈，并支持 macOS、Linux、Windows 与 Agent 友好安装。
+- 已确认：第一版仅面向 Codex App；局域网运行、多设备安装 Codex App 与本 MCP、自动发现、定向向指定 session 注入消息；服务轻量、低依赖、自愈，并支持 macOS、Linux、Windows 与 Agent 友好安装。
 - 建议的最小闭环：单一信任组、仅处理在线且空闲的 session、无离线队列、回复也是一条新消息。
-- 实施前必须确认：信任边界、忙碌 session 的处理、session 暴露范围、平台版本与架构基线、轻量资源预算。
-- 当前状态原因：目标已清楚，但上述事项会直接改变安全性、兼容范围和发布门槛。
+- 官方文档判定：接收端会话操作具备协议基础，但连接正在运行的 Codex App 实例、识别 MCP 调用来源 session 尚无公开稳定契约，因此整体为“条件可行”。
+- 实施前必须完成：Codex App 本机集成探针，并确认信任边界、忙碌 session 的处理、session 暴露范围、平台版本与架构基线、轻量资源预算。
+- 当前状态原因：目标已清楚，但两项核心集成能力尚待实机验证，其余待确认事项会直接改变安全性、兼容范围和发布门槛。
 
 ## 1. 一句话模型
 
 RA2A 是一个局域网内的“定向消息投递器”：Agent 发现可达 session，向其中发送一段文本，接收 session 将它作为新的 Codex 用户回合开始执行。
 
 RA2A 不是任务平台、消息队列或多 Agent 编排框架。
+
+本文中的 **Codex App** 专指 OpenAI 桌面 App 中的 Codex 使用界面。第一版不以 Codex CLI、IDE 扩展、云任务或其他 MCP Host 为兼容目标。
 
 ## 2. 目标与成功标准
 
@@ -90,7 +93,8 @@ send_message(to, text) -> accepted | error
 ```
 
 - `list_targets` 返回当前已验证且在线的节点及 session。
-- `send_message` 从 MCP 调用元数据中取得当前调用者 session，自动形成 `from` 地址；调用者只需要提供 `to` 和 `text`。
+- `send_message` 的产品目标是从 MCP 调用上下文取得当前调用者 session，自动形成 `from` 地址；调用者只需要提供 `to` 和 `text`。
+- OpenAI 官方 MCP 文档目前没有承诺工具调用会携带调用者 thread/session ID。实现前必须用探针确认该能力；若不存在，不得伪造或猜测 `from`，而应暂停实现并重新确认最小交互契约。
 
 ### 节点间接口
 
@@ -202,6 +206,7 @@ sending → accepted
 - 跨局域网、NAT 穿透或公网中继；
 - 用户体系、复杂配对流程和细粒度权限；
 - 自动等待远端任务完成。
+- Codex CLI、IDE 扩展、云任务及其他 MCP Host 的兼容承诺。
 
 ## 11. 验收标准
 
@@ -216,6 +221,7 @@ sending → accepted
 9. Given 一台受支持平台的新设备已安装 Codex，when 用户或 Agent 按 README 执行对应安装脚本，then 能以无交互方式完成安装并得到可验证的成功或明确失败结果。
 10. Given 同一版本分别运行在 macOS、Linux 和 Windows，when 执行发现与消息投递，then 对外协议和 MCP 工具行为一致。
 11. Given 发布构建完成，then README 或发布说明记录产物大小、空闲内存和空闲 CPU 的实测值，使“轻量”可以持续比较而非仅凭主观判断。
+12. Given 第一版兼容矩阵，then 仅将 Codex App 标记为受支持的 MCP Host，不包含 CLI、IDE 扩展、云任务或其他客户端。
 
 ## 12. Confirmed Product Decisions
 
@@ -233,8 +239,36 @@ sending → accepted
 | PD7 | 提供 Agent 友好的安装脚本和 README 安装说明 | 提供跨平台脚本、无交互模式、明确结果与恢复说明 | 不得只提供人工拼装步骤或隐式失败 | 人和 Agent 都应可靠完成部署 | README 命令不可复制执行，或脚本必须依赖人工问答 | user-confirmed-direct: “提供友好的安装脚本，并在 readme 中介绍安装方式，agent 友好” | active |
 | PD8 | 尽量低依赖 | 优先单一产物并最小化外部运行依赖 | 不得为便利随意叠加语言运行时、数据库或基础服务 | 降低安装、维护和跨平台成本 | 基础启动需要多个与核心能力无关的服务 | user-confirmed-direct: “尽量低依赖” | active |
 | PD9 | 支持 macOS、Linux、Windows 部署 | 三个平台保持一致协议和核心行为 | 不得把任一指定平台降为未支持状态 | 用户明确要求多端部署 | 发布版本缺少任一平台可用产物 | user-confirmed-direct: “支持多端部署， macos、linux、windows” | active |
+| PD10 | 第一版目标仅限于 Codex App | 只围绕 Codex App 设计、验证和验收首版闭环 | 第一版不得扩展为 CLI、IDE、云任务或通用 MCP Host 兼容项目 | 收紧首版边界，优先验证核心可行性 | 验收范围包含非 Codex App 客户端，或为其增加兼容层 | user-confirmed-direct: “第一版目标仅限于 codex app” | active |
 
-## 13. 待确认决策与风险
+## 13. 官方文档可行性判定
+
+**结论：条件可行，尚不能判定为可直接实施。**
+
+| 关键链路 | 官方文档依据 | 判定 |
+|---|---|---|
+| Codex App 安装并调用本地 MCP | Codex MCP 文档说明桌面 App 支持 MCP，可配置 STDIO 或 Streamable HTTP 服务 | 可行 |
+| 枚举、恢复并读取 thread 状态 | App Server 提供 `thread/list`、`thread/read`、`thread/resume` 和 thread 状态 | 可行 |
+| 向空闲目标启动新回合 | App Server 提供 `turn/start`；`thread/inject_items` 只写入历史而不启动回合 | 可行 |
+| 忙碌 session 拒绝而非干预 | thread 状态包含 `active`，协议另有 `turn/steer`；第一版可在 `active` 时拒绝 | 可行 |
+| RA2A 连接正在运行的 Codex App 所使用的同一 App Server，并让 App UI 同步显示外部启动的回合 | App Server 支持本地 stdio、Unix socket 等传输，但 `codex app-server` 被官方标为实验性开发/调试接口；文档未承诺外部进程附着桌面 App 实例后的共享状态与 UI 行为 | 必须实机验证 |
+| MCP 工具调用自动携带来源 session ID | 官方 MCP 文档未定义调用方 thread/session ID 元数据 | 必须实机验证 |
+| 枚举 Codex App 创建的全部目标 thread | `thread/list` 支持来源过滤，但文档没有明确桌面 App thread 的来源类型与默认枚举行为 | 必须实机验证 |
+| macOS、Windows、Linux 部署 | 官方提供三端桌面 App；Linux 当前为 Preview，且仅列出特定发行版和 x64/ARM64 | 有条件可行 |
+
+### 实施前 Go/No-Go 探针
+
+必须先在真实 Codex App 上完成以下最小探针，不得用协议单元测试替代：
+
+1. 安装一个只记录非敏感结构的测试 MCP，确认普通工具调用是否携带可验证的来源 thread ID。
+2. 通过官方支持的本地传输连接 App Server，确认能列出与 Codex App 界面一致的 thread。
+3. 对空闲目标执行 `thread/resume` 与 `turn/start`，确认 Codex App 界面同步出现新用户回合且 Agent 开始处理。
+4. 对活动中的目标验证状态判断与拒绝行为不会修改当前回合。
+5. 在 macOS、Windows 和官方支持的 Linux App 环境重复核心闭环；记录 App/Codex 版本及差异。
+
+只有第 1～4 项通过，首版核心闭环才可判为 **Go**。第 1 项失败意味着自动回复地址无法按当前双工具模型实现；第 2 或第 3 项失败意味着公开接口不足以向正在使用的 Codex App session 投递消息，必须回到产品决策层重新选择交互契约，不得直接依赖未公开内部实现。
+
+## 14. 待确认决策与风险
 
 ### 实施前需用户确认
 
@@ -246,13 +280,16 @@ sending → accepted
 
 ### 技术风险
 
-- Codex App Server 官方协议支持 `thread/list`、`thread/resume` 和 `turn/start`，足以完成接收端投递。
-- 当前 Codex 源码的 App Server MCP 调用路径会把调用方 `threadId` 写入 MCP 请求 `_meta`；实现前必须在目标 Codex App 版本做一次探针验证。若普通 MCP 调用未携带该字段，`send_message` 必须临时增加显式 `from` 参数。
-- Codex App 与外部客户端共享或连接同一个 App Server 时的并发行为，需要用两个真实 session 做最小集成验证，不能仅靠协议单元测试推断。
+- `codex app-server` 当前被官方标为实验性接口，可能随 Codex 版本变化。首版必须固定已验证版本范围、启动时做能力检测，并在不兼容时明确失败。
+- Codex App 与外部客户端共享或连接同一个 App Server 时的并发和 UI 同步行为没有公开保证，必须用两个真实 session 验证。
+- 官方文档未规定 MCP 调用携带来源 thread ID。该能力是实现可回复地址的硬门槛，不能把源码中的当前行为当成产品契约。
+- Linux Codex App 当前为 Preview，平台支持结论必须绑定官方列出的发行版与架构，不能泛化为所有 Linux 环境。
 
-## 14. 实施约束
+## 15. 实施约束
 
-- 以 Codex App Server 作为唯一 session 集成边界，不读取或修改 Codex 内部会话文件。
+- 第一版只支持 Codex App，不为 CLI、IDE 扩展、云任务或其他 MCP Host 增加兼容代码。
+- 将 Codex App Server 作为候选且唯一允许的 session 集成边界；完成 Go/No-Go 探针前不进入完整实现，也不读取或修改 Codex 内部会话文件。
+- App Server 连接仅限本机 stdio 或本机 socket，不在局域网直接暴露；局域网只暴露带鉴权的 RA2A 接口。
 - `turn/start` 用于真正触发接收 Agent；不使用只写模型历史但不启动回合的 `thread/inject_items`。
 - 先实现双机、单条文本、空闲 session 的端到端闭环，再考虑任何扩展。
 - 第一版最多一个可执行程序、一个配置文件、两个 MCP 工具、两个局域网接口。
@@ -260,7 +297,11 @@ sending → accepted
 - 依赖选择必须说明必要性；标准库或已有系统能力能够充分解决时，不增加第三方依赖。
 - 三个平台共享同一核心实现和协议测试，不维护三套行为不同的产品实现。
 
-## 15. 参考依据
+## 16. 参考依据
 
-- OpenAI Codex App Server 文档：<https://developers.openai.com/codex/app-server>
-- OpenAI Codex 源码中的 MCP `threadId` 元数据注入路径：<https://github.com/openai/codex/blob/main/codex-rs/app-server/src/request_processors/mcp_processor.rs>
+- OpenAI Codex App Server：<https://learn.chatgpt.com/docs/app-server>
+- OpenAI Codex MCP：<https://learn.chatgpt.com/docs/extend/mcp>
+- OpenAI Codex Developer commands：<https://learn.chatgpt.com/docs/developer-commands>
+- OpenAI Codex desktop app：<https://learn.chatgpt.com/docs/app>
+- OpenAI Codex on Windows：<https://learn.chatgpt.com/docs/windows/windows-app>
+- OpenAI Codex on Linux：<https://learn.chatgpt.com/docs/linux/linux-app>
