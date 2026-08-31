@@ -50,6 +50,26 @@ func TestUnixInstallerRejectsInvalidPIN(t *testing.T) {
 	}
 }
 
+func TestUnixInstallerGeneratesSixCharacterPINWhenOmitted(t *testing.T) {
+	home, fakeBin := installerEnvironment(t, "Darwin")
+	command := exec.Command("sh", "../install.sh", "--node-id", "device-a", "--codex", filepath.Join(fakeBin, "codex"))
+	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("install without PIN: %v\n%s", err, output)
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.HasPrefix(line, "PIN: ") {
+			pin := strings.TrimPrefix(line, "PIN: ")
+			if len(pin) != 6 {
+				t.Fatalf("generated PIN = %q, want exactly 6 characters", pin)
+			}
+			return
+		}
+	}
+	t.Fatalf("installer did not print generated PIN:\n%s", output)
+}
+
 func TestUnixInstallerDefaultsNameToConfiguredNodeID(t *testing.T) {
 	home, fakeBin := installerEnvironment(t, "Linux")
 	command := exec.Command("sh", "../install.sh", "--pin", "A2B3C4", "--node-id", "device-c", "--codex", filepath.Join(fakeBin, "codex"))

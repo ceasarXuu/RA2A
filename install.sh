@@ -89,7 +89,7 @@ fi
 case "$OS_NAME" in Darwin|Linux) ;; *) fail "unsupported operating system: $OS_NAME" ;; esac
 
 if [ -z "$PIN" ]; then
-  PIN=$(od -An -N4 -tu4 /dev/urandom | awk '{printf "%06X", $1 % 16777216}')
+  PIN=$(od -An -N3 -tx1 /dev/urandom | tr -d '[:space:]')
 fi
 case "$PIN" in
   ??????) ;;
