@@ -10,10 +10,11 @@
 ## 请求方评审摘要
 
 - 已确认：第一版仅面向 Codex App；局域网运行、多设备安装 Codex App 与本 MCP、自动发现、定向向指定 session 注入消息；服务轻量、低依赖、自愈，并支持 macOS、Linux、Windows 与 Agent 友好安装。
-- 建议的最小闭环：单一信任组、仅处理在线且空闲的 session、无离线队列、回复也是一条新消息。
+- 已确认：向信任组公开全部未归档 session；忙碌时拒绝；消息不自动重试；成功只代表远端创建回合；用户级 daemon 由操作系统启动和保活。
+- 建议的最小闭环：使用 6 位一次性 PIN 完成设备配对，PIN 只建立临时安全通道，长期通信使用 daemon 生成的随机高强度组密钥。
 - 官方文档判定：接收端会话操作具备协议基础，但连接正在运行的 Codex App 实例、识别 MCP 调用来源 session 尚无公开稳定契约，因此整体为“条件可行”。
-- 实施前必须完成：Codex App 本机集成探针，并确认信任边界、忙碌 session 的处理、session 暴露范围、平台版本与架构基线、轻量资源预算。
-- 当前状态原因：目标已清楚，但两项核心集成能力尚待实机验证，其余待确认事项会直接改变安全性、兼容范围和发布门槛。
+- 实施前必须完成：Codex App 本机集成探针，并确认 PIN 配对与组密钥轮换模型、平台版本与架构基线、轻量资源预算。
+- 当前状态原因：session、消息和 daemon 生命周期已经明确，但配对安全模型仍待确认，两项核心集成能力仍待实机验证。
 
 ## 1. 一句话模型
 
@@ -62,13 +63,13 @@ ra2a://<node-id>/<session-id>
 
 ```text
 Codex Session A
-      │ MCP tool call
+      │ localhost MCP
       ▼
-RA2A Node A ── LAN HTTP ──► RA2A Node B
-      ▲                         │
-      │ mDNS discovery          │ Codex App Server
-      └─────────────────────────▼
-                            Codex Session B
+RA2A daemon A ── LAN HTTP ──► RA2A daemon B
+      ▲                            │
+      │ mDNS discovery             │ local App Server
+      └────────────────────────────▼
+                               Codex Session B
 ```
 
 RA2A Node 只有三个职责：
@@ -78,6 +79,8 @@ RA2A Node 只有三个职责：
 3. 通过本机 Codex App Server 列出 session、恢复 session、启动新回合。
 
 不设置中心节点。所有节点对等。
+
+每个操作系统用户只运行一个 RA2A daemon。安装脚本将其注册为用户级后台服务并立即启动；后续由 `launchd`、`systemd --user` 或 Windows 用户登录任务负责开机登录启动和崩溃重启。Codex App 只连接本机 MCP 端点，不负责 daemon 生命周期。
 
 核心服务必须保持轻量：不引入数据库，不依赖常驻的第三方基础服务，优先交付单一可执行程序。除 Codex 本身外，应尽量避免要求用户预装语言运行时或包管理器。
 
@@ -92,7 +95,7 @@ list_targets() -> Node[] + Session[]
 send_message(to, text) -> accepted | error
 ```
 
-- `list_targets` 返回当前已验证且在线的节点及 session。
+- `list_targets` 返回当前已验证且在线的节点，以及这些节点上全部未归档 session 的 ID、标题和状态。
 - `send_message` 的产品目标是从 MCP 调用上下文取得当前调用者 session，自动形成 `from` 地址；调用者只需要提供 `to` 和 `text`。
 - OpenAI 官方 MCP 文档目前没有承诺工具调用会携带调用者 thread/session ID。实现前必须用探针确认该能力；若不存在，不得伪造或猜测 `from`，而应暂停实现并重新确认最小交互契约。
 
@@ -126,7 +129,7 @@ message-id: <uuid>
 1. 目标节点不存在或鉴权失败：拒绝。
 2. 目标 session 不存在、已归档或不可加载：拒绝。
 3. 目标 session 空闲：恢复该 session，并通过 `turn/start` 启动新回合。
-4. 目标 session 忙碌：第一版建议返回 `SESSION_BUSY`，不排队、不插入正在执行的回合。
+4. 目标 session 忙碌：返回 `SESSION_BUSY`，不排队、不插入或干预正在执行的回合。
 5. 接收端成功创建回合后返回 `accepted`；这只代表已投递，不代表任务已完成。
 6. 处理结果不通过原 HTTP 请求等待返回。接收 Agent 需要回复时，调用 `send_message` 向 `from` 地址发送新消息。
 
@@ -182,14 +185,31 @@ sending → accepted
 
 ## 9. 最小安全模型
 
+### 信任边界
+
 建议所有节点配置同一个随机共享密钥，形成一个完全互信的 RA2A 信任组：
 
 - mDNS 发现可以公开，但 session 列表和消息接口必须鉴权。
-- 持有共享密钥的节点可查看可暴露 session，并可向其发送消息。
+- 持有共享密钥的节点可查看全部未归档 session，并可向其发送消息。
 - 密钥不通过 mDNS 或消息正文传播。
 - 第一版不做账号、角色、逐设备授权和逐 session ACL。
 
 共享密钥不是可省略的装饰：向 Codex session 注入文本可能触发文件、网络或终端操作，因此“同一局域网”不能直接等同于“可信”。
+
+### 建议的 PIN 配对模型（待确认）
+
+六位 PIN 只作为一次性配对凭据，不能直接作为长期通信密钥：
+
+1. 首台设备的 daemon 使用操作系统安全随机源生成一个组 ID 和 256 位随机组密钥。
+2. 组密钥只保存在当前用户可读取的本地凭据文件中；macOS/Linux 使用仅当前用户可读的文件权限，Windows 使用仅当前用户可读的 ACL。密钥不得显示在终端、MCP 返回、消息或日志里。
+3. 已入组设备执行配对命令时，daemon 生成一个避开易混淆字符的 6 位 PIN。PIN 默认 5 分钟过期、成功一次即失效，连续失败 5 次立即关闭本次配对。
+4. 新设备输入 PIN 后，双方使用经审计的密码认证密钥交换协议建立临时加密通道，再传输真正的组密钥。候选为 SPAKE2+；不得自行设计“PIN 哈希后直接加密”的握手。
+5. 新设备成功保存组密钥后加入信任组；PIN 不保存、不传播，也不再参与日常通信。session 列表和消息正文使用组密钥进行认证加密，只有 mDNS 中的节点发现摘要保持明文。
+6. 第一版只支持一个信任组。新增设备可由任一已入组设备签发一次性 PIN。
+
+建议的最小变更策略是“重建并重新配对”：在一台保留设备上生成新的组密钥，然后让其余保留设备逐台使用新 PIN 加入；每台设备成功加入新组后立即删除旧密钥。第一版不实现后台自动轮换、离线密钥追赶或逐设备吊销；移除设备时必须轮换组密钥。
+
+该模型保留了 6 位码的输入体验，同时让短 PIN 只面对有次数和时效限制的在线猜测。密码认证密钥交换的目标是让双方从短密码导出强共享密钥而不泄露密码；实现必须使用成熟库和标准流程。
 
 ## 10. 明确不做
 
@@ -222,6 +242,8 @@ sending → accepted
 10. Given 同一版本分别运行在 macOS、Linux 和 Windows，when 执行发现与消息投递，then 对外协议和 MCP 工具行为一致。
 11. Given 发布构建完成，then README 或发布说明记录产物大小、空闲内存和空闲 CPU 的实测值，使“轻量”可以持续比较而非仅凭主观判断。
 12. Given 第一版兼容矩阵，then 仅将 Codex App 标记为受支持的 MCP Host，不包含 CLI、IDE 扩展、云任务或其他客户端。
+13. Given 信任组内存在多个未归档 session，when 对端调用 `list_targets`，then 返回这些 session 的 ID、标题和状态，不返回已归档 session。
+14. Given 安装成功或用户重新登录，then 用户级 RA2A daemon 自动运行；given daemon 异常退出，then 操作系统服务管理器自动重启它。
 
 ## 12. Confirmed Product Decisions
 
@@ -240,6 +262,11 @@ sending → accepted
 | PD8 | 尽量低依赖 | 优先单一产物并最小化外部运行依赖 | 不得为便利随意叠加语言运行时、数据库或基础服务 | 降低安装、维护和跨平台成本 | 基础启动需要多个与核心能力无关的服务 | user-confirmed-direct: “尽量低依赖” | active |
 | PD9 | 支持 macOS、Linux、Windows 部署 | 三个平台保持一致协议和核心行为 | 不得把任一指定平台降为未支持状态 | 用户明确要求多端部署 | 发布版本缺少任一平台可用产物 | user-confirmed-direct: “支持多端部署， macos、linux、windows” | active |
 | PD10 | 第一版目标仅限于 Codex App | 只围绕 Codex App 设计、验证和验收首版闭环 | 第一版不得扩展为 CLI、IDE、云任务或通用 MCP Host 兼容项目 | 收紧首版边界，优先验证核心可行性 | 验收范围包含非 Codex App 客户端，或为其增加兼容层 | user-confirmed-direct: “第一版目标仅限于 codex app” | active |
+| PD11 | 默认向信任组公开全部未归档 session 的 ID、标题和状态 | `list_targets` 返回全部未归档 session 的最小摘要 | 第一版不得增加 session 手动发布机制或隐藏部分未归档 session | 保持发现模型和工具数量最小 | 同组节点无法发现某个未归档 session，或需要先手动发布 | user-confirmed-direct: 对“默认公开所有未归档 session 的 ID、标题和状态”回复“同意” | active |
+| PD12 | 忙碌 session 拒绝新消息 | 返回 `SESSION_BUSY`，不修改当前回合 | 不得排队或通过 `turn/steer` 干预当前任务 | 避免并发消息改变正在执行的工作 | 忙碌 session 接收、排队或合并了远端消息 | user-confirmed-direct: 对“忙碌时直接返回 `SESSION_BUSY`”回复“同意” | active |
+| PD13 | 结果未知的消息不自动重试 | 超时返回 `DELIVERY_UNKNOWN`；发现和连接继续自愈 | 不得因超时自动重发消息 | 避免重复创建 Codex 回合 | 超时后 daemon 自动再次投递同一消息 | user-confirmed-direct: 对“网络超时不自动重试”回复“同意” | active |
+| PD14 | 发送成功只表示远端创建回合 | `accepted` 在远端创建回合后返回；回复使用独立消息 | 不得把 accepted 表述为 Agent 已完成，也不得同步等待结果 | 保持异步消息模型 | HTTP 请求等待 Agent 完成，或 accepted 被解释为任务完成 | user-confirmed-direct: 对“成功只表示远端已经创建 Codex 回合”回复“同意” | active |
+| PD15 | RA2A 以用户级 daemon 常驻 | 安装时注册并启动；登录时自动启动；崩溃时由操作系统重启 | Codex App 或单个 session 不得拥有 daemon 生命周期，也不得要求系统级/root 常驻服务 | 保证唯一实例、自愈和用户态 Codex 访问 | 每个 session 启动独立服务，或关闭 Codex App 后服务必然消失 | user-confirmed-direct: 对“安装脚本注册用户级 daemon，由操作系统启动并保活”回复“同意” | active |
 
 ## 13. 官方文档可行性判定
 
@@ -272,11 +299,9 @@ sending → accepted
 
 ### 实施前需用户确认
 
-1. **信任边界**：是否接受“共享一个密钥的节点完全互信”？建议接受，这是不省略安全底线情况下最小的模型。
-2. **忙碌处理**：目标 session 忙碌时返回 `SESSION_BUSY`，还是允许通过 `turn/steer` 干预当前回合？建议第一版返回忙碌。
-3. **暴露范围**：是否向信任组暴露所有未归档 session 的 ID、标题和状态？建议第一版如此；若标题也敏感，则必须增加 session 显式加入机制。
-4. **平台基线**：macOS、Linux、Windows 的最低版本以及必须发布的 CPU 架构尚未确认。
-5. **轻量预算**：产物大小、空闲内存、空闲 CPU 的硬上限尚未确认；实施计划应先测量最小原型，再请求确认发布门槛。
+1. **配对与轮换**：是否确认第 9 节的模型——6 位 PIN 仅用于一次性 PAKE 配对，daemon 持有随机组密钥，移除设备时通过重建组并逐台重新配对完成轮换？
+2. **平台基线**：macOS、Linux、Windows 的最低版本以及必须发布的 CPU 架构尚未确认。
+3. **轻量预算**：产物大小、空闲内存、空闲 CPU 的硬上限尚未确认；实施计划应先测量最小原型，再请求确认发布门槛。
 
 ### 技术风险
 
@@ -296,6 +321,7 @@ sending → accepted
 - 网络发现和连接采用有上限的退避与抖动自动恢复，不采用高频忙轮询。
 - 依赖选择必须说明必要性；标准库或已有系统能力能够充分解决时，不增加第三方依赖。
 - 三个平台共享同一核心实现和协议测试，不维护三套行为不同的产品实现。
+- daemon 以当前用户身份运行，每个用户只允许一个实例；安装、升级和卸载必须幂等管理对应的用户级后台服务。
 
 ## 16. 参考依据
 
@@ -305,3 +331,4 @@ sending → accepted
 - OpenAI Codex desktop app：<https://learn.chatgpt.com/docs/app>
 - OpenAI Codex on Windows：<https://learn.chatgpt.com/docs/windows/windows-app>
 - OpenAI Codex on Linux：<https://learn.chatgpt.com/docs/linux/linux-app>
+- RFC 9383 SPAKE2+：<https://www.rfc-editor.org/rfc/rfc9383.html>
