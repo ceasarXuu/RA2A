@@ -14,6 +14,9 @@ func TestNodeDiscoversAndCallsItself(t *testing.T) {
 		ID:   "local-test-node",
 		Name: "Local Test Node",
 		PIN:  "A2B3C4",
+		Sessions: func(context.Context) ([]Session, error) {
+			return []Session{{ID: "thread-1", Title: "Local thread", Status: "idle"}}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("start node: %v", err)
@@ -32,7 +35,7 @@ func TestNodeDiscoversAndCallsItself(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Fatalf("session count = %d, want 0", len(sessions))
+	if len(sessions) != 1 || sessions[0].ID != "thread-1" {
+		t.Fatalf("sessions = %#v", sessions)
 	}
 }

@@ -321,6 +321,15 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 - DNS-SD 服务类型已从早期候选图中的 `_ra2a._tcp` 收敛为与实际传输一致的 `_ra2a._udp`。
 - 裁剪后的正式命令开发构建为 macOS arm64 6,614,482 B、Linux amd64 6,975,650 B、Windows amd64 7,137,792 B；macOS 自检最大 RSS 为 15,138,816 B。
 
+### 2026-08-31 第四阶段本机 Codex session 枚举进展
+
+- 正式 `ra2a selftest` 和 `ra2a serve` 现在会启动本机 `codex app-server`，按官方协议完成 `initialize` 与 `initialized` 握手，并分页调用只读 `thread/list`。
+- `/v1/sessions` 已从固定空数组切换为 App Server 数据源，只返回 `id`、标题和运行状态，不向局域网暴露完整 thread 内容。
+- 全局 Codex 0.146.0 与 Codex App 内置 0.151.0-alpha.7.2 均通过真实 mDNS 自发现、DTLS 握手和 CoAP 调用返回 60 个未归档 thread。
+- 接入 App Server 后的裁剪构建为 macOS arm64 6,717,106 B、Linux amd64 7,106,722 B、Windows amd64 7,287,296 B。
+- macOS 前台常驻单次测量中，RA2A 自身空闲 RSS 为 12,704 KiB，独立 Codex App Server 子进程为 55,904 KiB；读取 60 个 thread 的自检进程树观测峰值为 94,470,144 B。独立 App Server 是当前主要资源成本。
+- 本阶段未调用 `thread/resume` 或 `turn/start`，没有修改任何既有 session。独立 App Server 与桌面 App UI 的实时写入同步仍未证明，整体可行性结论保持“条件可行”。
+
 ## 14. 待确认决策与风险
 
 ### 实施前需用户确认

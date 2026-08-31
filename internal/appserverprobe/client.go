@@ -25,16 +25,32 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
+type ThreadSummary struct {
+	ID     string
+	Title  string
+	Status string
+}
+
 func New(input io.Reader, output io.Writer) *Client {
 	return &Client{decoder: json.NewDecoder(input), encoder: json.NewEncoder(output)}
 }
 
 func (client *Client) Initialize() error {
 	_, err := client.call("initialize", map[string]any{
-		"clientInfo":   map[string]string{"name": "ra2a-appserver-probe", "version": "0.1.0"},
+		"clientInfo":   map[string]string{"name": "ra2a", "title": "RA2A", "version": "0.1.0"},
 		"capabilities": map[string]any{"experimentalApi": false},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if err := client.encoder.Encode(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "initialized",
+		"params":  map[string]any{},
+	}); err != nil {
+		return fmt.Errorf("encode initialized notification: %w", err)
+	}
+	return nil
 }
 
 func (client *Client) ListThreads(sourceKinds []string) (json.RawMessage, error) {
@@ -43,6 +59,57 @@ func (client *Client) ListThreads(sourceKinds []string) (json.RawMessage, error)
 		params["sourceKinds"] = sourceKinds
 	}
 	return client.call("thread/list", params)
+}
+
+func (client *Client) ListThreadSummaries() ([]ThreadSummary, error) {
+	sourceKinds := []string{
+		"cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview",
+		"subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown",
+	}
+	var summaries []ThreadSummary
+	var cursor any
+	for {
+		params := map[string]any{
+			"archived":       false,
+			"limit":          100,
+			"sourceKinds":    sourceKinds,
+			"useStateDbOnly": true,
+		}
+		if cursor != nil {
+			params["cursor"] = cursor
+		}
+		result, err := client.call("thread/list", params)
+		if err != nil {
+			return nil, err
+		}
+		var page struct {
+			Data []struct {
+				ID      string `json:"id"`
+				Name    string `json:"name"`
+				Preview string `json:"preview"`
+				Status  struct {
+					Type string `json:"type"`
+				} `json:"status"`
+			} `json:"data"`
+			NextCursor any `json:"nextCursor"`
+		}
+		if err := json.Unmarshal(result, &page); err != nil {
+			return nil, fmt.Errorf("decode thread/list response: %w", err)
+		}
+		for _, thread := range page.Data {
+			title := thread.Name
+			if title == "" {
+				title = thread.Preview
+			}
+			summaries = append(summaries, ThreadSummary{
+				ID: thread.ID, Title: title, Status: thread.Status.Type,
+			})
+		}
+		if page.NextCursor == nil {
+			return summaries, nil
+		}
+		cursor = page.NextCursor
+	}
 }
 
 func (client *Client) StartTurn(threadID, text string) (json.RawMessage, error) {

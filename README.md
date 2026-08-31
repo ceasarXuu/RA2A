@@ -35,7 +35,7 @@ RA2A 是一个运行在局域网内的 MCP，目标是让多台设备上的多�
 
 目前整体判定为 **条件可行**：当前 macOS Codex App 自带版本的实机探针已观察到 MCP 调用携带匹配目标的 thread ID，独立 App Server 也能读取共享会话存储并启动临时回合；但官方文档未承诺这些内部元数据稳定，也未承诺外部启动的持久化回合会与正在运行的桌面 App UI 实时同步。进入完整实现前仍需完成可见持久化 session 的 Go/No-Go 探针。详细证据和验收门槛见 [PRD 的官方文档可行性判定](prd/2026-08-31-ra2a-minimal-model.md#13-官方文档可行性判定)。
 
-局域网基础闭环已经可运行：RA2A 能通过 mDNS/DNS-SD 发现本机节点，并使用共享 PIN 经 CoAP/DTLS 调用 `/v1/sessions`。当前该接口返回空列表，尚未连接 Codex App session。
+局域网读取闭环已经可运行：RA2A 启动本机 Codex App Server，通过 mDNS/DNS-SD 发现本机节点，再使用共享 PIN 经 CoAP/DTLS 调用 `/v1/sessions`。该接口现在返回本机真实的未归档 Codex thread 摘要。
 
 ## 本地开发验证
 
@@ -49,7 +49,7 @@ go run ./cmd/ra2a selftest --pin A2B3C4 --id local-dev --name "Local Dev"
 
 ```text
 discovered=ra2a://local-dev endpoint=127.0.0.1:<port>
-sessions=0
+sessions=<本机未归档 thread 数>
 selftest=ok
 ```
 
@@ -61,15 +61,28 @@ go run ./cmd/ra2a serve --pin A2B3C4 --id local-dev --name "Local Dev"
 
 `Ctrl-C` 可正常停止。节点通过 `_ra2a._udp.local` 广播；同一条正式 LAN Node 代码同时用于 `serve` 和 `selftest`。
 
+默认从 `PATH` 启动 `codex app-server`。也可以显式指定 Codex App 内置版本：
+
+```bash
+go run ./cmd/ra2a selftest \
+  --pin A2B3C4 \
+  --id local-app \
+  --codex /Applications/ChatGPT.app/Contents/Resources/codex
+```
+
+本机实测全局 Codex 0.146.0 和 Codex App 内置 0.151.0-alpha.7.2 均返回 60 个 thread。RA2A 使用只读的 `thread/list` 和 `useStateDbOnly=true`；本阶段没有向任何既有 session 写入消息。
+
+当前成功只证明独立 App Server 能读取 Codex App 共享的会话存储。它没有附着正在运行的桌面 App Server 进程，也尚未证明外部 `turn/start` 会在桌面 App UI 中实时出现。
+
 当前裁剪构建的开发期实测值：
 
 | 目标 | 二进制大小 |
 |---|---:|
-| macOS arm64 | 6,614,482 B |
-| Linux amd64 | 6,975,650 B |
-| Windows amd64 | 7,137,792 B |
+| macOS arm64 | 6,717,106 B |
+| Linux amd64 | 7,106,722 B |
+| Windows amd64 | 7,287,296 B |
 
-macOS arm64 执行一次自发现和调用的最大 RSS 为 15,138,816 B。以上数值是开发期自检，不代表常驻 daemon 的长期空闲资源数据。
+macOS arm64 前台常驻实测中，RA2A 自身空闲 RSS 为 12,704 KiB，它启动的 Codex App Server 子进程为 55,904 KiB；一次读取 60 个 thread 的自检进程树观测峰值为 94,470,144 B。Codex 子进程是当前主要内存开销，后续需验证能否安全复用桌面 App 的本地端点。以上均为开发期单次测量，不代表长期稳定值。
 
 ## 安装
 

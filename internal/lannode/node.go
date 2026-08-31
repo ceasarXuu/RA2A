@@ -28,9 +28,10 @@ const (
 )
 
 type Config struct {
-	ID   string
-	Name string
-	PIN  string
+	ID       string
+	Name     string
+	PIN      string
+	Sessions func(context.Context) ([]Session, error)
 }
 
 type Peer struct {
@@ -124,8 +125,17 @@ func (n *Node) startServer() error {
 	return nil
 }
 
-func (n *Node) handleSessions(w mux.ResponseWriter, _ *mux.Message) {
-	payload, err := json.Marshal(sessionsResponse{Sessions: make([]Session, 0)})
+func (n *Node) handleSessions(w mux.ResponseWriter, request *mux.Message) {
+	sessions := make([]Session, 0)
+	var err error
+	if n.config.Sessions != nil {
+		sessions, err = n.config.Sessions(request.Context())
+	}
+	if err != nil {
+		_ = w.SetResponse(codes.InternalServerError, message.TextPlain, strings.NewReader(err.Error()))
+		return
+	}
+	payload, err := json.Marshal(sessionsResponse{Sessions: sessions})
 	if err == nil {
 		err = w.SetResponse(codes.Content, message.AppJSON, bytes.NewReader(payload))
 	}

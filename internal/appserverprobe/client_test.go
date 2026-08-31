@@ -31,7 +31,13 @@ func TestListThreadsInitializesAndSkipsNotifications(t *testing.T) {
 	if got := lines[0]["method"]; got != "initialize" {
 		t.Fatalf("initialize method = %v", got)
 	}
-	params := lines[1]["params"].(map[string]any)
+	if got := lines[1]["method"]; got != "initialized" {
+		t.Fatalf("initialized notification method = %v", got)
+	}
+	if _, exists := lines[1]["id"]; exists {
+		t.Fatalf("initialized notification has id: %#v", lines[1])
+	}
+	params := lines[2]["params"].(map[string]any)
 	if got := params["sourceKinds"].([]any); len(got) != 2 || got[0] != "appServer" {
 		t.Fatalf("sourceKinds = %#v", got)
 	}
@@ -88,6 +94,35 @@ func TestRPCErrorIsReturned(t *testing.T) {
 	_, err := client.ListThreads(nil)
 	if err == nil || !strings.Contains(err.Error(), "bad params") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestListThreadSummariesFollowsPagination(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{"data":[{"id":"thread-1","name":"Named thread","preview":"ignored","status":{"type":"idle"}}],"nextCursor":"page-2"}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"data":[{"id":"thread-2","preview":"Preview title","status":{"type":"notLoaded"}}],"nextCursor":null}}`,
+	}, "\n")
+	var requests bytes.Buffer
+	client := New(strings.NewReader(responses), &requests)
+
+	threads, err := client.ListThreadSummaries()
+	if err != nil {
+		t.Fatalf("list summaries: %v", err)
+	}
+	if len(threads) != 2 {
+		t.Fatalf("thread count = %d", len(threads))
+	}
+	if threads[0].ID != "thread-1" || threads[0].Title != "Named thread" || threads[0].Status != "idle" {
+		t.Fatalf("first thread = %#v", threads[0])
+	}
+	if threads[1].Title != "Preview title" || threads[1].Status != "notLoaded" {
+		t.Fatalf("second thread = %#v", threads[1])
+	}
+
+	requestList := decodeRequests(t, requests.Bytes())
+	params := requestList[1]["params"].(map[string]any)
+	if params["cursor"] != "page-2" {
+		t.Fatalf("second page cursor = %#v", params["cursor"])
 	}
 }
 

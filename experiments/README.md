@@ -38,6 +38,12 @@ go build ./cmd/...
 | `turn/start` 能启动回合 | 创建 `ephemeral: true` 的临时 thread，再发送最短文本输入 | 返回 turn 且状态为 `inProgress` | 协议执行通过；未证明 App UI 显示 |
 | 任意未归档 thread 都能由独立 App Server 恢复 | 尝试恢复当前长任务和普通 thread | 普通 thread 可恢复；当前长任务因 paginated history lineage cycle 失败 | 假设不成立，必须把不可恢复状态暴露给调用方 |
 
+## 正式 LAN Node 接入进展
+
+现有 App Server 客户端已接入正式 `ra2a` 命令。2026-08-31 本机只读验证中，全局 Codex 0.146.0 与 Codex App 内置 0.151.0-alpha.7.2 均通过 RA2A 的 mDNS → DTLS → CoAP `/v1/sessions` 完整链路返回 60 个未归档 thread。实现已补齐官方要求的 `initialized` 通知，并跟随 `nextCursor` 分页。
+
+该结果仍只证明独立 App Server 能读取共享会话存储，不证明桌面 App UI 会实时同步外部进程发起的回合。
+
 ## 实验中发现的协议前置条件
 
 1. `thread/list` 必须设置 `useStateDbOnly=true`，否则只读探针可能触发 rollout 扫描与 state DB read-repair。
