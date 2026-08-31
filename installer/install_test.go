@@ -69,7 +69,7 @@ func TestUnixUninstallUsesExplicitCodex(t *testing.T) {
 	codex := filepath.Join(fakeBin, "explicit-codex")
 	writeExecutable(t, codex, "#!/bin/sh\nprintf '%s\\n' \"$*\" >\"$HOME/codex-remove.log\"\n")
 	command := exec.Command("sh", "../install.sh", "--uninstall", "--codex", codex)
-	command.Env = append(os.Environ(), "HOME="+home, "PATH=/usr/bin:/bin")
+	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("uninstall: %v\n%s", err, output)
 	}
@@ -108,6 +108,8 @@ func installerEnvironment(t *testing.T, osName string) (string, string) {
 		t.Fatal(err)
 	}
 	writeExecutable(t, filepath.Join(fakeBin, "uname"), "#!/bin/sh\nprintf '%s\\n' '"+osName+"'\n")
+	writeExecutable(t, filepath.Join(fakeBin, "launchctl"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(fakeBin, "systemctl"), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(fakeBin, "go"), `#!/bin/sh
 if [ "$1" = "version" ]; then echo "go version go1.24.0 test"; exit 0; fi
 while [ "$#" -gt 0 ]; do
