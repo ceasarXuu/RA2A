@@ -4,7 +4,7 @@ RA2A 是一个运行在局域网内的 MCP，目标是让多台设备上的多�
 
 第一版仅面向 **Codex App**（OpenAI 桌面 App 中的 Codex 使用界面），不承诺兼容 Codex CLI、IDE 扩展、云任务或其他 MCP Host。
 
-当前处于最小可行性实验阶段。极简模型与实验结果见：
+当前已进入最小实现阶段。极简模型与实验结果见：
 
 - [RA2A 局域网 Agent 通信（极简闭环）](prd/2026-08-31-ra2a-minimal-model.md)
 - [Codex App 最小可行性实验](experiments/README.md)
@@ -35,9 +35,45 @@ RA2A 是一个运行在局域网内的 MCP，目标是让多台设备上的多�
 
 目前整体判定为 **条件可行**：当前 macOS Codex App 自带版本的实机探针已观察到 MCP 调用携带匹配目标的 thread ID，独立 App Server 也能读取共享会话存储并启动临时回合；但官方文档未承诺这些内部元数据稳定，也未承诺外部启动的持久化回合会与正在运行的桌面 App UI 实时同步。进入完整实现前仍需完成可见持久化 session 的 Go/No-Go 探针。详细证据和验收门槛见 [PRD 的官方文档可行性判定](prd/2026-08-31-ra2a-minimal-model.md#13-官方文档可行性判定)。
 
+局域网基础闭环已经可运行：RA2A 能通过 mDNS/DNS-SD 发现本机节点，并使用共享 PIN 经 CoAP/DTLS 调用 `/v1/sessions`。当前该接口返回空列表，尚未连接 Codex App session。
+
+## 本地开发验证
+
+需要 Go 1.24 或更高版本。在项目根目录执行：
+
+```bash
+go run ./cmd/ra2a selftest --pin A2B3C4 --id local-dev --name "Local Dev"
+```
+
+成功输出示例：
+
+```text
+discovered=ra2a://local-dev endpoint=127.0.0.1:<port>
+sessions=0
+selftest=ok
+```
+
+启动常驻前台服务：
+
+```bash
+go run ./cmd/ra2a serve --pin A2B3C4 --id local-dev --name "Local Dev"
+```
+
+`Ctrl-C` 可正常停止。节点通过 `_ra2a._udp.local` 广播；同一条正式 LAN Node 代码同时用于 `serve` 和 `selftest`。
+
+当前裁剪构建的开发期实测值：
+
+| 目标 | 二进制大小 |
+|---|---:|
+| macOS arm64 | 6,614,482 B |
+| Linux amd64 | 6,975,650 B |
+| Windows amd64 | 7,137,792 B |
+
+macOS arm64 执行一次自发现和调用的最大 RSS 为 15,138,816 B。以上数值是开发期自检，不代表常驻 daemon 的长期空闲资源数据。
+
 ## 安装
 
-项目目前仍处于可行性实验阶段，尚无可安装版本。为避免误导，此处不提供尚不能执行的占位命令。
+项目目前处于早期开发阶段，已有可从源码运行的 LAN Node，但尚无可安装发布版本。为避免误导，此处不提供尚不能执行的占位安装命令。
 
 首个可运行版本必须同时提供：
 

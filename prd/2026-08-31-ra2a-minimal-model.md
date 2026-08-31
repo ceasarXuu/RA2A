@@ -110,7 +110,7 @@ POST /v1/messages
 
 - `GET /v1/sessions` 返回本机可达 session 的最小摘要。
 - `POST /v1/messages` 验证请求并向目标 session 启动一个 Codex 回合。
-- 节点发现使用 mDNS 服务 `_ra2a._tcp.local`，广播内容只包含节点 ID、名称、端口和协议版本。
+- 节点发现使用 mDNS/DNS-SD 服务 `_ra2a._udp.local`，与 CoAP/DTLS 的 UDP 传输一致；广播内容只包含节点 ID、名称、端口和协议版本。
 
 ## 6. 消息语义
 
@@ -312,6 +312,14 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 - 当前工程推荐为 `libp2p/zeroconf v2.2.0 + go-coap v3.5.4 + Pion DTLS v3.1.8`；macOS arm64 PoC 为 6,327,058 B，实测最大 RSS 14,696,448 B。
 - Linux amd64 与 Windows amd64 已交叉编译通过，但真实双机发现、网卡切换恢复和目标系统防火墙行为尚未验证。
 - 证据、版本与完整量化对比见 [`experiments/network/README.md`](../experiments/network/README.md)。
+
+### 2026-08-31 第三阶段最小 LAN Node 进展
+
+- 已将成熟网络组合移入正式根模块，提供 `ra2a serve` 和 `ra2a selftest` 两个入口，共用同一套 LAN Node 实现。
+- 已在本机通过真实 mDNS/DNS-SD 发现自身，并使用长期 6 位 PIN 经 CoAP/DTLS 调用自身的 `GET /v1/sessions`；当前按设计返回空数组。
+- 自检只证明发现、凭证握手和请求响应链路；尚未连接 Codex App Server，因此不代表已能列出或注入真实 Codex session。
+- DNS-SD 服务类型已从早期候选图中的 `_ra2a._tcp` 收敛为与实际传输一致的 `_ra2a._udp`。
+- 裁剪后的正式命令开发构建为 macOS arm64 6,614,482 B、Linux amd64 6,975,650 B、Windows amd64 7,137,792 B；macOS 自检最大 RSS 为 15,138,816 B。
 
 ## 14. 待确认决策与风险
 
