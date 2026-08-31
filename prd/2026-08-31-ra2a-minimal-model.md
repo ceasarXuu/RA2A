@@ -11,10 +11,10 @@
 
 - 已确认：第一版仅面向 Codex App；局域网运行、多设备安装 Codex App 与本 MCP、自动发现、定向向指定 session 注入消息；服务轻量、低依赖、自愈，并支持 macOS、Linux、Windows 与 Agent 友好安装。
 - 已确认：向信任组公开全部未归档 session；忙碌时拒绝；消息不自动重试；成功只代表远端创建回合；用户级 daemon 由操作系统启动和保活。
-- 建议的最小闭环：使用 6 位一次性 PIN 完成设备配对，PIN 只建立临时安全通道，长期通信使用 daemon 生成的随机高强度组密钥。
+- 已确认：第一版使用长期共享的 6 位 PIN，不实现一次性配对、密钥轮换或设备吊销生命周期。
 - 官方文档判定：接收端会话操作具备协议基础，但连接正在运行的 Codex App 实例、识别 MCP 调用来源 session 尚无公开稳定契约，因此整体为“条件可行”。
-- 实施前必须完成：Codex App 本机集成探针，并确认 PIN 配对与组密钥轮换模型、平台版本与架构基线、轻量资源预算。
-- 当前状态原因：session、消息和 daemon 生命周期已经明确，但配对安全模型仍待确认，两项核心集成能力仍待实机验证。
+- 实施前必须完成：Codex App 本机集成探针，并确认平台版本与架构基线、轻量资源预算。
+- 当前状态原因：首版产品交互和信任模型已经明确，但两项核心集成能力仍待实机验证，平台与资源发布门槛尚未确定。
 
 ## 1. 一句话模型
 
@@ -187,29 +187,27 @@ sending → accepted
 
 ### 信任边界
 
-建议所有节点配置同一个随机共享密钥，形成一个完全互信的 RA2A 信任组：
+所有节点配置同一个长期共享 PIN，形成一个完全互信的 RA2A 信任组：
 
 - mDNS 发现可以公开，但 session 列表和消息接口必须鉴权。
-- 持有共享密钥的节点可查看全部未归档 session，并可向其发送消息。
-- 密钥不通过 mDNS 或消息正文传播。
+- 持有相同 PIN 的节点可查看全部未归档 session，并可向其发送消息。
+- PIN 不通过 mDNS、局域网请求或消息正文传播。
 - 第一版不做账号、角色、逐设备授权和逐 session ACL。
 
-共享密钥不是可省略的装饰：向 Codex session 注入文本可能触发文件、网络或终端操作，因此“同一局域网”不能直接等同于“可信”。
+PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件、网络或终端操作，因此“同一局域网”不能直接等同于“可信”。
 
-### 建议的 PIN 配对模型（待确认）
+### 长期共享 PIN
 
-六位 PIN 只作为一次性配对凭据，不能直接作为长期通信密钥：
+第一版采用静态配置，不提供配对协议：
 
-1. 首台设备的 daemon 使用操作系统安全随机源生成一个组 ID 和 256 位随机组密钥。
-2. 组密钥只保存在当前用户可读取的本地凭据文件中；macOS/Linux 使用仅当前用户可读的文件权限，Windows 使用仅当前用户可读的 ACL。密钥不得显示在终端、MCP 返回、消息或日志里。
-3. 已入组设备执行配对命令时，daemon 生成一个避开易混淆字符的 6 位 PIN。PIN 默认 5 分钟过期、成功一次即失效，连续失败 5 次立即关闭本次配对。
-4. 新设备输入 PIN 后，双方使用经审计的密码认证密钥交换协议建立临时加密通道，再传输真正的组密钥。候选为 SPAKE2+；不得自行设计“PIN 哈希后直接加密”的握手。
-5. 新设备成功保存组密钥后加入信任组；PIN 不保存、不传播，也不再参与日常通信。session 列表和消息正文使用组密钥进行认证加密，只有 mDNS 中的节点发现摘要保持明文。
-6. 第一版只支持一个信任组。新增设备可由任一已入组设备签发一次性 PIN。
+1. 首台设备安装时由 daemon 随机生成 6 位 PIN；字符集排除 `0/O/1/I/L` 等易混淆字符。用户也可以通过非交互安装参数提供自己的 6 位 PIN。
+2. PIN 保存在当前用户可读取的配置中；macOS/Linux 使用仅当前用户可读的文件权限，Windows 使用仅当前用户可读的 ACL。
+3. 用户通过可信的线下方式把 PIN 复制到其他设备，例如在新设备执行安装命令时传入 `--pin <PIN>`。RA2A 不通过网络自动传播 PIN。
+4. 所有节点从 PIN 派生日常请求所需的认证和加密密钥；PIN 本身不在局域网中发送。mDNS 节点发现摘要保持明文，session 列表和消息正文进行认证加密。
+5. PIN 长期有效，重启、升级和网络重连不会改变它。第一版不实现过期、单次使用、自动轮换、逐设备吊销或 PAKE 配对。
+6. 若用户主动更改 PIN，必须在所有设备上手动设置同一新值；配置不同期间，节点视为不同信任组并互相拒绝。
 
-建议的最小变更策略是“重建并重新配对”：在一台保留设备上生成新的组密钥，然后让其余保留设备逐台使用新 PIN 加入；每台设备成功加入新组后立即删除旧密钥。第一版不实现后台自动轮换、离线密钥追赶或逐设备吊销；移除设备时必须轮换组密钥。
-
-该模型保留了 6 位码的输入体验，同时让短 PIN 只面对有次数和时效限制的在线猜测。密码认证密钥交换的目标是让双方从短密码导出强共享密钥而不泄露密码；实现必须使用成熟库和标准流程。
+长期 6 位 PIN 仅适合作为可信私有局域网中的轻量访问门槛。即使使用内存困难型密钥派生算法，它也不能被描述为能够抵抗有意的离线穷举；第一版必须在 README 中明确这一安全边界。认证失败请求可以限速，但不得因此改变 PIN 或进入需要人工恢复的锁定状态。
 
 ## 10. 明确不做
 
@@ -224,16 +222,16 @@ sending → accepted
 - 文件、图片或二进制附件；
 - 消息历史 UI；
 - 跨局域网、NAT 穿透或公网中继；
-- 用户体系、复杂配对流程和细粒度权限；
+- 用户体系、配对协议、密钥自动轮换、设备吊销和细粒度权限；
 - 自动等待远端任务完成。
 - Codex CLI、IDE 扩展、云任务及其他 MCP Host 的兼容承诺。
 
 ## 11. 验收标准
 
-1. Given 两台设备运行 RA2A 且共享密钥一致，when Agent A 调用 `list_targets`，then 能看到设备 B 及其可达 session。
+1. Given 两台设备运行 RA2A 且 PIN 一致，when Agent A 调用 `list_targets`，then 能看到设备 B 及其可达 session。
 2. Given session B 在线且空闲，when Agent A 向其地址调用 `send_message`，then session B 出现包含来源地址和正文的新用户回合并开始处理。
 3. Given Agent B 收到消息，when 它向消息中的 `from` 地址发送回复，then 原 session A 收到新回合。
-4. Given 两台设备密钥不同，when 任一方请求 session 列表或发送消息，then 请求被拒绝且不泄露 session 数据。
+4. Given 两台设备 PIN 不同，when 任一方请求 session 列表或发送消息，then 请求被拒绝且不泄露 session 数据。
 5. Given 目标 session 正在运行，when 收到新消息，then 返回明确的 `SESSION_BUSY`，且不修改当前回合。
 6. Given 目标设备离线，when 广播过期，then 该节点不再出现在 `list_targets` 的可用目标中。
 7. Given 发送请求超时，then 返回 `DELIVERY_UNKNOWN`，且发送端不自动重试。
@@ -244,6 +242,7 @@ sending → accepted
 12. Given 第一版兼容矩阵，then 仅将 Codex App 标记为受支持的 MCP Host，不包含 CLI、IDE 扩展、云任务或其他客户端。
 13. Given 信任组内存在多个未归档 session，when 对端调用 `list_targets`，then 返回这些 session 的 ID、标题和状态，不返回已归档 session。
 14. Given 安装成功或用户重新登录，then 用户级 RA2A daemon 自动运行；given daemon 异常退出，then 操作系统服务管理器自动重启它。
+15. Given 首台设备未提供 PIN，when 完成安装，then 生成并明确显示一个长期 6 位 PIN；given 新设备使用相同 PIN 安装，then 它加入同一信任组且重启后配置保持不变。
 
 ## 12. Confirmed Product Decisions
 
@@ -267,6 +266,7 @@ sending → accepted
 | PD13 | 结果未知的消息不自动重试 | 超时返回 `DELIVERY_UNKNOWN`；发现和连接继续自愈 | 不得因超时自动重发消息 | 避免重复创建 Codex 回合 | 超时后 daemon 自动再次投递同一消息 | user-confirmed-direct: 对“网络超时不自动重试”回复“同意” | active |
 | PD14 | 发送成功只表示远端创建回合 | `accepted` 在远端创建回合后返回；回复使用独立消息 | 不得把 accepted 表述为 Agent 已完成，也不得同步等待结果 | 保持异步消息模型 | HTTP 请求等待 Agent 完成，或 accepted 被解释为任务完成 | user-confirmed-direct: 对“成功只表示远端已经创建 Codex 回合”回复“同意” | active |
 | PD15 | RA2A 以用户级 daemon 常驻 | 安装时注册并启动；登录时自动启动；崩溃时由操作系统重启 | Codex App 或单个 session 不得拥有 daemon 生命周期，也不得要求系统级/root 常驻服务 | 保证唯一实例、自愈和用户态 Codex 访问 | 每个 session 启动独立服务，或关闭 Codex App 后服务必然消失 | user-confirmed-direct: 对“安装脚本注册用户级 daemon，由操作系统启动并保活”回复“同意” | active |
+| PD16 | 第一版使用长期共享的 6 位 PIN | PIN 保存在各节点用户配置中并长期有效；其他设备通过线下复制相同 PIN 加入信任组 | 不得实现一次性 PIN、过期、PAKE 配对、自动轮换或逐设备吊销生命周期 | 用户要求第一版进一步简化密钥模型 | PIN 自动失效、每台设备产生不同长期密钥，或加入设备必须完成额外配对流程 | user-confirmed-direct: “比如生成一个 6位字符之类的”；“第一版做简单点，不要搞这种生命周期，就做成长期的” | active |
 
 ## 13. 官方文档可行性判定
 
@@ -299,9 +299,8 @@ sending → accepted
 
 ### 实施前需用户确认
 
-1. **配对与轮换**：是否确认第 9 节的模型——6 位 PIN 仅用于一次性 PAKE 配对，daemon 持有随机组密钥，移除设备时通过重建组并逐台重新配对完成轮换？
-2. **平台基线**：macOS、Linux、Windows 的最低版本以及必须发布的 CPU 架构尚未确认。
-3. **轻量预算**：产物大小、空闲内存、空闲 CPU 的硬上限尚未确认；实施计划应先测量最小原型，再请求确认发布门槛。
+1. **平台基线**：macOS、Linux、Windows 的最低版本以及必须发布的 CPU 架构尚未确认。
+2. **轻量预算**：产物大小、空闲内存、空闲 CPU 的硬上限尚未确认；实施计划应先测量最小原型，再请求确认发布门槛。
 
 ### 技术风险
 
@@ -331,4 +330,3 @@ sending → accepted
 - OpenAI Codex desktop app：<https://learn.chatgpt.com/docs/app>
 - OpenAI Codex on Windows：<https://learn.chatgpt.com/docs/windows/windows-app>
 - OpenAI Codex on Linux：<https://learn.chatgpt.com/docs/linux/linux-app>
-- RFC 9383 SPAKE2+：<https://www.rfc-editor.org/rfc/rfc9383.html>
