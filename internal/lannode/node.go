@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 
@@ -152,7 +153,11 @@ func (n *Node) handleMessage(w mux.ResponseWriter, request *mux.Message) {
 		return
 	}
 	if err := n.config.SendMessage(request.Context(), incoming); err != nil {
-		_ = w.SetResponse(codes.InternalServerError, message.TextPlain, strings.NewReader(err.Error()))
+		code := codes.InternalServerError
+		if strings.Contains(err.Error(), "SESSION_BUSY") {
+			code = codes.PreconditionFailed
+		}
+		_ = w.SetResponse(code, message.TextPlain, strings.NewReader(err.Error()))
 		return
 	}
 	_ = w.SetResponse(codes.Changed, message.TextPlain, nil)
@@ -246,6 +251,24 @@ func (n *Node) WaitForPeer(ctx context.Context, id string) (Peer, error) {
 		case <-n.peerUpdate:
 		}
 	}
+}
+
+func (n *Node) Peers() []Peer {
+	n.peersMu.RLock()
+	peers := make([]Peer, 0, len(n.peers))
+	for _, peer := range n.peers {
+		peers = append(peers, peer)
+	}
+	n.peersMu.RUnlock()
+	sort.Slice(peers, func(i, j int) bool { return peers[i].ID < peers[j].ID })
+	return peers
+}
+
+func (n *Node) Peer(id string) (Peer, bool) {
+	n.peersMu.RLock()
+	defer n.peersMu.RUnlock()
+	peer, ok := n.peers[id]
+	return peer, ok
 }
 
 func (n *Node) ListSessions(ctx context.Context, peer Peer) ([]Session, error) {

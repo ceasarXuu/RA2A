@@ -21,6 +21,8 @@ type Config struct {
 	Stderr     io.Writer
 }
 
+var ErrSessionBusy = errors.New("SESSION_BUSY")
+
 type startFunc func(context.Context, Config) (*managedProcess, error)
 type connectFunc func(context.Context, string) (io.ReadWriteCloser, error)
 
@@ -108,6 +110,13 @@ func (host *Host) SendMessage(ctx context.Context, threadID, prompt string) erro
 	_, err := host.client.InjectMessage(threadID, prompt)
 	if err != nil {
 		host.disconnect()
+		var rpcErr *appserverprobe.RPCError
+		if errors.As(err, &rpcErr) {
+			message := strings.ToLower(rpcErr.Message)
+			if strings.Contains(message, "active writer") || (strings.Contains(message, "turn") && strings.Contains(message, "active")) {
+				return fmt.Errorf("%w: %s", ErrSessionBusy, rpcErr.Message)
+			}
+		}
 	}
 	return err
 }

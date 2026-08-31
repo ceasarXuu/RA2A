@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
+	"github.com/ceasarXuu/RA2A/internal/control"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
+	"github.com/ceasarXuu/RA2A/internal/mcpserver"
 )
 
 type sessionSource interface {
@@ -32,10 +34,26 @@ type codexSessionSource struct {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Args[1:], os.Stdout, startCodexSessionSource); err != nil {
+	var err error
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		err = runMCP(ctx, os.Args[2:], os.Stdin, os.Stdout)
+	} else {
+		err = run(ctx, os.Args[1:], os.Stdout, startCodexSessionSource)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func runMCP(ctx context.Context, args []string, input io.Reader, output io.Writer) error {
+	flags := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	controlURL := flags.String("control-url", control.DefaultEndpoint, "local RA2A daemon control URL")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	return mcpserver.Serve(ctx, input, output, control.NewClient(*controlURL))
 }
 
 func run(ctx context.Context, args []string, output io.Writer, startSource sessionSourceFactory) error {
@@ -53,6 +71,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	peerID := flags.String("peer", "", "destination RA2A node ID (send only)")
 	targetSessionID := flags.String("session", "", "destination Codex session ID (send only)")
 	text := flags.String("message", "", "message text (send only)")
+	controlAddress := flags.String("control-address", "127.0.0.1:47321", "loopback MCP control address (serve only)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -84,6 +103,9 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	defer node.Close()
 
 	if args[0] == "serve" {
+		if err := control.Start(ctx, *controlAddress, control.NewCoordinator(*id, node)); err != nil {
+			return err
+		}
 		fmt.Fprintf(output, "node=ra2a://%s status=running\n", *id)
 		<-ctx.Done()
 		return nil

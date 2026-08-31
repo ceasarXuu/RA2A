@@ -73,6 +73,18 @@ go build ./cmd/...
 
 因此 V1 的可写目标收敛为受管宿主 session。普通 Desktop 本地 session 只可作为共享存储中的只读发现结果，不得宣称可注入；正式代码不接入私有 `send_message_to_thread` bridge。
 
+## 2026-09-01 正式 MCP 闭环
+
+正式 `ra2a mcp` 已替代实验 probe 进入产品链路，验证结果如下：
+
+1. MCP `initialize` 成功，`tools/list` 只返回 `list_targets` 与 `send_message`。
+2. `list_targets` 经本地 daemon 控制面、mDNS、DTLS 和 CoAP 返回真实节点与 61 个 session；不可连接 peer 不进入结果。
+3. `send_message` 使用 `_meta.threadId=caller-mcp-e2e`，目标客户端显示 `from: ra2a://mcp-e2e-local/caller-mcp-e2e` 与随机 message ID。
+4. 目标受管 session 完成新回合并回复 `RA2A_MCP_COMPLETE_OK`。
+5. 隔离 `CODEX_HOME` 下执行官方 `codex mcp add ra2a -- /tmp/ra2a mcp` 与 `codex mcp get ra2a`，确认安装器使用的 stdio 注册形式被 Codex 正确识别。
+
+错误路径通过自动化测试覆盖：缺失调用 thread、未知节点、忙碌 session、daemon 不可用和结果未知超时。应用层没有消息重试。
+
 ## Product Decision Delta
 
 本阶段新增了用户明确确认的产品边界：V1 使用 RA2A 受管的单一 App Server；普通 Desktop 本地 session 不属于正式可写目标。该决策已记录到 PRD 的 Confirmed Product Decisions。

@@ -104,9 +104,28 @@ func TestSendMessageResumesThenStartsTurnOnManagedHost(t *testing.T) {
 	}
 }
 
+func TestSendMessageMapsActiveWriterToSessionBusy(t *testing.T) {
+	clientSide, serverSide := net.Pipe()
+	defer serverSide.Close()
+	connect := func(context.Context, string) (io.ReadWriteCloser, error) { return clientSide, nil }
+	serveHostProtocol(t, serverSide, []rpcExchange{
+		{method: "initialize", result: map[string]any{}},
+		{method: "thread/resume", rpcError: map[string]any{"code": -32600, "message": "thread already has an active writer"}},
+	})
+	host, err := startWith(context.Background(), Config{}, nil, connect, time.Millisecond)
+	if err != nil {
+		t.Fatalf("start host: %v", err)
+	}
+	defer host.Close()
+	if err := host.SendMessage(context.Background(), "thread-1", "hello"); !errors.Is(err, ErrSessionBusy) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 type rpcExchange struct {
-	method string
-	result any
+	method   string
+	result   any
+	rpcError any
 }
 
 func serveHostProtocol(t *testing.T, connection net.Conn, exchanges []rpcExchange) {
@@ -123,7 +142,11 @@ func serveHostProtocol(t *testing.T, connection net.Conn, exchanges []rpcExchang
 				t.Errorf("method = %v, want %s", request["method"], exchange.method)
 				return
 			}
-			if err := encoder.Encode(map[string]any{"id": request["id"], "result": exchange.result}); err != nil {
+			response := map[string]any{"id": request["id"], "result": exchange.result}
+			if exchange.rpcError != nil {
+				response = map[string]any{"id": request["id"], "error": exchange.rpcError}
+			}
+			if err := encoder.Encode(response); err != nil {
 				return
 			}
 			if exchange.method == "initialize" {

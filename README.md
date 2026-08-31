@@ -31,18 +31,28 @@ RA2A 是一个运行在局域网内的 MCP，目标是让多台设备上的多�
 
 ## 当前架构与可行性
 
-RA2A 采用单宿主模型：优先连接官方 canonical Unix control socket；若宿主尚未运行，则启动 `codex app-server --listen unix://<socket>` 并监管其生命周期。RA2A 和 Codex 客户端连接同一个 App Server，因此一个 thread 只有一个 writer 宿主。
+RA2A 采用单宿主模型：优先连接官方 canonical Unix control socket；若宿主尚未运行，则启动 `codex app-server --listen unix://<socket>` 并监管其生命周期。安装器把同一个 RA2A 二进制注册为 Codex stdio MCP；每次工具调用经 `127.0.0.1:47321` 访问常驻 daemon，不重复启动 LAN 节点或 App Server。
 
 ```text
-Codex App / codex --remote ─┐
-                            ├── managed Codex App Server（唯一 writer）
-RA2A daemon ────────────────┘                │
-                                             └── sessions
+Codex Agent ── stdio ──► ra2a mcp ── loopback ──► RA2A daemon
+                                                   │
+                         mDNS + CoAP/DTLS ◄────────┤
+                                                   │
+Codex App / remote client ──► managed App Server ──┘
 ```
 
-2026-09-01 的 macOS 实机验证已经跑通：两个 RA2A 节点经 mDNS → DTLS → CoAP `/v1/messages` 投递到受管 session，连接同一宿主的官方 Codex 客户端实时显示消息并回复 `RA2A_MANAGED_HOST_OK`。
+2026-09-01 的 macOS 实机验证已经跑通：正式 MCP `send_message` 经 loopback → mDNS → DTLS → CoAP `/v1/messages` 投递到受管 session，连接同一宿主的官方 Codex 客户端实时显示来源、message ID 和正文，并回复 `RA2A_MCP_COMPLETE_OK`。
 
 重要边界：普通 Desktop 本地模式使用私有 stdio App Server，不属于 V1 可写目标。`GET /v1/sessions` 可能从共享存储列出这类 thread，但这不代表它可写；尝试恢复时会明确返回 `active writer` 冲突。V1 只承诺由 RA2A 受管 App Server 创建或加载、且 Codex App 通过 Remote/SSH 连接使用的 session；不使用未公开的 Desktop 内部投递接口。
+
+## Agent 工具
+
+安装后 Codex 自动获得且仅获得两个正式工具：
+
+- `list_targets()`：返回当前实际可达的 RA2A 节点，以及各节点未归档 session 的 `id`、标题和状态；不可达的陈旧发现结果不会返回。
+- `send_message(to, text)`：向 `ra2a://<node-id>/<session-id>` 创建一个远端 Codex 回合。工具从 MCP `_meta.threadId` 取得调用 session，自动生成可回复的 `from` 地址和唯一 message ID。
+
+`accepted` 只表示远端已创建回合。忙碌 session 返回 `SESSION_BUSY`；结果未知的超时返回 `DELIVERY_UNKNOWN` 且不会自动重发；调用上下文缺少 thread ID 时返回 `CALLER_SESSION_UNKNOWN`，不会伪造来源。
 
 ## 本地开发验证
 
@@ -67,6 +77,14 @@ go run ./cmd/ra2a serve --pin A2B3C4 --id local-dev --name "Local Dev"
 ```
 
 `Ctrl-C` 可正常停止。节点通过 `_ra2a._udp.local` 广播；同一条正式 LAN Node 代码同时用于 `serve` 和 `selftest`。
+
+直接检查正式 MCP 协议（daemon 运行时）：
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | go run ./cmd/ra2a mcp
+```
 
 向指定节点的受管 session 发送消息：
 
@@ -98,15 +116,15 @@ go run ./cmd/ra2a selftest \
 
 | 目标 | 二进制大小 |
 |---|---:|
-| macOS arm64 | 7,967,234 B |
-| Linux amd64 | 8,466,594 B |
-| Windows amd64 | 8,674,304 B |
+| macOS arm64 | 9,020,274 B |
+| Linux amd64 | 9,523,362 B |
+| Windows amd64 | 9,764,864 B |
 
 此前独立 stdio App Server 的资源测量已经过时；受管 Unix 宿主的新资源基线将在安装阶段重新测量。Codex App Server 仍是进程树的主要内存开销，但多个客户端共享同一宿主，不再为 RA2A 创建第二个 writer 实例。
 
 ## 安装
 
-当前安装器从本仓库源码构建，因此目标设备需要 Go 1.24 或更高版本，并已安装 Codex。安装不需要 root/管理员权限；脚本会把 RA2A 安装到当前用户目录，注册登录自启动和崩溃重启服务。重复运行同一安装命令即为幂等升级。
+当前安装器从本仓库源码构建，因此目标设备需要 Go 1.24 或更高版本，并已安装 Codex。安装不需要 root/管理员权限；脚本会安装 RA2A、通过 `codex mcp add ra2a -- <binary> mcp` 注册两个 Agent 工具，并注册登录自启动和崩溃重启服务。重复运行同一安装命令即为幂等升级；卸载会同时移除 MCP 注册。
 
 macOS / Linux：
 
@@ -134,7 +152,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 `
   -Codex C:\absolute\path\to\codex.exe
 ```
 
-安装成功必须以 `status: running` 结束，并明确输出节点 ID、二进制路径和 PIN。服务管理方式如下：
+安装成功必须以 `status: running` 结束，并明确输出节点 ID、二进制路径和 PIN。可用 `codex mcp get ra2a` 检查 MCP 注册。服务管理方式如下：
 
 | 平台 | 用户级保活机制 | 状态检查 |
 |---|---|---|

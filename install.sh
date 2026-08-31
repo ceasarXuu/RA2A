@@ -53,6 +53,15 @@ RUNNER_PATH=$CONFIG_DIR/run.sh
 LOG_DIR=$CONFIG_DIR/logs
 
 uninstall_ra2a() {
+	MCP_CODEX=$CODEX_PATH
+	if [ -z "$MCP_CODEX" ] && command -v codex >/dev/null 2>&1; then
+		MCP_CODEX=$(command -v codex)
+	elif [ -z "$MCP_CODEX" ] && [ -x /Applications/ChatGPT.app/Contents/Resources/codex ]; then
+		MCP_CODEX=/Applications/ChatGPT.app/Contents/Resources/codex
+	fi
+	if [ -n "$MCP_CODEX" ] && [ -x "$MCP_CODEX" ]; then
+		"$MCP_CODEX" mcp remove ra2a >/dev/null 2>&1 || true
+	fi
   case "$OS_NAME" in
     Darwin)
       DOMAIN=gui/$(id -u)
@@ -112,6 +121,9 @@ mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$LOG_DIR"
 cp "$BUILD_DIR/ra2a" "$BIN_PATH.new"
 chmod 755 "$BIN_PATH.new"
 mv -f "$BIN_PATH.new" "$BIN_PATH"
+
+"$CODEX_PATH" mcp remove ra2a >/dev/null 2>&1 || true
+"$CODEX_PATH" mcp add ra2a -- "$BIN_PATH" mcp
 
 {
   printf '#!/bin/sh\nexec '

@@ -107,11 +107,25 @@ func TestRunServeStopsWhenContextIsCancelled(t *testing.T) {
 		"--pin", "A2B3C4",
 		"--id", "cli-serve-node",
 		"--name", "CLI Serve Node",
+		"--control-address", "127.0.0.1:0",
 	}, &output, fakeSourceFactory(nil))
 	if err != nil {
 		t.Fatalf("run serve: %v", err)
 	}
 	if !strings.Contains(output.String(), "node=ra2a://cli-serve-node status=running") {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestRunMCPExposesProductionTools(t *testing.T) {
+	input := strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}\n")
+	var output bytes.Buffer
+	if err := runMCP(context.Background(), []string{"--control-url", "http://127.0.0.1:1"}, input, &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"list_targets", "send_message"} {
+		if !strings.Contains(output.String(), name) {
+			t.Fatalf("output %q missing %q", output.String(), name)
+		}
 	}
 }

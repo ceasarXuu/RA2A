@@ -3,6 +3,7 @@ package appserverprobe
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -94,6 +95,10 @@ func TestRPCErrorIsReturned(t *testing.T) {
 	_, err := client.ListThreads(nil)
 	if err == nil || !strings.Contains(err.Error(), "bad params") {
 		t.Fatalf("error = %v", err)
+	}
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Code != -32602 || rpcErr.Message != "bad params" {
+		t.Fatalf("typed error = %#v", rpcErr)
 	}
 }
 

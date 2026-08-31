@@ -17,12 +17,16 @@ type response struct {
 	ID     json.RawMessage `json:"id"`
 	Method string          `json:"method"`
 	Result json.RawMessage `json:"result"`
-	Error  *rpcError       `json:"error"`
+	Error  *RPCError       `json:"error"`
 }
 
-type rpcError struct {
+type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+func (err *RPCError) Error() string {
+	return fmt.Sprintf("rpc error %d: %s", err.Code, err.Message)
 }
 
 type ThreadSummary struct {
@@ -186,7 +190,7 @@ func (client *Client) call(method string, params any) (json.RawMessage, error) {
 			continue
 		}
 		if message.Error != nil {
-			return nil, fmt.Errorf("%s: rpc error %d: %s", method, message.Error.Code, message.Error.Message)
+			return nil, fmt.Errorf("%s: %w", method, message.Error)
 		}
 		return message.Result, nil
 	}

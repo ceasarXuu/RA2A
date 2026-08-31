@@ -346,6 +346,14 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 - macOS/Linux 安装流程已在隔离 HOME 和伪服务管理器下完成自动化契约测试；真实 macOS 安装仍需在合并后执行，Windows/Linux 真实系统验收仍待完成。
 - 安装器当前从源码构建，运行期仍保持单一 RA2A 二进制，不引入数据库或额外常驻运行时。
 
+### 2026-09-01 第七阶段正式 MCP 闭环
+
+- 单一 `ra2a` 二进制新增 stdio MCP 模式，`tools/list` 严格只暴露 `list_targets` 与 `send_message`；安装、升级和卸载同步管理 Codex 全局 MCP 注册。
+- MCP 子进程通过仅绑定 `127.0.0.1:47321` 的本地控制面复用常驻 daemon；不会重复启动 mDNS、DTLS listener 或 Codex App Server。
+- `list_targets` 已经通过真实 mDNS/DTLS/CoAP 返回本机受管宿主的未归档 session；不可连接的陈旧 peer 会从工具结果过滤。
+- `send_message` 从实机 `_meta.threadId` 形成 `ra2a://mcp-e2e-local/caller-mcp-e2e`，自动生成 message ID，并完成正式 MCP → daemon → LAN node → App Server → 官方客户端闭环；目标回复 `RA2A_MCP_COMPLETE_OK`。
+- 错误语义已落地：active writer/turn 映射 `SESSION_BUSY`，结果未知超时映射 `DELIVERY_UNKNOWN` 且不重发，缺失来源 thread 映射 `CALLER_SESSION_UNKNOWN`。
+
 ## 14. 待确认决策与风险
 
 ### 实施前需用户确认

@@ -14,6 +14,12 @@ $BinaryPath = Join-Path $BinDir 'ra2a.exe'
 $LogDir = Join-Path $InstallRoot 'logs'
 
 if ($Uninstall) {
+	$McpCodex = $Codex
+	if (-not $McpCodex) {
+		$McpCommand = Get-Command codex -ErrorAction SilentlyContinue
+		if ($McpCommand) { $McpCodex = $McpCommand.Source }
+	}
+	if ($McpCodex) { & $McpCodex mcp remove ra2a 2>$null }
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $InstallRoot -Recurse -Force -ErrorAction SilentlyContinue
     Write-Output 'RA2A uninstalled for current user'
@@ -55,6 +61,10 @@ try {
 } finally {
     Pop-Location
 }
+
+& $Codex mcp remove ra2a 2>$null
+& $Codex mcp add ra2a -- $BinaryPath mcp
+if ($LASTEXITCODE -ne 0) { throw 'failed to register RA2A MCP with Codex' }
 
 $Arguments = 'serve --pin "{0}" --id "{1}" --name "{2}" --codex "{3}"' -f $Pin, $NodeId, $Name, $Codex
 $Action = New-ScheduledTaskAction -Execute $BinaryPath -Argument $Arguments

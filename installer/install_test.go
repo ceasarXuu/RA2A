@@ -19,14 +19,16 @@ func TestUnixInstallerCreatesUserService(t *testing.T) {
 	} {
 		t.Run(test.osName, func(t *testing.T) {
 			home, fakeBin := installerEnvironment(t, test.osName)
-			command := exec.Command("sh", "../install.sh", "--pin", "A2B3C4", "--node-id", "device-b", "--name", "Device B", "--codex", "/bin/sh")
+			codexPath := filepath.Join(fakeBin, "codex")
+			command := exec.Command("sh", "../install.sh", "--pin", "A2B3C4", "--node-id", "device-b", "--name", "Device B", "--codex", codexPath)
 			command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
 			output, err := command.CombinedOutput()
 			if err != nil {
 				t.Fatalf("install: %v\n%s", err, output)
 			}
 			assertFileContains(t, filepath.Join(home, test.servicePath), test.markers...)
-			assertFileContains(t, filepath.Join(home, ".config/ra2a/run.sh"), "A2B3C4", "device-b", "Device B", "/bin/sh")
+			assertFileContains(t, filepath.Join(home, ".config/ra2a/run.sh"), "A2B3C4", "device-b", "Device B", codexPath)
+			assertFileContains(t, filepath.Join(home, "codex-calls.log"), "mcp remove ra2a", "mcp add ra2a --", " mcp")
 			info, err := os.Stat(filepath.Join(home, ".local/bin/ra2a"))
 			if err != nil || info.Mode()&0o111 == 0 {
 				t.Fatalf("installed binary mode=%v err=%v", info, err)
@@ -40,7 +42,7 @@ func TestUnixInstallerCreatesUserService(t *testing.T) {
 
 func TestUnixInstallerRejectsInvalidPIN(t *testing.T) {
 	home, fakeBin := installerEnvironment(t, "Linux")
-	command := exec.Command("sh", "../install.sh", "--pin", "short", "--codex", "/bin/sh")
+	command := exec.Command("sh", "../install.sh", "--pin", "short", "--codex", filepath.Join(fakeBin, "codex"))
 	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
 	output, err := command.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "PIN must be exactly 6") {
@@ -50,7 +52,7 @@ func TestUnixInstallerRejectsInvalidPIN(t *testing.T) {
 
 func TestUnixInstallerDefaultsNameToConfiguredNodeID(t *testing.T) {
 	home, fakeBin := installerEnvironment(t, "Linux")
-	command := exec.Command("sh", "../install.sh", "--pin", "A2B3C4", "--node-id", "device-c", "--codex", "/bin/sh")
+	command := exec.Command("sh", "../install.sh", "--pin", "A2B3C4", "--node-id", "device-c", "--codex", filepath.Join(fakeBin, "codex"))
 	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("install: %v\n%s", err, output)
@@ -75,7 +77,7 @@ func TestPowerShellInstallerRegistersRestartingUserTask(t *testing.T) {
 	}
 	for _, marker := range []string{
 		"Register-ScheduledTask", "New-ScheduledTaskTrigger -AtLogOn", "RestartCount",
-		"go build", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "State -ne 'Running'", "Uninstall", "RA2A installed", "status: running",
+		"go build", "mcp add", "mcp remove", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "State -ne 'Running'", "Uninstall", "RA2A installed", "status: running",
 	} {
 		if !strings.Contains(script, marker) {
 			t.Errorf("install.ps1 missing %q", marker)
@@ -103,6 +105,7 @@ chmod 755 "$output"
 `)
 	writeExecutable(t, filepath.Join(fakeBin, "launchctl"), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(fakeBin, "systemctl"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(fakeBin, "codex"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/codex-calls.log\"\nexit 0\n")
 	return home, fakeBin
 }
 
