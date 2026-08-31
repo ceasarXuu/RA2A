@@ -11,8 +11,21 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 )
 
+func TestDefaultAppServerSocketUsesCodexHome(t *testing.T) {
+	t.Setenv("CODEX_HOME", "/state/codex")
+	if got := defaultAppServerSocket(); got != "/state/codex/app-server-control/app-server-control.sock" {
+		t.Fatalf("socket = %q", got)
+	}
+}
+
 type fakeSessionSource struct {
 	sessions []lannode.Session
+	messages chan deliveredMessage
+}
+
+type deliveredMessage struct {
+	target string
+	prompt string
 }
 
 func (source *fakeSessionSource) ListSessions(context.Context) ([]lannode.Session, error) {
@@ -21,8 +34,15 @@ func (source *fakeSessionSource) ListSessions(context.Context) ([]lannode.Sessio
 
 func (source *fakeSessionSource) Close() error { return nil }
 
+func (source *fakeSessionSource) SendMessage(_ context.Context, target, prompt string) error {
+	if source.messages != nil {
+		source.messages <- deliveredMessage{target: target, prompt: prompt}
+	}
+	return nil
+}
+
 func fakeSourceFactory(sessions []lannode.Session) sessionSourceFactory {
-	return func(context.Context, string, io.Writer) (sessionSource, error) {
+	return func(context.Context, string, string, io.Writer) (sessionSource, error) {
 		return &fakeSessionSource{sessions: sessions}, nil
 	}
 }
@@ -45,6 +65,35 @@ func TestRunSelfTestDiscoversAndCallsLocalNode(t *testing.T) {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("output %q does not contain %q", output.String(), want)
 		}
+	}
+}
+
+func TestRunSendDiscoversPeerAndDeliversMessage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var output bytes.Buffer
+	messages := make(chan deliveredMessage, 1)
+	factory := func(context.Context, string, string, io.Writer) (sessionSource, error) {
+		return &fakeSessionSource{messages: messages}, nil
+	}
+
+	err := run(ctx, []string{
+		"send",
+		"--pin", "A2B3C4",
+		"--id", "cli-send-node",
+		"--peer", "cli-send-node",
+		"--session", "thread-target",
+		"--message", "hello",
+	}, &output, factory)
+	if err != nil {
+		t.Fatalf("run send: %v", err)
+	}
+	got := <-messages
+	if got.target != "thread-target" || !strings.Contains(got.prompt, "from: ra2a://cli-send-node") || !strings.HasSuffix(got.prompt, "\n\nhello") {
+		t.Fatalf("delivered message = %#v", got)
+	}
+	if !strings.Contains(output.String(), "delivered=ra2a://cli-send-node/thread-target") {
+		t.Fatalf("output = %q", output.String())
 	}
 }
 

@@ -28,10 +28,11 @@ const (
 )
 
 type Config struct {
-	ID       string
-	Name     string
-	PIN      string
-	Sessions func(context.Context) ([]Session, error)
+	ID          string
+	Name        string
+	PIN         string
+	Sessions    func(context.Context) ([]Session, error)
+	SendMessage func(context.Context, Message) error
 }
 
 type Peer struct {
@@ -44,6 +45,13 @@ type Session struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`
 	Status string `json:"status"`
+}
+
+type Message struct {
+	TargetSessionID string `json:"targetSessionId"`
+	Text            string `json:"text"`
+	Source          string `json:"source,omitempty"`
+	MessageID       string `json:"messageId,omitempty"`
 }
 
 type sessionsResponse struct {
@@ -119,10 +127,35 @@ func (n *Node) startServer() error {
 		_ = listener.Close()
 		return fmt.Errorf("register sessions handler: %w", err)
 	}
+	if err := router.Handle("/v1/messages", mux.HandlerFunc(n.handleMessage)); err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("register message handler: %w", err)
+	}
 	n.listener = listener
 	n.server = coapdtls.NewServer(options.WithMux(router))
 	go func() { _ = n.server.Serve(listener) }()
 	return nil
+}
+
+func (n *Node) handleMessage(w mux.ResponseWriter, request *mux.Message) {
+	if request.Code() != codes.POST {
+		_ = w.SetResponse(codes.MethodNotAllowed, message.TextPlain, strings.NewReader("POST required"))
+		return
+	}
+	var incoming Message
+	if err := json.NewDecoder(request.Body()).Decode(&incoming); err != nil || incoming.TargetSessionID == "" || incoming.Text == "" {
+		_ = w.SetResponse(codes.BadRequest, message.TextPlain, strings.NewReader("targetSessionId and text are required"))
+		return
+	}
+	if n.config.SendMessage == nil {
+		_ = w.SetResponse(codes.ServiceUnavailable, message.TextPlain, strings.NewReader("message delivery unavailable"))
+		return
+	}
+	if err := n.config.SendMessage(request.Context(), incoming); err != nil {
+		_ = w.SetResponse(codes.InternalServerError, message.TextPlain, strings.NewReader(err.Error()))
+		return
+	}
+	_ = w.SetResponse(codes.Changed, message.TextPlain, nil)
 }
 
 func (n *Node) handleSessions(w mux.ResponseWriter, request *mux.Message) {
@@ -244,6 +277,34 @@ func (n *Node) ListSessions(ctx context.Context, peer Peer) ([]Session, error) {
 		return nil, fmt.Errorf("decode sessions from %s: %w", peer.ID, err)
 	}
 	return decoded.Sessions, nil
+}
+
+func (n *Node) SendMessage(ctx context.Context, peer Peer, outgoing Message) error {
+	payload, err := json.Marshal(outgoing)
+	if err != nil {
+		return fmt.Errorf("encode message: %w", err)
+	}
+	clientOptions := coapdtls.NewDTLSClientOptions(
+		dtls.WithPSK(func([]byte) ([]byte, error) { return n.key, nil }),
+		dtls.WithPSKIdentityHint([]byte("ra2a-client")),
+		dtls.WithCipherSuites(dtls.TLS_PSK_WITH_AES_128_GCM_SHA256),
+		dtls.WithExtendedMasterSecret(dtls.RequireExtendedMasterSecret),
+	)
+	client, err := coapdtls.Dial(peer.Address, clientOptions)
+	if err != nil {
+		return fmt.Errorf("connect to %s: %w", peer.ID, err)
+	}
+	defer client.Close()
+	response, err := client.Post(ctx, "/v1/messages", message.AppJSON, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("send message to %s: %w", peer.ID, err)
+	}
+	defer client.ReleaseMessage(response)
+	if response.Code() != codes.Changed {
+		body, _ := io.ReadAll(response.Body())
+		return fmt.Errorf("send message to %s: CoAP code %v: %s", peer.ID, response.Code(), strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func (n *Node) Close() {

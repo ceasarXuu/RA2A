@@ -51,15 +51,28 @@ go build ./cmd/...
 3. 对刚创建且已加载的 ephemeral thread 不能先 `thread/resume`；应直接 `turn/start`。
 4. `mcpServer/tool/call` 的当前实现会向下游 MCP 请求写入 `_meta.threadId`，但官方文档没有把该字段承诺为稳定兼容契约，因此正式 daemon 仍需启动时能力检测。
 
-## 尚未证明
+## 已否定与剩余验证
 
-- 外部 daemon 能否附着桌面 App 正在运行的同一个 stdio App Server 实例。当前 App 进程没有公开可附着的 socket 参数。
-- 外部 App Server 向持久化既有 thread 执行 `turn/start` 后，桌面 App UI 是否实时出现并跟踪该回合。
+- 已否定：外部 daemon 不能附着 Desktop 正在运行的私有 stdio App Server；第二个 App Server 会遇到 writer conflict。
+- 已否定：共享会话存储不等于实时 UI 同步，不能把外部写盘当成 Desktop 注入。
 - 由桌面 App 中的模型正常发起 MCP 工具调用时，是否与 `mcpServer/tool/call` 直调路径保持完全一致。
 - Windows、Linux 上的同等行为。
 
+## 2026-09-01 单宿主闭环结论
+
+后续实机实验否定了“第二个 App Server 可以写入普通 Desktop 本地 session”的假设：即使 `thread/list` 显示 `notLoaded`，`thread/resume` 仍可能返回 `already has an active writer`。OpenClaw、Codex Remote 等开源实现也采用独立宿主或明确规避跨进程 writer，而不是抢占 Desktop 的私有 stdio 宿主。
+
+正式实现已经改为官方单宿主模型：RA2A 连接 canonical Unix control socket；不存在时启动 `codex app-server --listen unix://`。Codex 客户端通过 `--remote unix://` 或 Codex App Remote/SSH 连接同一宿主。
+
+本机 Codex App 捆绑版本 `0.151.0-alpha.7.2` 的完整验证结果：
+
+1. `ra2a serve` 启动受管 App Server，并经真实 mDNS/DTLS/CoAP 返回 61 个 thread。
+2. 官方 `codex --remote unix://` 在该宿主创建持久 session `01a05904-edea-7743-a249-3c221e124fcf`。
+3. 第二个 RA2A 节点调用 `/v1/messages`，发送端返回 `delivered`。
+4. 官方客户端实时显示带 `from: ra2a://managed-sender-2` 的用户回合，并回复 `RA2A_MANAGED_HOST_OK`。
+
+因此 V1 的可写目标收敛为受管宿主 session。普通 Desktop 本地 session 只可作为共享存储中的只读发现结果，不得宣称可注入；正式代码不接入私有 `send_message_to_thread` bridge。
+
 ## Product Decision Delta
 
-本阶段没有新增产品语义。实验只补充了一项工程约束：会话“可发现”不等于“可恢复”，daemon 后续必须把不可恢复状态显式返回并拒绝注入；这属于已确认“发送失败需明确返回”的实现细化，不改变 PRD 决策。
-
-下一步需要临时修改当前用户的 Codex MCP 配置，并创建一个可在桌面 App 中观察的测试 session；这两项都会写入仓库以外的用户状态，执行前需要用户明确授权。
+本阶段新增了用户明确确认的产品边界：V1 使用 RA2A 受管的单一 App Server；普通 Desktop 本地 session 不属于正式可写目标。该决策已记录到 PRD 的 Confirmed Product Decisions。

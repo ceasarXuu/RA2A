@@ -7,29 +7,26 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
-	"sync"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/ceasarXuu/RA2A/internal/appserverprobe"
+	"github.com/ceasarXuu/RA2A/internal/codexhost"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 )
 
 type sessionSource interface {
 	ListSessions(context.Context) ([]lannode.Session, error)
+	SendMessage(context.Context, string, string) error
 	Close() error
 }
 
-type sessionSourceFactory func(context.Context, string, io.Writer) (sessionSource, error)
+type sessionSourceFactory func(context.Context, string, string, io.Writer) (sessionSource, error)
 
 type codexSessionSource struct {
-	command   *exec.Cmd
-	input     io.WriteCloser
-	client    *appserverprobe.Client
-	callMu    sync.Mutex
-	closeOnce sync.Once
+	host *codexhost.Host
 }
 
 func main() {
@@ -42,8 +39,8 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, output io.Writer, startSource sessionSourceFactory) error {
-	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve") {
-		return errors.New("usage: ra2a <selftest|serve> --pin <6-character-pin> [--id <node-id>] [--name <node-name>] [--codex <path>]")
+	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
+		return errors.New("usage: ra2a <selftest|serve|send> --pin <6-character-pin> [--id <node-id>] [--name <node-name>] [--codex <path>]")
 	}
 
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
@@ -52,6 +49,10 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	id := flags.String("id", "", "node ID")
 	name := flags.String("name", "", "node name")
 	codexPath := flags.String("codex", "codex", "path to the Codex CLI binary")
+	appServerSocket := flags.String("app-server-socket", defaultAppServerSocket(), "managed Codex App Server control socket")
+	peerID := flags.String("peer", "", "destination RA2A node ID (send only)")
+	targetSessionID := flags.String("session", "", "destination Codex session ID (send only)")
+	text := flags.String("message", "", "message text (send only)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -66,13 +67,16 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		*name = *id
 	}
 
-	source, err := startSource(ctx, *codexPath, os.Stderr)
+	source, err := startSource(ctx, *codexPath, *appServerSocket, os.Stderr)
 	if err != nil {
-		return fmt.Errorf("start Codex App Server: %w", err)
+		return fmt.Errorf("start managed Codex App Server: %w", err)
 	}
 	defer source.Close()
 	node, err := lannode.Start(ctx, lannode.Config{
 		ID: *id, Name: *name, PIN: *pin, Sessions: source.ListSessions,
+		SendMessage: func(ctx context.Context, message lannode.Message) error {
+			return source.SendMessage(ctx, message.TargetSessionID, formatIncomingMessage(message))
+		},
 	})
 	if err != nil {
 		return err
@@ -85,14 +89,33 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return nil
 	}
 
-	selfTestContext, cancel := context.WithTimeout(ctx, 15*time.Second)
+	operationContext, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	peer, err := node.WaitForPeer(selfTestContext, *id)
+	wantedPeer := *id
+	if args[0] == "send" {
+		if *peerID == "" || *targetSessionID == "" || *text == "" {
+			return errors.New("send requires --peer, --session, and --message")
+		}
+		wantedPeer = *peerID
+	}
+	peer, err := node.WaitForPeer(operationContext, wantedPeer)
 	if err != nil {
 		return err
 	}
+	if args[0] == "send" {
+		err := node.SendMessage(operationContext, peer, lannode.Message{
+			TargetSessionID: *targetSessionID,
+			Text:            *text,
+			Source:          "ra2a://" + *id,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "delivered=ra2a://%s/%s\n", peer.ID, *targetSessionID)
+		return nil
+	}
 	fmt.Fprintf(output, "discovered=ra2a://%s endpoint=%s\n", peer.ID, peer.Address)
-	sessions, err := node.ListSessions(selfTestContext, peer)
+	sessions, err := node.ListSessions(operationContext, peer)
 	if err != nil {
 		return err
 	}
@@ -100,41 +123,51 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	return nil
 }
 
-func startCodexSessionSource(ctx context.Context, codexPath string, stderr io.Writer) (sessionSource, error) {
-	command := exec.CommandContext(ctx, codexPath, "app-server")
-	input, err := command.StdinPipe()
+func formatIncomingMessage(message lannode.Message) string {
+	var prompt strings.Builder
+	prompt.WriteString("[RA2A message]\n")
+	if message.Source != "" {
+		fmt.Fprintf(&prompt, "from: %s\n", message.Source)
+	}
+	if message.MessageID != "" {
+		fmt.Fprintf(&prompt, "message-id: %s\n", message.MessageID)
+	}
+	prompt.WriteString("\n")
+	prompt.WriteString(message.Text)
+	return prompt.String()
+}
+
+func defaultAppServerSocket() string {
+	codexHome := os.Getenv("CODEX_HOME")
+	if codexHome == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return filepath.Join(".codex", "app-server-control", "app-server-control.sock")
+		}
+		codexHome = filepath.Join(userHome, ".codex")
+	}
+	return filepath.Join(codexHome, "app-server-control", "app-server-control.sock")
+}
+
+func startCodexSessionSource(ctx context.Context, codexPath, appServerSocket string, stderr io.Writer) (sessionSource, error) {
+	host, err := codexhost.Start(ctx, codexhost.Config{
+		CodexPath: codexPath, SocketPath: appServerSocket, Stderr: stderr,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("open App Server input: %w", err)
+		return nil, err
 	}
-	output, err := command.StdoutPipe()
-	if err != nil {
-		_ = input.Close()
-		return nil, fmt.Errorf("open App Server output: %w", err)
-	}
-	command.Stderr = stderr
-	if err := command.Start(); err != nil {
-		_ = input.Close()
-		return nil, fmt.Errorf("start %s app-server: %w", codexPath, err)
-	}
-	source := &codexSessionSource{
-		command: command,
-		input:   input,
-		client:  appserverprobe.New(output, input),
-	}
-	if err := source.client.Initialize(); err != nil {
-		_ = source.Close()
-		return nil, fmt.Errorf("initialize App Server: %w", err)
-	}
-	return source, nil
+	return &codexSessionSource{host: host}, nil
+}
+
+func (source *codexSessionSource) SendMessage(ctx context.Context, target, prompt string) error {
+	return source.host.SendMessage(ctx, target, prompt)
 }
 
 func (source *codexSessionSource) ListSessions(ctx context.Context) ([]lannode.Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	source.callMu.Lock()
-	defer source.callMu.Unlock()
-	threads, err := source.client.ListThreadSummaries()
+	threads, err := source.host.ListThreadSummaries(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -148,12 +181,5 @@ func (source *codexSessionSource) ListSessions(ctx context.Context) ([]lannode.S
 }
 
 func (source *codexSessionSource) Close() error {
-	source.closeOnce.Do(func() {
-		_ = source.input.Close()
-		if source.command.Process != nil {
-			_ = source.command.Process.Kill()
-		}
-		_ = source.command.Wait()
-	})
-	return nil
+	return source.host.Close()
 }

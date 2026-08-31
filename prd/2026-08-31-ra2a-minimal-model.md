@@ -2,7 +2,7 @@
 
 - 状态：Draft
 - 创建日期：2026-08-31
-- 更新日期：2026-08-31
+- 更新日期：2026-09-01
 - 发起人：用户
 - 原始诉求：让局域网内多台设备上的多个 Codex Agent 能发现彼此，并向指定 session 发送消息。
 - 产品权威：`Confirmed Product Decisions` 章节
@@ -12,9 +12,9 @@
 - 已确认：第一版仅面向 Codex App；局域网运行、多设备安装 Codex App 与本 MCP、自动发现、定向向指定 session 注入消息；服务轻量、低依赖、自愈，并支持 macOS、Linux、Windows 与 Agent 友好安装。
 - 已确认：向信任组公开全部未归档 session；忙碌时拒绝；消息不自动重试；成功只代表远端创建回合；用户级 daemon 由操作系统启动和保活。
 - 已确认：第一版使用长期共享的 6 位 PIN，并将 PIN 原样作为 DTLS-PSK；安全强度暂不作为目标，不实现密钥派生、一次性配对、密钥轮换或设备吊销生命周期。
-- 官方文档判定：接收端会话操作具备协议基础，但连接正在运行的 Codex App 实例、识别 MCP 调用来源 session 尚无公开稳定契约，因此整体为“条件可行”。
-- 实施前必须完成：Codex App 可见持久化 session 的注入与 UI 同步探针，并确认平台版本与架构基线、轻量资源预算。
-- 当前状态原因：首版产品交互和信任模型已经明确，第一阶段协议探针已取得条件性证据，但桌面 App UI 闭环、正常模型调用路径和跨平台行为尚待实机验证。
+- 已确认：V1 由 RA2A 管理唯一 Codex App Server，Codex App 通过 Remote/SSH 使用同一宿主；普通 Desktop 本地 session 不属于正式可写目标。
+- 官方文档与实机判定：受管单宿主的 session 枚举、恢复、启动回合和实时客户端同步已经通过；普通 Desktop 私有 stdio 宿主不可附着，第二宿主会触发 writer conflict。
+- 当前状态原因：macOS 单宿主闭环已经通过；正常 MCP 来源路径、Windows/Linux 实机、安装服务和轻量资源新基线仍待完成，因此 PRD 保持 Draft。
 
 ## 1. 一句话模型
 
@@ -62,21 +62,20 @@ ra2a://<node-id>/<session-id>
 每台设备只运行一个逻辑 RA2A Node：
 
 ```text
-Codex Session A
-      │ localhost MCP
-      ▼
-RA2A daemon A ── CoAP/DTLS ──► RA2A daemon B
-      ▲                            │
-      │ mDNS discovery             │ local App Server
-      └────────────────────────────▼
-                               Codex Session B
+Codex App / remote client A ── managed App Server A
+                                      │
+                               RA2A daemon A
+                                      │ mDNS + CoAP/DTLS
+                               RA2A daemon B
+                                      │
+Codex App / remote client B ── managed App Server B
 ```
 
 RA2A Node 只有三个职责：
 
 1. 对本机 Codex 暴露 MCP 工具。
 2. 发现局域网内其他 RA2A Node，并收发消息。
-3. 通过本机 Codex App Server 列出 session、恢复 session、启动新回合。
+3. 管理并连接唯一 Codex App Server，列出受管 session、恢复 session、启动新回合。
 
 不设置中心节点。所有节点对等。
 
@@ -268,10 +267,11 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 | PD15 | RA2A 以用户级 daemon 常驻 | 安装时注册并启动；登录时自动启动；崩溃时由操作系统重启 | Codex App 或单个 session 不得拥有 daemon 生命周期，也不得要求系统级/root 常驻服务 | 保证唯一实例、自愈和用户态 Codex 访问 | 每个 session 启动独立服务，或关闭 Codex App 后服务必然消失 | user-confirmed-direct: 对“安装脚本注册用户级 daemon，由操作系统启动并保活”回复“同意” | active |
 | PD16 | 第一版使用长期共享的 6 位 PIN | PIN 保存在各节点用户配置中并长期有效；其他设备通过线下复制相同 PIN 加入信任组 | 不得实现一次性 PIN、过期、PAKE 配对、自动轮换或逐设备吊销生命周期 | 用户要求第一版进一步简化密钥模型 | PIN 自动失效、每台设备产生不同长期密钥，或加入设备必须完成额外配对流程 | user-confirmed-direct: “比如生成一个 6位字符之类的”；“第一版做简单点，不要搞这种生命周期，就做成长期的” | active |
 | PD17 | 第一版暂不以安全强度为目标，6 位 PIN 原样作为 DTLS-PSK | 相同 PIN 必须握手成功，不同 PIN 必须握手失败；README 明示低强度边界 | 不得增加 KDF、证书、PAKE、应用层加密、轮换、限速或锁定机制 | 先以最小凭证跑通局域网通信闭环 | 安装或握手要求派生密钥、证书或额外配对步骤 | user-confirmed-direct: “进一步简化方案，暂不考虑安全问题，先跑通，有个简单的凭证能握手就行” | active |
+| PD18 | V1 使用 RA2A 受管的单一 Codex App Server | RA2A 与 Codex App Remote/SSH 客户端必须连接同一宿主；只把该宿主管理的 session 视为正式可写目标 | 不得启动第二个 writer 抢占普通 Desktop 本地 session，也不得依赖未公开的 Desktop 内部投递接口 | 成熟开源实现与实机均证明单宿主可以实时同步，跨进程 writer 不可协调 | 普通 Desktop 本地 thread 被宣称可写，或正式实现调用私有 `send_message_to_thread` bridge | user-confirmed-direct: 对“RA2A 托管单宿主模式，普通本地 session 注入仅作实验兼容层”的建议回复“确认” | active |
 
 ## 13. 官方文档可行性判定
 
-**结论：条件可行，尚不能判定为可直接实施。**
+**结论：受管单宿主模式在 macOS 实机可行；普通 Desktop 本地 session 注入不可行。**
 
 | 关键链路 | 官方文档依据 | 判定 |
 |---|---|---|
@@ -279,7 +279,8 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 | 枚举、恢复并读取 thread 状态 | App Server 提供 `thread/list`、`thread/read`、`thread/resume` 和 thread 状态 | 可行 |
 | 向空闲目标启动新回合 | App Server 提供 `turn/start`；`thread/inject_items` 只写入历史而不启动回合 | 可行 |
 | 忙碌 session 拒绝而非干预 | thread 状态包含 `active`，协议另有 `turn/steer`；第一版可在 `active` 时拒绝 | 可行 |
-| RA2A 连接正在运行的 Codex App 所使用的同一 App Server，并让 App UI 同步显示外部启动的回合 | App Server 支持本地 stdio、Unix socket 等传输，但 `codex app-server` 被官方标为实验性开发/调试接口；文档未承诺外部进程附着桌面 App 实例后的共享状态与 UI 行为 | 必须实机验证 |
+| RA2A 与 Codex 客户端连接同一受管 App Server，并实时显示外部启动的回合 | 官方提供 `--listen unix://` 和 `--remote unix://`；macOS 实机完成 LAN 注入并由官方客户端实时显示和回复 | macOS 已通过 |
+| 向普通 Desktop 本地 session 注入 | Desktop 本地 App Server 为私有 stdio，外部第二宿主恢复同一 thread 返回 active-writer conflict | V1 明确不支持 |
 | MCP 工具调用自动携带来源 session ID | 官方 MCP 文档未定义该元数据；实机使用 Codex App 自带 0.151.0-alpha.7.2 和全局 0.146.0 调用 `mcpServer/tool/call` 时，均观察到匹配目标的 `_meta.threadId` | 当前版本通过，正式实现仍需能力检测 |
 | 枚举 Codex App 创建的全部目标 thread | 独立 App Server 实机列出共享存储中的 58 个 thread，当前工作区命中 1 个；普通 thread 可恢复，但当前 paginated history thread 因 lineage cycle 不可恢复 | 部分可行，必须暴露不可恢复状态 |
 | macOS、Windows、Linux 部署 | 官方提供三端桌面 App；Linux 当前为 Preview，且仅列出特定发行版和 x64/ARM64 | 有条件可行 |
@@ -330,6 +331,14 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 - macOS 前台常驻单次测量中，RA2A 自身空闲 RSS 为 12,704 KiB，独立 Codex App Server 子进程为 55,904 KiB；读取 60 个 thread 的自检进程树观测峰值为 94,470,144 B。独立 App Server 是当前主要资源成本。
 - 本阶段未调用 `thread/resume` 或 `turn/start`，没有修改任何既有 session。独立 App Server 与桌面 App UI 的实时写入同步仍未证明，整体可行性结论保持“条件可行”。
 
+### 2026-09-01 第五阶段单宿主注入进展
+
+- 已验证普通 Desktop 本地 thread 即使显示为 `notLoaded`，第二 App Server 执行 `thread/resume` 仍可能返回 `already has an active writer`；该方向正式关闭。
+- RA2A 改为连接 canonical Unix control socket，不存在时启动并监管 `codex app-server --listen unix://`；不再接入 Desktop 私有 tools pipe。
+- 官方 `codex --remote unix://` 在同一宿主创建持久 session 后，第二 RA2A 节点经真实 mDNS、DTLS 和 CoAP `/v1/messages` 投递成功。
+- 官方客户端实时显示来源 `ra2a://managed-sender-2` 和正文，并完成回合回复 `RA2A_MANAGED_HOST_OK`；原 writer-conflict 症状在受支持的单宿主路径上消失。
+- 当前 Windows/Linux 仍只有交叉构建或协议证据，不能标记为实机通过。
+
 ## 14. 待确认决策与风险
 
 ### 实施前需用户确认
@@ -340,15 +349,15 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 ### 技术风险
 
 - `codex app-server` 当前被官方标为实验性接口，可能随 Codex 版本变化。首版必须固定已验证版本范围、启动时做能力检测，并在不兼容时明确失败。
-- Codex App 与外部客户端共享或连接同一个 App Server 时的并发和 UI 同步行为没有公开保证，必须用两个真实 session 验证。
+- 普通 Desktop 本地 App Server 不提供公开附着入口；V1 必须清晰区分受管 session 与只读可发现的本地 session。
 - 官方文档未规定 MCP 调用携带来源 thread ID。该能力是实现可回复地址的硬门槛，不能把源码中的当前行为当成产品契约。
 - Linux Codex App 当前为 Preview，平台支持结论必须绑定官方列出的发行版与架构，不能泛化为所有 Linux 环境。
 
 ## 15. 实施约束
 
 - 第一版只支持 Codex App，不为 CLI、IDE 扩展、云任务或其他 MCP Host 增加兼容代码。
-- 将 Codex App Server 作为候选且唯一允许的 session 集成边界；完成 Go/No-Go 探针前不进入完整实现，也不读取或修改 Codex 内部会话文件。
-- App Server 连接仅限本机 stdio 或本机 socket，不在局域网直接暴露；局域网只暴露带鉴权的 RA2A 接口。
+- 将 RA2A 受管的单一 Codex App Server 作为唯一正式可写的 session 集成边界；不读取或修改 Codex 内部会话文件。
+- App Server 连接仅限本机 control socket，不在局域网直接暴露；局域网只暴露带凭证握手的 RA2A 接口。
 - `turn/start` 用于真正触发接收 Agent；不使用只写模型历史但不启动回合的 `thread/inject_items`。
 - 先实现双机、单条文本、空闲 session 的端到端闭环，再考虑任何扩展。
 - 第一版最多一个可执行程序、一个配置文件、两个 MCP 工具、两个局域网接口。
