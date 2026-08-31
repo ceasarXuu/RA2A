@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -17,6 +18,7 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/control"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 	"github.com/ceasarXuu/RA2A/internal/mcpserver"
+	"github.com/ceasarXuu/RA2A/internal/operator"
 )
 
 type sessionSource interface {
@@ -57,6 +59,75 @@ func runMCP(ctx context.Context, args []string, input io.Reader, output io.Write
 }
 
 func run(ctx context.Context, args []string, output io.Writer, startSource sessionSourceFactory) error {
+	if len(args) == 0 {
+		return operator.SetupInteractive(os.Stdin, output)
+	}
+	if len(args) == 1 && args[0] == "version" {
+		fmt.Fprintln(output, operator.Version)
+		return nil
+	}
+	switch args[0] {
+	case "name", "pin":
+		value, err := commandValue(args, os.Stdin, output)
+		if err != nil {
+			return err
+		}
+		config, err := operator.Set(args[0], value)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "name: %s\nstatus: running\n", config.Name)
+		return nil
+	case "restart":
+		config, err := operator.Restart()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "name: %s\nstatus: running\n", config.Name)
+		return nil
+	case "setup":
+		flags := flag.NewFlagSet("setup", flag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		pin := flags.String("pin", "", "shared six-character PIN")
+		id := flags.String("node-id", "", "stable node ID")
+		name := flags.String("name", "", "display name")
+		codex := flags.String("codex", "", "Codex executable")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		config := operator.Config{NodeID: *id, Name: *name, PIN: *pin, Codex: *codex}
+		if err := operator.Setup(config); err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "name: %s\nPIN: %s\nstatus: running\n", config.Name, config.PIN)
+		return nil
+	case "update":
+		version, changed, deferred, err := operator.Update(ctx)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			fmt.Fprintf(output, "already up to date: %s\n", version)
+			return nil
+		}
+		if !deferred {
+			if _, err := operator.Restart(); err != nil {
+				return fmt.Errorf("updated to %s but restart failed: %w", version, err)
+			}
+		}
+		fmt.Fprintf(output, "updated: %s\nstatus: running\n", version)
+		return nil
+	case "daemon":
+		config, err := operator.Load()
+		if err != nil {
+			return fmt.Errorf("load daemon config: %w", err)
+		}
+		controlAddress := os.Getenv("RA2A_CONTROL_ADDRESS")
+		if controlAddress == "" {
+			controlAddress = "127.0.0.1:47321"
+		}
+		return run(ctx, []string{"serve", "--pin", config.PIN, "--id", config.NodeID, "--name", config.Name, "--codex", config.Codex, "--control-address", controlAddress}, output, startSource)
+	}
 	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
 		return errors.New("usage: ra2a <selftest|serve|send> --pin <6-character-pin> [--id <node-id>] [--name <node-name>] [--codex <path>]")
 	}
@@ -143,6 +214,21 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	}
 	fmt.Fprintf(output, "sessions=%d\nselftest=ok\n", len(sessions))
 	return nil
+}
+
+func commandValue(args []string, input io.Reader, output io.Writer) (string, error) {
+	if len(args) > 2 {
+		return "", fmt.Errorf("%s accepts at most one value", args[0])
+	}
+	if len(args) == 2 {
+		return args[1], nil
+	}
+	fmt.Fprintf(output, "%s: ", args[0])
+	value, err := bufio.NewReader(input).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
 }
 
 func formatIncomingMessage(message lannode.Message) string {

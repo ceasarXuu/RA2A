@@ -124,35 +124,51 @@ go run ./cmd/ra2a selftest \
 
 ## 安装
 
-当前安装器从本仓库源码构建，因此目标设备需要 Go 1.24 或更高版本，并已安装 Codex。安装不需要 root/管理员权限；脚本会安装 RA2A、通过 `codex mcp add ra2a -- <binary> mcp` 注册两个 Agent 工具，并注册登录自启动和崩溃重启服务。重复运行同一安装命令即为幂等升级；卸载会同时移除 MCP 注册。
+当前源码安装器需要 Go 1.24 或更高版本，并已安装 Codex；安装和运行都不需要 root/管理员权限。脚本只把 `ra2a` 安装到当前用户目录，首次执行 `ra2a` 才进行名称设置、MCP 注册和后台服务启动。运行时不依赖 Go。
 
 macOS / Linux：
 
 ```bash
 git clone https://github.com/ceasarXuu/RA2A.git
 cd RA2A
-./install.sh --pin A2B3C4 --node-id device-b --name "Device B"
+./install.sh
+export PATH="$HOME/.local/bin:$PATH"
+ra2a
 ```
 
-首台设备可以省略 `--pin`，脚本会生成并打印一个长期 6 位 PIN。其他设备安装时复制同一个 PIN：
+`ra2a` 会要求输入本机名称（直接回车使用主机名），生成并显示一个长期 6 位 PIN，确认 `status: running` 后立即退出，不会占用终端。请保存该 PIN；其他设备执行安装后，用 `ra2a pin <PIN>` 加入同一信任组。
+
+Agent 或自动化可以一次性无交互安装并启动：
 
 ```bash
-./install.sh --node-id first-device
+./install.sh \
+  --pin A2B3C4 \
+  --node-id device-b \
+  --name "Device B" \
+  --codex /Applications/ChatGPT.app/Contents/Resources/codex
 ```
 
-如果 `codex` 不在 `PATH`，增加 `--codex /absolute/path/to/codex`。macOS 安装器也会自动检查 Codex App 内置的 `/Applications/ChatGPT.app/Contents/Resources/codex`。
+如果 `codex` 不在 `PATH`，首次引导会自动检查 macOS Codex App 内置路径；无交互安装需通过 `--codex` 明确指定。
 
 Windows PowerShell：
 
 ```powershell
 git clone https://github.com/ceasarXuu/RA2A.git
 cd RA2A
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+$env:Path = "$env:LOCALAPPDATA\RA2A;$env:Path"
+ra2a
+```
+
+Windows 无交互安装：
+
+```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1 `
   -Pin A2B3C4 -NodeId device-b -Name "Device B" `
   -Codex C:\absolute\path\to\codex.exe
 ```
 
-安装成功必须以 `status: running` 结束，并明确输出节点 ID、二进制路径和 PIN。可用 `codex mcp get ra2a` 检查 MCP 注册。服务管理方式如下：
+首次引导或无交互安装成功必须以 `status: running` 结束。可用 `codex mcp get ra2a` 检查 MCP 注册。服务管理方式如下：
 
 | 平台 | 用户级保活机制 | 状态检查 |
 |---|---|---|
@@ -162,14 +178,26 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 `
 
 macOS 日志位于 `~/.config/ra2a/logs/`；Linux 可使用 `journalctl --user -u ra2a.service`。安装失败时，先确认 `go version`、Codex 路径和对应用户级服务管理器可用，再原样重跑安装命令。
 
-升级：
+## 日常命令
+
+| 命令 | 行为 |
+|---|---|
+| `ra2a` | 首次运行进入引导；后续只确认服务正在运行并退出 |
+| `ra2a restart` | 重启后台服务 |
+| `ra2a name [名称]` | 设置设备名称；省略参数时交互输入 |
+| `ra2a pin [6位PIN]` | 设置长期共享 PIN；省略参数时交互输入 |
+| `ra2a version` | 输出当前版本，当前为 `v0.0.3` |
+| `ra2a update` | 从 GitHub 最新正式 Release 下载当前平台产物，校验 SHA-256 后更新并重启 |
+
+源码安装阶段也可通过拉取仓库后重新执行脚本升级：
 
 ```bash
 git pull --ff-only
-./install.sh --pin <原PIN> --node-id <原节点ID>
+./install.sh
+ra2a restart
 ```
 
-Windows 对应重新运行 `install.ps1` 并传入原参数。卸载：
+已有配置不会被安装脚本覆盖。Windows 对应重新运行 `install.ps1`。卸载：
 
 ```bash
 ./install.sh --uninstall
@@ -178,5 +206,18 @@ Windows 对应重新运行 `install.ps1` 并传入原参数。卸载：
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
 ```
+
+## GitHub Release 发版
+
+GitHub Release 是正式发版主流程。程序版本由 `ra2a version` 输出；推送同名 `v*` tag 后，[Release 工作流](.github/workflows/release.yml) 会先校验 tag 与程序版本完全一致，再构建并发布 macOS、Linux、Windows 的 amd64/arm64 产物和逐文件 SHA-256 校验。版本不一致或任一构建失败时不会发布。
+
+维护者发布当前版本的标准命令：
+
+```bash
+git tag v0.0.3
+git push origin v0.0.3
+```
+
+不要重复使用或移动已发布 tag；下一版应先修改程序版本并通过测试，再创建对应的新 tag。`ra2a update` 只消费 GitHub 的 latest 正式 Release，不使用草稿或预发布版本。
 
 Windows 安装脚本和 Windows socket URL 已完成静态契约及交叉编译验证，但尚未在真实 Windows Codex App 环境完成端到端验收；当前已实机通过的平台仍是 macOS。

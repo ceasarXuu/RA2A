@@ -79,7 +79,7 @@ RA2A Node 只有三个职责：
 
 不设置中心节点。所有节点对等。
 
-每个操作系统用户只运行一个 RA2A daemon。安装脚本将其注册为用户级后台服务并立即启动；后续由 `launchd`、`systemd --user` 或 Windows 用户登录任务负责开机登录启动和崩溃重启。Codex App 只连接本机 MCP 端点，不负责 daemon 生命周期。
+每个操作系统用户只运行一个 RA2A daemon。首次执行 `ra2a` 引导时将其注册为用户级后台服务并立即启动；后续由 `launchd`、`systemd --user` 或 Windows 用户登录任务负责开机登录启动和崩溃重启。Codex App 只连接本机 MCP 端点，不负责 daemon 生命周期。
 
 核心服务必须保持轻量：不引入数据库，不依赖常驻的第三方基础服务，优先交付单一可执行程序。除 Codex 本身外，应尽量避免要求用户预装语言运行时或包管理器。
 
@@ -241,7 +241,7 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 12. Given 第一版兼容矩阵，then 仅将 Codex App 标记为受支持的 MCP Host，不包含 CLI、IDE 扩展、云任务或其他客户端。
 13. Given 信任组内存在多个未归档 session，when 对端调用 `list_targets`，then 返回这些 session 的 ID、标题和状态，不返回已归档 session。
 14. Given 安装成功或用户重新登录，then 用户级 RA2A daemon 自动运行；given daemon 异常退出，then 操作系统服务管理器自动重启它。
-15. Given 首台设备未提供 PIN，when 完成安装，then 生成并明确显示一个长期 6 位 PIN；given 新设备使用相同 PIN 安装，then 它加入同一信任组且重启后配置保持不变。
+15. Given 首台设备尚未配置，when 首次执行 `ra2a` 完成引导，then 生成并明确显示一个长期 6 位 PIN；given 新设备设置相同 PIN，then 它加入同一信任组且重启后配置保持不变。
 
 ## 12. Confirmed Product Decisions
 
@@ -264,7 +264,7 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 | PD12 | 忙碌 session 拒绝新消息 | 返回 `SESSION_BUSY`，不修改当前回合 | 不得排队或通过 `turn/steer` 干预当前任务 | 避免并发消息改变正在执行的工作 | 忙碌 session 接收、排队或合并了远端消息 | user-confirmed-direct: 对“忙碌时直接返回 `SESSION_BUSY`”回复“同意” | active |
 | PD13 | 结果未知的消息不自动重试 | 超时返回 `DELIVERY_UNKNOWN`；发现和连接继续自愈 | 不得因超时自动重发消息 | 避免重复创建 Codex 回合 | 超时后 daemon 自动再次投递同一消息 | user-confirmed-direct: 对“网络超时不自动重试”回复“同意” | active |
 | PD14 | 发送成功只表示远端创建回合 | `accepted` 在远端创建回合后返回；回复使用独立消息 | 不得把 accepted 表述为 Agent 已完成，也不得同步等待结果 | 保持异步消息模型 | HTTP 请求等待 Agent 完成，或 accepted 被解释为任务完成 | user-confirmed-direct: 对“成功只表示远端已经创建 Codex 回合”回复“同意” | active |
-| PD15 | RA2A 以用户级 daemon 常驻 | 安装时注册并启动；登录时自动启动；崩溃时由操作系统重启 | Codex App 或单个 session 不得拥有 daemon 生命周期，也不得要求系统级/root 常驻服务 | 保证唯一实例、自愈和用户态 Codex 访问 | 每个 session 启动独立服务，或关闭 Codex App 后服务必然消失 | user-confirmed-direct: 对“安装脚本注册用户级 daemon，由操作系统启动并保活”回复“同意” | active |
+| PD15 | RA2A 以用户级 daemon 常驻 | 首次 `ra2a` 引导时注册并启动；登录时自动启动；崩溃时由操作系统重启 | Codex App 或单个 session 不得拥有 daemon 生命周期，也不得要求系统级/root 常驻服务 | 保证唯一实例、自愈和用户态 Codex 访问 | 每个 session 启动独立服务，或关闭 Codex App 后服务必然消失 | user-confirmed-direct: 对新交互方案及确认问题回复“都确认” | active |
 | PD16 | 第一版使用长期共享的 6 位 PIN | PIN 保存在各节点用户配置中并长期有效；其他设备通过线下复制相同 PIN 加入信任组 | 不得实现一次性 PIN、过期、PAKE 配对、自动轮换或逐设备吊销生命周期 | 用户要求第一版进一步简化密钥模型 | PIN 自动失效、每台设备产生不同长期密钥，或加入设备必须完成额外配对流程 | user-confirmed-direct: “比如生成一个 6位字符之类的”；“第一版做简单点，不要搞这种生命周期，就做成长期的” | active |
 | PD17 | 第一版暂不以安全强度为目标，6 位 PIN 原样作为 DTLS-PSK | 相同 PIN 必须握手成功，不同 PIN 必须握手失败；README 明示低强度边界 | 不得增加 KDF、证书、PAKE、应用层加密、轮换、限速或锁定机制 | 先以最小凭证跑通局域网通信闭环 | 安装或握手要求派生密钥、证书或额外配对步骤 | user-confirmed-direct: “进一步简化方案，暂不考虑安全问题，先跑通，有个简单的凭证能握手就行” | active |
 | PD18 | V1 使用 RA2A 受管的单一 Codex App Server | RA2A 与 Codex App Remote/SSH 客户端必须连接同一宿主；只把该宿主管理的 session 视为正式可写目标 | 不得启动第二个 writer 抢占普通 Desktop 本地 session，也不得依赖未公开的 Desktop 内部投递接口 | 成熟开源实现与实机均证明单宿主可以实时同步，跨进程 writer 不可协调 | 普通 Desktop 本地 thread 被宣称可写，或正式实现调用私有 `send_message_to_thread` bridge | user-confirmed-direct: 对“RA2A 托管单宿主模式，普通本地 session 注入仅作实验兼容层”的建议回复“确认” | active |
