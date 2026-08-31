@@ -154,7 +154,11 @@ func TestRunRestartReportsRunning(t *testing.T) {
 
 func TestConfiguredRunOnlyChecksRunningService(t *testing.T) {
 	home := configuredOperatorHome(t)
-	writeTestExecutable(t, filepath.Join(home, "bin", "launchctl"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/service-calls.log\"\nexit 0\n")
+	serviceCommand := "launchctl"
+	if runtime.GOOS == "linux" {
+		serviceCommand = "systemctl"
+	}
+	writeTestExecutable(t, filepath.Join(home, "bin", serviceCommand), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/service-calls.log\"\nexit 0\n")
 	var output bytes.Buffer
 	if err := run(context.Background(), nil, &output, fakeSourceFactory(nil)); err != nil {
 		t.Fatalf("configured run: %v", err)
