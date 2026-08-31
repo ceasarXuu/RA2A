@@ -20,7 +20,7 @@ import (
 )
 
 const DefaultEndpoint = "http://127.0.0.1:47321"
-const targetProbeTimeout = 3 * time.Second
+const targetProbeTimeout = 8 * time.Second
 
 var ErrInvalidRequest = errors.New("INVALID_REQUEST")
 var ErrTargetNotFound = errors.New("TARGET_NOT_FOUND")

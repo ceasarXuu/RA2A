@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -128,6 +129,23 @@ func TestListThreadSummariesFollowsPagination(t *testing.T) {
 	params := requestList[1]["params"].(map[string]any)
 	if params["cursor"] != "page-2" {
 		t.Fatalf("second page cursor = %#v", params["cursor"])
+	}
+}
+
+func TestListThreadSummariesBoundsPreviewTitleSize(t *testing.T) {
+	preview := strings.Repeat("你", 100)
+	response := fmt.Sprintf(
+		`{"jsonrpc":"2.0","id":1,"result":{"data":[{"id":"thread-1","preview":%q,"status":{"type":"notLoaded"}}],"nextCursor":null}}`,
+		preview,
+	)
+	client := New(strings.NewReader(response), &bytes.Buffer{})
+
+	threads, err := client.ListThreadSummaries()
+	if err != nil {
+		t.Fatalf("list summaries: %v", err)
+	}
+	if got := threads[0].Title; len(got) > 160 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("bounded title = %q (%d bytes)", got, len(got))
 	}
 }
 

@@ -15,6 +15,7 @@ type fakeLAN struct {
 	peers    []lannode.Peer
 	sessions map[string][]lannode.Session
 	blocked  map[string]bool
+	delays   map[string]time.Duration
 	sentPeer lannode.Peer
 	sent     lannode.Message
 	sendErr  error
@@ -34,11 +35,35 @@ func (lan *fakeLAN) ListSessions(ctx context.Context, peer lannode.Peer) ([]lann
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
+	if delay := lan.delays[peer.ID]; delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	sessions, ok := lan.sessions[peer.ID]
 	if !ok {
 		return nil, errors.New("offline")
 	}
 	return sessions, nil
+}
+
+func TestCoordinatorAllowsSlowCodexSessionEnumeration(t *testing.T) {
+	lan := &fakeLAN{
+		peers:  []lannode.Peer{{ID: "remote", Name: "Remote"}},
+		delays: map[string]time.Duration{"remote": 3200 * time.Millisecond},
+		sessions: map[string][]lannode.Session{
+			"remote": {{ID: "thread-1", Title: "Ready", Status: "idle"}},
+		},
+	}
+	targets, err := NewCoordinator("local", lan).ListTargets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 || targets[0].ID != "remote" {
+		t.Fatalf("targets = %#v, want slow remote peer", targets)
+	}
 }
 
 func TestCoordinatorReturnsReachableTargetsWhenAnotherPeerHangs(t *testing.T) {

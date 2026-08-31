@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/libp2p/zeroconf/v2"
 	"github.com/pion/dtls/v3"
@@ -20,12 +21,14 @@ import (
 	"github.com/plgd-dev/go-coap/v3/message/codes"
 	"github.com/plgd-dev/go-coap/v3/mux"
 	coapnet "github.com/plgd-dev/go-coap/v3/net"
+	"github.com/plgd-dev/go-coap/v3/net/blockwise"
 	"github.com/plgd-dev/go-coap/v3/options"
 )
 
 const (
-	serviceName = "_ra2a._udp"
-	domain      = "local."
+	serviceName             = "_ra2a._udp"
+	domain                  = "local."
+	sessionBlockwiseTimeout = 30 * time.Second
 )
 
 type Config struct {
@@ -133,7 +136,10 @@ func (n *Node) startServer() error {
 		return fmt.Errorf("register message handler: %w", err)
 	}
 	n.listener = listener
-	n.server = coapdtls.NewServer(options.WithMux(router))
+	n.server = coapdtls.NewServer(
+		options.WithMux(router),
+		options.WithBlockwise(true, blockwise.SZX1024, sessionBlockwiseTimeout),
+	)
 	go func() { _ = n.server.Serve(listener) }()
 	return nil
 }

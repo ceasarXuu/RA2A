@@ -35,6 +35,8 @@ type ThreadSummary struct {
 	Status string
 }
 
+const maxThreadTitleBytes = 160
+
 func New(input io.Reader, output io.Writer) *Client {
 	return &Client{decoder: json.NewDecoder(input), encoder: json.NewEncoder(output)}
 }
@@ -106,7 +108,7 @@ func (client *Client) ListThreadSummaries() ([]ThreadSummary, error) {
 				title = thread.Preview
 			}
 			summaries = append(summaries, ThreadSummary{
-				ID: thread.ID, Title: title, Status: thread.Status.Type,
+				ID: thread.ID, Title: boundedTitle(title), Status: thread.Status.Type,
 			})
 		}
 		if page.NextCursor == nil {
@@ -114,6 +116,22 @@ func (client *Client) ListThreadSummaries() ([]ThreadSummary, error) {
 		}
 		cursor = page.NextCursor
 	}
+}
+
+func boundedTitle(title string) string {
+	if len(title) <= maxThreadTitleBytes {
+		return title
+	}
+	const suffix = "…"
+	limit := maxThreadTitleBytes - len(suffix)
+	end := 0
+	for offset := range title {
+		if offset > limit {
+			break
+		}
+		end = offset
+	}
+	return title[:end] + suffix
 }
 
 func (client *Client) StartTurn(threadID, text string) (json.RawMessage, error) {
