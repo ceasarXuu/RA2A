@@ -13,8 +13,8 @@
 - 已确认：向信任组公开全部未归档 session；忙碌时拒绝；消息不自动重试；成功只代表远端创建回合；用户级 daemon 由操作系统启动和保活。
 - 已确认：第一版使用长期共享的 6 位 PIN，不实现一次性配对、密钥轮换或设备吊销生命周期。
 - 官方文档判定：接收端会话操作具备协议基础，但连接正在运行的 Codex App 实例、识别 MCP 调用来源 session 尚无公开稳定契约，因此整体为“条件可行”。
-- 实施前必须完成：Codex App 本机集成探针，并确认平台版本与架构基线、轻量资源预算。
-- 当前状态原因：首版产品交互和信任模型已经明确，但两项核心集成能力仍待实机验证，平台与资源发布门槛尚未确定。
+- 实施前必须完成：Codex App 可见持久化 session 的注入与 UI 同步探针，并确认平台版本与架构基线、轻量资源预算。
+- 当前状态原因：首版产品交互和信任模型已经明确，第一阶段协议探针已取得条件性证据，但桌面 App UI 闭环、正常模型调用路径和跨平台行为尚待实机验证。
 
 ## 1. 一句话模型
 
@@ -279,8 +279,8 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 | 向空闲目标启动新回合 | App Server 提供 `turn/start`；`thread/inject_items` 只写入历史而不启动回合 | 可行 |
 | 忙碌 session 拒绝而非干预 | thread 状态包含 `active`，协议另有 `turn/steer`；第一版可在 `active` 时拒绝 | 可行 |
 | RA2A 连接正在运行的 Codex App 所使用的同一 App Server，并让 App UI 同步显示外部启动的回合 | App Server 支持本地 stdio、Unix socket 等传输，但 `codex app-server` 被官方标为实验性开发/调试接口；文档未承诺外部进程附着桌面 App 实例后的共享状态与 UI 行为 | 必须实机验证 |
-| MCP 工具调用自动携带来源 session ID | 官方 MCP 文档未定义调用方 thread/session ID 元数据 | 必须实机验证 |
-| 枚举 Codex App 创建的全部目标 thread | `thread/list` 支持来源过滤，但文档没有明确桌面 App thread 的来源类型与默认枚举行为 | 必须实机验证 |
+| MCP 工具调用自动携带来源 session ID | 官方 MCP 文档未定义该元数据；实机使用 Codex App 自带 0.151.0-alpha.7.2 和全局 0.146.0 调用 `mcpServer/tool/call` 时，均观察到匹配目标的 `_meta.threadId` | 当前版本通过，正式实现仍需能力检测 |
+| 枚举 Codex App 创建的全部目标 thread | 独立 App Server 实机列出共享存储中的 58 个 thread，当前工作区命中 1 个；普通 thread 可恢复，但当前 paginated history thread 因 lineage cycle 不可恢复 | 部分可行，必须暴露不可恢复状态 |
 | macOS、Windows、Linux 部署 | 官方提供三端桌面 App；Linux 当前为 Preview，且仅列出特定发行版和 x64/ARM64 | 有条件可行 |
 
 ### 实施前 Go/No-Go 探针
@@ -294,6 +294,13 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 5. 在 macOS、Windows 和官方支持的 Linux App 环境重复核心闭环；记录 App/Codex 版本及差异。
 
 只有第 1～4 项通过，首版核心闭环才可判为 **Go**。第 1 项失败意味着自动回复地址无法按当前双工具模型实现；第 2 或第 3 项失败意味着公开接口不足以向正在使用的 Codex App session 投递消息，必须回到产品决策层重新选择交互契约，不得直接依赖未公开内部实现。
+
+### 2026-08-31 第一阶段实验进展
+
+- 已通过：独立 App Server 枚举共享会话存储；普通 thread 恢复；`mcpServer/tool/call` 向下游 MCP 注入匹配目标的 `_meta.threadId`；ephemeral thread 的 `turn/start` 返回 `inProgress`。
+- 已发现限制：当前长任务的 paginated history 存在 lineage cycle，独立 App Server 无法恢复；并非所有未归档 thread 都可投递。
+- 尚未通过：桌面 App 正常模型调用 MCP 的路径；既有持久化 thread 注入后的 App UI 同步；Windows/Linux 实机。
+- 证据与复现方式见 [`experiments/README.md`](../experiments/README.md)。
 
 ## 14. 待确认决策与风险
 
