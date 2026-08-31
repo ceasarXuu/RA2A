@@ -159,7 +159,17 @@ if [ "$OS_NAME" = Darwin ]; then
 EOF
   DOMAIN=gui/$(id -u)
   launchctl bootout "$DOMAIN/com.ra2a.daemon" >/dev/null 2>&1 || true
-  launchctl bootstrap "$DOMAIN" "$SERVICE_PATH"
+  BOOTSTRAP_ATTEMPT=1
+  while [ "$BOOTSTRAP_ATTEMPT" -lt 5 ]; do
+    if launchctl bootstrap "$DOMAIN" "$SERVICE_PATH" 2>/dev/null; then
+      break
+    fi
+    BOOTSTRAP_ATTEMPT=$((BOOTSTRAP_ATTEMPT + 1))
+    sleep 1
+  done
+  if [ "$BOOTSTRAP_ATTEMPT" -eq 5 ]; then
+    launchctl bootstrap "$DOMAIN" "$SERVICE_PATH"
+  fi
   launchctl kickstart -k "$DOMAIN/com.ra2a.daemon"
   launchctl print "$DOMAIN/com.ra2a.daemon" >/dev/null
 else

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 )
 
 const DefaultEndpoint = "http://127.0.0.1:47321"
+const targetProbeTimeout = 3 * time.Second
 
 var ErrInvalidRequest = errors.New("INVALID_REQUEST")
 var ErrTargetNotFound = errors.New("TARGET_NOT_FOUND")
@@ -58,17 +60,42 @@ func NewCoordinator(localID string, lan LAN) *Coordinator {
 }
 
 func (coordinator *Coordinator) ListTargets(ctx context.Context) ([]Target, error) {
-	targets := make([]Target, 0)
-	for _, peer := range coordinator.lan.Peers() {
-		sessions, err := coordinator.lan.ListSessions(ctx, peer)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			continue
-		}
-		targets = append(targets, Target{ID: peer.ID, Name: peer.Name, Sessions: sessions})
+	type probeResult struct {
+		target Target
+		err    error
 	}
+	peers := coordinator.lan.Peers()
+	results := make(chan probeResult, len(peers))
+	probeCtx, cancel := context.WithTimeout(ctx, targetProbeTimeout)
+	defer cancel()
+	for _, peer := range peers {
+		go func(peer lannode.Peer) {
+			sessions, err := coordinator.lan.ListSessions(probeCtx, peer)
+			results <- probeResult{target: Target{ID: peer.ID, Name: peer.Name, Sessions: sessions}, err: err}
+		}(peer)
+	}
+	targets := make([]Target, 0, len(peers))
+	for range peers {
+		select {
+		case result := <-results:
+			if result.err == nil {
+				targets = append(targets, result.target)
+			}
+		case <-probeCtx.Done():
+			for {
+				select {
+				case result := <-results:
+					if result.err == nil {
+						targets = append(targets, result.target)
+					}
+				default:
+					sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
+					return targets, nil
+				}
+			}
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
 	return targets, nil
 }
 

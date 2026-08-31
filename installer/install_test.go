@@ -70,6 +70,32 @@ func TestUnixInstallerGeneratesSixCharacterPINWhenOmitted(t *testing.T) {
 	t.Fatalf("installer did not print generated PIN:\n%s", output)
 }
 
+func TestUnixInstallerRetriesLaunchdBootstrapDuringReinstall(t *testing.T) {
+	home, fakeBin := installerEnvironment(t, "Darwin")
+	writeExecutable(t, filepath.Join(fakeBin, "sleep"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(fakeBin, "launchctl"), `#!/bin/sh
+if [ "$1" = "bootstrap" ]; then
+  attempts_file="$HOME/bootstrap-attempts"
+  attempts=0
+  [ ! -f "$attempts_file" ] || attempts=$(cat "$attempts_file")
+  attempts=$((attempts + 1))
+  printf '%s\n' "$attempts" >"$attempts_file"
+  [ "$attempts" -gt 1 ] || exit 5
+fi
+exit 0
+`)
+	command := exec.Command("sh", "../install.sh", "--pin", "A2B3C4", "--node-id", "device-a", "--codex", filepath.Join(fakeBin, "codex"))
+	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("install should recover from transient bootstrap failure: %v\n%s", err, output)
+	}
+	attempts, err := os.ReadFile(filepath.Join(home, "bootstrap-attempts"))
+	if err != nil || strings.TrimSpace(string(attempts)) != "2" {
+		t.Fatalf("bootstrap attempts = %q, err=%v; want 2", attempts, err)
+	}
+}
+
 func TestUnixInstallerDefaultsNameToConfiguredNodeID(t *testing.T) {
 	home, fakeBin := installerEnvironment(t, "Linux")
 	command := exec.Command("sh", "../install.sh", "--pin", "A2B3C4", "--node-id", "device-c", "--codex", filepath.Join(fakeBin, "codex"))

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 )
@@ -13,6 +14,7 @@ import (
 type fakeLAN struct {
 	peers    []lannode.Peer
 	sessions map[string][]lannode.Session
+	blocked  map[string]bool
 	sentPeer lannode.Peer
 	sent     lannode.Message
 	sendErr  error
@@ -27,12 +29,35 @@ func (lan *fakeLAN) Peer(id string) (lannode.Peer, bool) {
 	}
 	return lannode.Peer{}, false
 }
-func (lan *fakeLAN) ListSessions(_ context.Context, peer lannode.Peer) ([]lannode.Session, error) {
+func (lan *fakeLAN) ListSessions(ctx context.Context, peer lannode.Peer) ([]lannode.Session, error) {
+	if lan.blocked[peer.ID] {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	sessions, ok := lan.sessions[peer.ID]
 	if !ok {
 		return nil, errors.New("offline")
 	}
 	return sessions, nil
+}
+
+func TestCoordinatorReturnsReachableTargetsWhenAnotherPeerHangs(t *testing.T) {
+	lan := &fakeLAN{
+		peers:   []lannode.Peer{{ID: "blocked", Name: "Blocked"}, {ID: "online", Name: "Online"}},
+		blocked: map[string]bool{"blocked": true},
+		sessions: map[string][]lannode.Session{
+			"online": {{ID: "thread-1", Title: "Ready", Status: "idle"}},
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	targets, err := NewCoordinator("local", lan).ListTargets(ctx)
+	if err != nil {
+		t.Fatalf("healthy peer should survive blocked peer: %v", err)
+	}
+	if len(targets) != 1 || targets[0].ID != "online" {
+		t.Fatalf("targets = %#v, want online peer", targets)
+	}
 }
 func (lan *fakeLAN) SendMessage(_ context.Context, peer lannode.Peer, message lannode.Message) error {
 	lan.sentPeer, lan.sent = peer, message
