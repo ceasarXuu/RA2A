@@ -4,6 +4,8 @@
 - 产品权威：[RA2A 极简 PRD](../prd/2026-08-31-ra2a-minimal-model.md#12-confirmed-product-decisions)
 - 实验目标：只验证会直接决定 RA2A 能否成立的 Codex App 集成假设，不实现 daemon、mDNS 或 PIN 通信。
 
+局域网发现与安全连接的独立开源方案实验见 [`network/README.md`](network/README.md)。
+
 ## 模块
 
 | 模块 | 位置 | 单一职责 | 默认副作用 |

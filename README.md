@@ -8,6 +8,7 @@ RA2A 是一个运行在局域网内的 MCP，目标是让多台设备上的多�
 
 - [RA2A 局域网 Agent 通信（极简闭环）](prd/2026-08-31-ra2a-minimal-model.md)
 - [Codex App 最小可行性实验](experiments/README.md)
+- [局域网发现与安全连接开源方案实验](experiments/network/README.md)
 
 ## 设计约束
 

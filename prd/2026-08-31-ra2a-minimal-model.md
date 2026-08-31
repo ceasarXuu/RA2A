@@ -302,6 +302,15 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 - 尚未通过：桌面 App 正常模型调用 MCP 的路径；既有持久化 thread 注入后的 App UI 同步；Windows/Linux 实机。
 - 证据与复现方式见 [`experiments/README.md`](../experiments/README.md)。
 
+### 2026-08-31 第二阶段网络方案实验进展
+
+- 已对比完整 `go-libp2p` 与轻量成熟组合，均通过同 PSK 通信、异 PSK 拒绝、本机发现和断线重建测试。
+- 原始 DTLS 不承担应用消息可靠性，因此拒绝在其上自行设计确认、重传和分片；补充采用成熟 CoAP 协议后，20 KB Block-Wise 消息实机通过。
+- CoAP 的传输重发必须保持同一 Message ID 并由接收库去重，不得在结果未知后创建新的应用层消息；go-coap 上游已有 handler 去重测试，RA2A 双机故障注入仍待验证。
+- 当前工程推荐为 `libp2p/zeroconf v2.2.0 + go-coap v3.5.4 + Pion DTLS v3.1.8`；macOS arm64 PoC 为 6,327,058 B，实测最大 RSS 14,696,448 B。
+- Linux amd64 与 Windows amd64 已交叉编译通过，但真实双机发现、网卡切换恢复和目标系统防火墙行为尚未验证。
+- 证据、版本与完整量化对比见 [`experiments/network/README.md`](../experiments/network/README.md)。
+
 ## 14. 待确认决策与风险
 
 ### 实施前需用户确认
