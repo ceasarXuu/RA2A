@@ -124,14 +124,12 @@ go run ./cmd/ra2a selftest \
 
 ## 安装
 
-当前源码安装器需要 Go 1.24 或更高版本，并已安装 Codex；安装和运行都不需要 root/管理员权限。脚本只把 `ra2a` 安装到当前用户目录，首次执行 `ra2a` 才进行名称设置、MCP 注册和后台服务启动。运行时不依赖 Go。
+正式安装直接使用 GitHub latest Release 的预编译文件，自动选择系统和架构并校验 SHA-256。目标设备只需安装 Codex App；macOS/Linux 需要 `curl`，Windows 使用 PowerShell。无需 Git、无需 Go、无需源码目录，也不需要 root/管理员权限。
 
 macOS / Linux：
 
 ```bash
-git clone https://github.com/ceasarXuu/RA2A.git
-cd RA2A
-./install.sh
+curl -fsSL https://github.com/ceasarXuu/RA2A/releases/latest/download/install-ra2a.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ra2a
 ```
@@ -141,7 +139,8 @@ ra2a
 Agent 或自动化可以一次性无交互安装并启动：
 
 ```bash
-./install.sh \
+curl -fsSL https://github.com/ceasarXuu/RA2A/releases/latest/download/install-ra2a.sh \
+  | sh -s -- \
   --pin A2B3C4 \
   --node-id device-b \
   --name "Device B" \
@@ -153,19 +152,16 @@ Agent 或自动化可以一次性无交互安装并启动：
 Windows PowerShell：
 
 ```powershell
-git clone https://github.com/ceasarXuu/RA2A.git
-cd RA2A
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-$env:Path = "$env:LOCALAPPDATA\RA2A;$env:Path"
+irm https://github.com/ceasarXuu/RA2A/releases/latest/download/install-ra2a.ps1 | iex
+$env:Path = "$env:LOCALAPPDATA\RA2A\bin;$env:Path"
 ra2a
 ```
 
 Windows 无交互安装：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 `
-  -Pin A2B3C4 -NodeId device-b -Name "Device B" `
-  -Codex C:\absolute\path\to\codex.exe
+$Installer = [scriptblock]::Create((irm https://github.com/ceasarXuu/RA2A/releases/latest/download/install-ra2a.ps1))
+& $Installer -Pin A2B3C4 -NodeId device-b -Name "Device B" -Codex C:\absolute\path\to\codex.exe
 ```
 
 首次引导或无交互安装成功必须以 `status: running` 结束。可用 `codex mcp get ra2a` 检查 MCP 注册。服务管理方式如下：
@@ -176,7 +172,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 `
 | Linux | systemd user unit `ra2a.service` | `systemctl --user status ra2a.service` |
 | Windows | 当前用户计划任务 `RA2A` | `Get-ScheduledTask -TaskName RA2A` |
 
-macOS 日志位于 `~/.config/ra2a/logs/`；Linux 可使用 `journalctl --user -u ra2a.service`。安装失败时，先确认 `go version`、Codex 路径和对应用户级服务管理器可用，再原样重跑安装命令。
+macOS 日志位于 `~/.config/ra2a/logs/`；Linux 可使用 `journalctl --user -u ra2a.service`。安装失败时，先确认下载工具、Codex 路径和对应用户级服务管理器可用，再原样重跑安装命令。校验或下载失败不会覆盖已有二进制。
 
 ## 日常命令
 
@@ -189,15 +185,21 @@ macOS 日志位于 `~/.config/ra2a/logs/`；Linux 可使用 `journalctl --user -
 | `ra2a version` | 输出当前版本，当前为 `v0.0.3` |
 | `ra2a update` | 从 GitHub 最新正式 Release 下载当前平台产物，校验 SHA-256 后更新并重启 |
 
-源码安装阶段也可通过拉取仓库后重新执行脚本升级：
+正常升级直接执行：
 
 ```bash
-git pull --ff-only
-./install.sh
-ra2a restart
+ra2a update
 ```
 
-已有配置不会被安装脚本覆盖。Windows 对应重新运行 `install.ps1`。卸载：
+名称、PIN 和节点 ID 在安装与升级时保持不变。开发者如需从源码安装，需要 Git 与 Go 1.24+：
+
+```bash
+git clone https://github.com/ceasarXuu/RA2A.git
+cd RA2A
+./install.sh
+```
+
+源码安装的卸载命令：
 
 ```bash
 ./install.sh --uninstall

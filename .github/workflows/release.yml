@@ -34,6 +34,11 @@ jobs:
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags '-s -w' -o "dist/$name" ./cmd/ra2a
             (cd dist && sha256sum "$name" >"$name.sha256")
           done
+          cp install-remote.sh dist/install-ra2a.sh
+          cp install-remote.ps1 dist/install-ra2a.ps1
+          chmod 755 dist/install-ra2a.sh
+          (cd dist && sha256sum install-ra2a.sh >install-ra2a.sh.sha256)
+          (cd dist && sha256sum install-ra2a.ps1 >install-ra2a.ps1.sha256)
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

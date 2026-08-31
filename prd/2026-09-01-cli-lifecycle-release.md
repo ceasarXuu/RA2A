@@ -29,6 +29,7 @@
 - 名称、长期 6 位 PIN 的持久化修改。
 - 用户级后台服务和 Codex MCP 注册。
 - GitHub Release 预编译产物、校验文件、自动发布和客户端原地更新。
+- 不依赖 Git、Go 或源码目录的 Release 首次安装入口。
 - 安装脚本保留无交互参数入口，供 Agent 和自动化部署使用。
 
 ### 不包含
@@ -86,6 +87,7 @@
 7. Given 下载、校验或替换失败，then 旧可执行文件仍可运行，并返回明确错误。
 8. Given 推送与程序版本一致的 `v*` tag，then GitHub 自动发布六个平台架构产物及校验文件。
 9. Given 安装脚本收到完整参数，then 可无交互安装、配置并启动；未收到参数时只安装命令并提示执行 `ra2a`。
+10. Given 用户只有系统自带 shell/PowerShell 和下载工具，when 执行 README 的远程安装命令，then 从 latest GitHub Release 下载匹配平台的预编译文件、校验 SHA-256 并安装，无需 Git、Go 或源码目录。
 
 ## Confirmed Product Decisions
 
@@ -99,6 +101,7 @@
 | PD21 | 当前版本为 `v0.0.3` | 程序与发布流程使用同一版本来源 | 不得发布与程序报告不一致的 tag | 版本是更新与发版的共同契约 | `ra2a version` 与 Release tag 不一致 | user-confirmed-direct: “当前版本号为 v0.0.3” | active |
 | PD22 | `ra2a update` 使用 GitHub Releases 预编译包 | 按平台下载并校验正式 Release 资产后更新 | 不得要求已安装用户保留 Go 或源码仓库才能更新 | 降低用户更新依赖和失败面 | `update` 实际执行 git pull 或本机构建 | user-confirmed-direct: 对 GitHub Releases 预编译更新建议回复“都确认” | active |
 | PD23 | GitHub Release 是正式发版主流程 | tag 触发三平台双架构构建、校验与发布 | 不得依赖手工拼装正式 Release | 保证发布可重复且与自更新契约一致 | Release 缺平台资产、校验或版本门禁 | user-confirmed-direct: “把发版流程也管理一下，目前主要通过 github 发布 release” | active |
+| PD24 | 正式首次安装不得要求克隆仓库 | 提供直接消费 latest GitHub Release 的 macOS/Linux 与 Windows 安装命令 | 不得要求普通安装用户预装 Git、Go 或进入源码目录 | 首次安装必须是完整的二进制交付体验 | README 的正式安装仍以 `git clone` 或本地构建开头 | user-confirmed-direct: “那你就做完，不要丢给我半成品” | active |
 
 ## 7. 开放问题与风险
 
