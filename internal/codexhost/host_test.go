@@ -20,6 +20,12 @@ func TestManagedCommandUsesOfficialUnixListener(t *testing.T) {
 	}
 }
 
+func TestUnixListenURLUsesURLSeparatorsForWindowsPath(t *testing.T) {
+	if got, want := unixListenURL(`C:\Users\test\.codex\control.sock`), "unix://C:/Users/test/.codex/control.sock"; got != want {
+		t.Fatalf("unixListenURL = %q, want %q", got, want)
+	}
+}
+
 func TestStartLaunchesHostAfterInitialConnectFails(t *testing.T) {
 	clientSide, serverSide := net.Pipe()
 	defer serverSide.Close()

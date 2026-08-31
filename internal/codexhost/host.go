@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,7 +67,11 @@ func startManaged(ctx context.Context, config Config) (*managedProcess, error) {
 }
 
 func managedCommand(ctx context.Context, config Config) *exec.Cmd {
-	return exec.CommandContext(ctx, config.CodexPath, "app-server", "--listen", "unix://"+config.SocketPath)
+	return exec.CommandContext(ctx, config.CodexPath, "app-server", "--listen", unixListenURL(config.SocketPath))
+}
+
+func unixListenURL(socketPath string) string {
+	return "unix://" + strings.ReplaceAll(socketPath, `\`, "/")
 }
 
 func startWith(ctx context.Context, config Config, start startFunc, connect connectFunc, retryDelay time.Duration) (*Host, error) {

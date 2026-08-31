@@ -339,6 +339,13 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 - 官方客户端实时显示来源 `ra2a://managed-sender-2` 和正文，并完成回合回复 `RA2A_MANAGED_HOST_OK`；原 writer-conflict 症状在受支持的单宿主路径上消失。
 - 当前 Windows/Linux 仍只有交叉构建或协议证据，不能标记为实机通过。
 
+### 2026-09-01 第六阶段安装器进展
+
+- 根目录提供 `install.sh` 与 `install.ps1`；均支持传入长期 PIN 或在首台设备生成 6 位 PIN，并输出明确安装结果。
+- macOS 注册用户 LaunchAgent，Linux 注册 systemd user unit，Windows 注册当前用户计划任务；三者均配置登录启动与异常退出重启。
+- macOS/Linux 安装流程已在隔离 HOME 和伪服务管理器下完成自动化契约测试；真实 macOS 安装仍需在合并后执行，Windows/Linux 真实系统验收仍待完成。
+- 安装器当前从源码构建，运行期仍保持单一 RA2A 二进制，不引入数据库或额外常驻运行时。
+
 ## 14. 待确认决策与风险
 
 ### 实施前需用户确认

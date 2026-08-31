@@ -106,11 +106,59 @@ go run ./cmd/ra2a selftest \
 
 ## 安装
 
-项目目前处于早期开发阶段，已有可从源码运行的 LAN Node，但尚无可安装发布版本。为避免误导，此处不提供尚不能执行的占位安装命令。
+当前安装器从本仓库源码构建，因此目标设备需要 Go 1.24 或更高版本，并已安装 Codex。安装不需要 root/管理员权限；脚本会把 RA2A 安装到当前用户目录，注册登录自启动和崩溃重启服务。重复运行同一安装命令即为幂等升级。
 
-首个可运行版本必须同时提供：
+macOS / Linux：
 
-- macOS/Linux：`install.sh`
-- Windows：`install.ps1`
+```bash
+git clone https://github.com/ceasarXuu/RA2A.git
+cd RA2A
+./install.sh --pin A2B3C4 --node-id device-b --name "Device B"
+```
 
-安装脚本将支持无交互和幂等执行，并输出明确的安装结果。交付脚本时，本节会同步补齐复制即可执行的安装、验证、升级、卸载及故障恢复命令。
+首台设备可以省略 `--pin`，脚本会生成并打印一个长期 6 位 PIN。其他设备安装时复制同一个 PIN：
+
+```bash
+./install.sh --node-id first-device
+```
+
+如果 `codex` 不在 `PATH`，增加 `--codex /absolute/path/to/codex`。macOS 安装器也会自动检查 Codex App 内置的 `/Applications/ChatGPT.app/Contents/Resources/codex`。
+
+Windows PowerShell：
+
+```powershell
+git clone https://github.com/ceasarXuu/RA2A.git
+cd RA2A
+powershell -ExecutionPolicy Bypass -File .\install.ps1 `
+  -Pin A2B3C4 -NodeId device-b -Name "Device B" `
+  -Codex C:\absolute\path\to\codex.exe
+```
+
+安装成功必须以 `status: running` 结束，并明确输出节点 ID、二进制路径和 PIN。服务管理方式如下：
+
+| 平台 | 用户级保活机制 | 状态检查 |
+|---|---|---|
+| macOS | LaunchAgent `com.ra2a.daemon` | `launchctl print gui/$(id -u)/com.ra2a.daemon` |
+| Linux | systemd user unit `ra2a.service` | `systemctl --user status ra2a.service` |
+| Windows | 当前用户计划任务 `RA2A` | `Get-ScheduledTask -TaskName RA2A` |
+
+macOS 日志位于 `~/.config/ra2a/logs/`；Linux 可使用 `journalctl --user -u ra2a.service`。安装失败时，先确认 `go version`、Codex 路径和对应用户级服务管理器可用，再原样重跑安装命令。
+
+升级：
+
+```bash
+git pull --ff-only
+./install.sh --pin <原PIN> --node-id <原节点ID>
+```
+
+Windows 对应重新运行 `install.ps1` 并传入原参数。卸载：
+
+```bash
+./install.sh --uninstall
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
+```
+
+Windows 安装脚本和 Windows socket URL 已完成静态契约及交叉编译验证，但尚未在真实 Windows Codex App 环境完成端到端验收；当前已实机通过的平台仍是 macOS。
