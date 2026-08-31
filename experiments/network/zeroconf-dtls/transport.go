@@ -108,7 +108,10 @@ func selfTest(ctx context.Context) error {
 	if err := discoverRegisteredService(ctx, "ra2a-poc", "_ra2a-poc._tcp", 42424); err != nil {
 		return err
 	}
-	key := []byte("0123456789abcdef0123456789abcdef")
+	key, err := pskFromPIN("A2B3C4")
+	if err != nil {
+		return err
+	}
 	response, err := coapRoundTrip(ctx, key, []byte("ra2a-probe"))
 	if err != nil {
 		return err

@@ -10,7 +10,10 @@ import (
 func TestCoAPOverDTLSExchangesBlockwisePayload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	key := bytes.Repeat([]byte{0x51}, 32)
+	key, err := pskFromPIN("A2B3C4")
+	if err != nil {
+		t.Fatalf("convert PIN: %v", err)
+	}
 	payload := bytes.Repeat([]byte("ra2a"), 4096)
 
 	got, err := coapRoundTrip(ctx, key, payload)

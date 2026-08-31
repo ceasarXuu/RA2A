@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -10,7 +9,7 @@ import (
 func TestSamePSKCanExchangeDTLSDatagram(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	key := bytes.Repeat([]byte{0x41}, 32)
+	key := []byte("A2B3C4")
 
 	got, err := dtlsRoundTrip(ctx, key, key, []byte("ra2a-probe"))
 	if err != nil {
@@ -25,7 +24,7 @@ func TestDifferentPSKCannotExchangeDTLSDatagram(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err := dtlsRoundTrip(ctx, bytes.Repeat([]byte{0x41}, 32), bytes.Repeat([]byte{0x42}, 32), []byte("must-fail"))
+	_, err := dtlsRoundTrip(ctx, []byte("A2B3C4"), []byte("X8Y7Z6"), []byte("must-fail"))
 	if err == nil {
 		t.Fatal("round trip succeeded with a different PSK")
 	}
@@ -43,7 +42,7 @@ func TestZeroconfDiscoversRegisteredService(t *testing.T) {
 func TestDTLSCanReconnectAfterClosedSocket(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	key := bytes.Repeat([]byte{0x43}, 32)
+	key := []byte("A2B3C4")
 	for _, message := range []string{"first", "second"} {
 		got, err := dtlsRoundTrip(ctx, key, key, []byte(message))
 		if err != nil {
