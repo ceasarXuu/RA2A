@@ -81,6 +81,8 @@ ra2a
 
 On first run: name the device → save the generated six-character PIN → run `ra2a pin <PIN>` on the other devices. Once you see `status: running`, RA2A is running in the background and Codex has access to its MCP tools.
 
+On Windows, the release is installed in `$HOME\.local\bin` and stores configuration in `$HOME\.config\ra2a`. A current-user scheduled task owns the daemon lifecycle, so closing the installer or Codex tool terminal does not stop it; a health trigger restores the daemon after an unexpected exit.
+
 > [!IMPORTANT]
 > The current PIN is only a minimal handshake credential for trusted local networks. It is not a complete authentication system.
 

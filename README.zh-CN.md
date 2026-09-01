@@ -81,6 +81,8 @@ ra2a
 
 首次运行：设置设备名称 → 保存自动生成的 6 位 PIN → 在其他设备执行 `ra2a pin <PIN>`。看到 `status: running` 后服务已转入后台，Codex 会自动获得 RA2A MCP 工具。
 
+Windows 正式版安装在 `$HOME\.local\bin`，配置保存在 `$HOME\.config\ra2a`。daemon 由当前登录用户的计划任务托管，关闭安装终端或 Codex 工具终端不会停止服务；daemon 异常退出后会由健康触发器自动恢复。
+
 > [!IMPORTANT]
 > 当前 PIN 只用于可信局域网内的最小握手，不是完整安全认证系统。
 
