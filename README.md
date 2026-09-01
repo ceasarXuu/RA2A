@@ -114,6 +114,8 @@ Mac / Planner
 
 RA2A registers the same binary as a Codex stdio MCP server and forwards tool calls over loopback to a resident daemon. The daemon discovers peers with mDNS, transports messages with CoAP/DTLS, and uses Codex App Server to enumerate sessions and start turns.
 
+Peer discovery is lifecycle-aware: goodbye or expired mDNS records remove stale endpoints, and the daemon periodically reloads network interfaces after Wi-Fi changes or system wake. If DTLS fails before delivery, RA2A refreshes discovery and safely retries once against the recovered endpoint, including when a node returns on the same address.
+
 When Codex Desktop already owns the target thread, RA2A asks that existing Desktop owner to start the turn instead of competing for the writer. This flow has been validated across macOS and Windows, and the original session remains usable after message injection.
 
 - Codex App is the only supported host today. Offline delivery, persistent queues, and workflow orchestration are out of scope.

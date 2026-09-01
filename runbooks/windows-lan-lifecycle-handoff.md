@@ -25,7 +25,7 @@ Get-ScheduledTask -TaskName RA2A | Select-Object TaskName, State
 Get-CimInstance Win32_Process -Filter "Name='ra2a.exe'" | Select-Object ProcessId, CommandLine
 ```
 
-`ra2a version` 仍显示 `v0.0.6` 是预期行为；本次尚未发新 release，以 commit 校验为准。无参数运行 `install.ps1` 会保留现有 name、node ID、PIN 和 Codex 路径。
+该修复自 `v0.0.7` 起进入正式 Release，`ra2a version` 应显示 `v0.0.7`；提交 `94d7d26` 仍作为修复祖先校验点。无参数运行 `install.ps1` 会保留现有 name、node ID、PIN 和 Codex 路径。
 
 ## 双机验收
 

@@ -114,6 +114,8 @@ Mac / Planner
 
 RA2A 将同一个二进制注册为 Codex stdio MCP，并通过 loopback 访问常驻 daemon。daemon 使用 mDNS 发现节点、CoAP/DTLS 传输消息，通过 Codex App Server 枚举 session 和创建 turn。
 
+节点发现会跟踪完整生命周期：收到 goodbye 或 mDNS 记录过期时删除陈旧端点，并定期重新加载网络接口以覆盖 Wi-Fi 切换和系统唤醒。若 DTLS 在消息投递前失败，RA2A 会刷新发现结果，并针对恢复后的端点安全重试一次，包括节点在相同地址恢复的情况。
+
 目标 thread 已由 Desktop 持有时，RA2A 交给现有 Desktop owner 创建 turn，不抢占 writer。macOS 与 Windows 均已完成真实跨设备验收，注入后仍可在原 session 手动继续沟通。
 
 - 当前正式支持 Codex App，不包含离线消息、持久队列和工作流编排。
