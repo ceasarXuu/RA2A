@@ -31,41 +31,59 @@ flowchart LR
 
     A3 <-->|"当前：mDNS + CoAP/DTLS"| B3
     A3 -.-> R["规划：Tailscale<br/>Relay 中继（长期）"] -.-> B3
+
+    classDef app fill:#eef2ff,stroke:#6366f1,color:#111827,stroke-width:1.5px
+    classDef mcp fill:#ecfeff,stroke:#0891b2,color:#111827,stroke-width:1.5px
+    classDef daemon fill:#f0fdf4,stroke:#16a34a,color:#111827,stroke-width:1.5px
+    classDef roadmap fill:#fff7ed,stroke:#f97316,color:#111827,stroke-width:1.5px,stroke-dasharray:5 5
+
+    class A1,B1 app
+    class A2,B2 mcp
+    class A3,B3 daemon
+    class R roadmap
 ```
 
 ## Agent 支持
 
 | 状态 | Agent / Host | 说明 |
 |---|---|---|
-| **当前支持** | Codex App | 已完成 macOS 与 Windows 跨设备真实验收 |
-| **计划支持** | Claude Code | 通过对应会话接口接入 RA2A 网络 |
-| **计划支持** | Claude Desktop App | 面向桌面会话的定向消息投递 |
-| **计划支持** | OpenCode | 复用 RA2A 的发现与消息协议 |
-| **计划支持** | Pi | 复用 RA2A 的发现与消息协议 |
-| **计划支持** | DeepSeek Harness | 复用 RA2A 的发现与消息协议 |
+| ✅ **当前支持** | **Codex App** | macOS 与 Windows 跨设备真实验收通过 |
+| 🧭 **计划支持** | `Claude Code` | 通过对应会话接口接入 RA2A 网络 |
+| 🧭 **计划支持** | `Claude Desktop App` | 面向桌面会话的定向消息投递 |
+| 🧭 **计划支持** | `OpenCode` | 复用 RA2A 的发现与消息协议 |
+| 🧭 **计划支持** | `Pi` | 复用 RA2A 的发现与消息协议 |
+| 🧭 **计划支持** | `DeepSeek Harness` | 复用 RA2A 的发现与消息协议 |
 
-当前可用版本只面向 **Codex App**；计划项表示产品方向，不代表已经实现或承诺具体交付时间。
+> [!NOTE]
+> 当前可用版本只面向 **Codex App**。计划项表示产品方向，不代表已经实现或承诺具体交付时间。
 
 ## 连接路线
 
 | 阶段 | 连接方式 | 用途 |
 |---|---|---|
-| **当前支持** | 局域网直连 | mDNS 自动发现，CoAP/DTLS 传输消息 |
-| **计划支持** | Tailscale | 连接不在同一物理局域网、但属于同一 Tailscale 私有网络的设备 |
-| **长期计划** | Relay 中继 | 为无法直连的设备提供跨网络发现与消息转发 |
+| ✅ **当前支持** | **局域网直连** | mDNS 自动发现，CoAP/DTLS 传输消息 |
+| 🧭 **计划支持** | **Tailscale** | 连接同一 Tailscale 私有网络中的设备 |
+| 🔭 **长期计划** | **Relay 中继** | 为无法直连的设备提供跨网络发现与消息转发 |
 
 ## 为什么是 RA2A
 
-多设备联调时，任务、日志和会话往往分散在不同机器上。RA2A 让 Agent 直接发现目标设备，并把消息送进指定 session：
+多设备联调时，任务、日志和会话往往分散在不同机器上。RA2A 让 Agent 直接发现目标设备，并把消息送进指定 session。
 
-- **定向**：消息准确进入目标 session。
-- **连续**：不抢占 Desktop writer，注入后仍可继续原会话。
-- **自愈**：网络波动后自动重新发现和恢复连接。
+| 🎯 **定向** | 🔄 **连续** | 🛠️ **自愈** |
+|:---:|:---:|:---:|
+| 消息准确进入目标 session | 不抢占 Desktop writer | 网络波动后自动恢复 |
 
 ## 典型场景
 
-1. **多设备联调**：Mac 上开发、Windows 上复现，或 Linux 设备提供运行环境。Agent 可以把构建、复现、日志采集和验证请求直接发送到对应设备的专用 session，再把结果回传，无需人工复制上下文。
-2. **跨设备 Agent 分工**：让 Mac 上负责规划的 Agent，把实现任务交给 Windows 工作站上的 Agent；完成后，Windows Agent 再将结果回复到来源 session。
+### 1. 多设备联调
+
+Mac 上开发、Windows 上复现，或 Linux 设备提供运行环境。Agent 可以把构建、复现、日志采集和验证请求直接发送到对应设备的专用 session，再把结果回传，无需人工复制上下文。
+
+### 2. 跨设备 Agent 分工
+
+让 Mac 上负责规划的 Agent，把实现任务交给 Windows 工作站上的 Agent；完成后，Windows Agent 再将结果回复到来源 session。
+
+---
 
 ## 快速开始
 
@@ -95,6 +113,7 @@ ra2a
 
 看到 `status: running` 后，引导会自动退出，服务转入后台运行，不会继续占用终端。Codex 会自动获得 RA2A MCP 工具。
 
+> [!IMPORTANT]
 > 当前 PIN 是用于最小可信握手的共享凭证，不是面向恶意网络环境的完整认证系统。请只在可信局域网中使用 RA2A。
 
 ## Agent 工具
@@ -121,6 +140,8 @@ Mac / Planner
 ```
 
 `accepted` 表示远端已经创建回合，不表示 Agent 已完成任务。忙碌、不可达和投递结果未知分别返回 `SESSION_BUSY`、`TARGET_UNREACHABLE` 和 `DELIVERY_UNKNOWN`；RA2A 不会在结果未知时自动重发，从而避免重复创建任务。
+
+---
 
 ## 工作原理
 
