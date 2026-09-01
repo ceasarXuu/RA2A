@@ -3,4 +3,5 @@
 .env.*
 !.env.example
 .cache/
+/coe/
 experiments/network/**/bin/
