@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -17,8 +18,8 @@ func SocketCandidates(goos, codexHome, tempDir string, uid int) []string {
 		return []string{`\\.\pipe\codex-ipc`}
 	}
 	return []string{
-		filepath.Join(codexHome, "ipc", "ipc.sock"),
-		filepath.Join(tempDir, "codex-ipc", fmt.Sprintf("ipc-%d.sock", uid)),
+		path.Join(codexHome, "ipc", "ipc.sock"),
+		path.Join(tempDir, "codex-ipc", fmt.Sprintf("ipc-%d.sock", uid)),
 	}
 }
 
@@ -35,9 +36,6 @@ func DefaultSocketCandidates() ([]string, error) {
 }
 
 func DialContext(ctx context.Context, explicitSocket string) (net.Conn, string, error) {
-	if runtime.GOOS == "windows" {
-		return nil, "", errors.New("Windows named-pipe dialing is not part of the macOS experiment")
-	}
 	paths := []string{explicitSocket}
 	if explicitSocket == "" {
 		var err error
@@ -48,7 +46,7 @@ func DialContext(ctx context.Context, explicitSocket string) (net.Conn, string, 
 	}
 	var failures []error
 	for _, socketPath := range paths {
-		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		conn, err := dialPlatform(ctx, socketPath)
 		if err == nil {
 			return conn, socketPath, nil
 		}

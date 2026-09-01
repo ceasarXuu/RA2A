@@ -14,6 +14,7 @@ import (
 )
 
 func TestRemoteUnixInstallerDownloadsChecksummedRelease(t *testing.T) {
+	requireUnixShell(t)
 	payload := []byte("#!/bin/sh\nprintf 'v0.0.3\\n'\n")
 	asset := "ra2a-v0.0.3-" + runtime.GOOS + "-" + runtime.GOARCH
 	digest := fmt.Sprintf("%x", sha256.Sum256(payload))
@@ -47,6 +48,7 @@ func TestRemoteUnixInstallerDownloadsChecksummedRelease(t *testing.T) {
 }
 
 func TestRemoteUnixInstallerPreservesExistingBinaryOnChecksumFailure(t *testing.T) {
+	requireUnixShell(t)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if strings.HasSuffix(request.URL.Path, ".sha256") {
 			fmt.Fprintln(writer, strings.Repeat("0", 64), " asset")
@@ -75,6 +77,7 @@ func TestRemoteUnixInstallerPreservesExistingBinaryOnChecksumFailure(t *testing.
 }
 
 func TestRemoteUnixInstallerPassesNonInteractiveSetupArguments(t *testing.T) {
+	requireUnixShell(t)
 	payload := []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >\"$HOME/remote-setup.log\"\n")
 	asset := "ra2a-v0.0.3-" + runtime.GOOS + "-" + runtime.GOARCH
 	digest := fmt.Sprintf("%x", sha256.Sum256(payload))
@@ -96,6 +99,7 @@ func TestRemoteUnixInstallerPassesNonInteractiveSetupArguments(t *testing.T) {
 }
 
 func TestUnixInstallerDelegatesConfiguredSetupToRA2A(t *testing.T) {
+	requireUnixShell(t)
 	for _, osName := range []string{"Darwin", "Linux"} {
 		t.Run(osName, func(t *testing.T) {
 			home, fakeBin := installerEnvironment(t, osName)
@@ -116,6 +120,7 @@ func TestUnixInstallerDelegatesConfiguredSetupToRA2A(t *testing.T) {
 }
 
 func TestUnixInstallerWithoutOptionsLeavesInteractiveSetupToRA2A(t *testing.T) {
+	requireUnixShell(t)
 	home, fakeBin := installerEnvironment(t, "Darwin")
 	command := exec.Command("sh", "../install.sh")
 	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
@@ -132,6 +137,7 @@ func TestUnixInstallerWithoutOptionsLeavesInteractiveSetupToRA2A(t *testing.T) {
 }
 
 func TestUnixInstallerRejectsInvalidPIN(t *testing.T) {
+	requireUnixShell(t)
 	home, fakeBin := installerEnvironment(t, "Linux")
 	command := exec.Command("sh", "../install.sh", "--pin", "short", "--codex", filepath.Join(fakeBin, "codex"))
 	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
@@ -142,6 +148,7 @@ func TestUnixInstallerRejectsInvalidPIN(t *testing.T) {
 }
 
 func TestUnixInstallerDefaultsNameToNodeID(t *testing.T) {
+	requireUnixShell(t)
 	home, fakeBin := installerEnvironment(t, "Linux")
 	command := exec.Command("sh", "../install.sh", "--pin", "A2B3C4", "--node-id", "device-c", "--codex", filepath.Join(fakeBin, "codex"))
 	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
@@ -152,6 +159,7 @@ func TestUnixInstallerDefaultsNameToNodeID(t *testing.T) {
 }
 
 func TestUnixUninstallUsesExplicitCodex(t *testing.T) {
+	requireUnixShell(t)
 	home, fakeBin := installerEnvironment(t, "Darwin")
 	codex := filepath.Join(fakeBin, "explicit-codex")
 	writeExecutable(t, codex, "#!/bin/sh\nprintf '%s\\n' \"$*\" >\"$HOME/codex-remove.log\"\n")
@@ -233,6 +241,13 @@ chmod 755 "$output"
 `)
 	writeExecutable(t, filepath.Join(fakeBin, "codex"), "#!/bin/sh\nexit 0\n")
 	return home, fakeBin
+}
+
+func requireUnixShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix shell installer fixture")
+	}
 }
 
 func writeExecutable(t *testing.T, path, content string) {

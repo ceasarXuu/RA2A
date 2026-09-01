@@ -3,6 +3,7 @@ module github.com/ceasarXuu/RA2A
 go 1.24.0
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/libp2p/zeroconf/v2 v2.2.0
 	github.com/pion/dtls/v3 v3.1.8

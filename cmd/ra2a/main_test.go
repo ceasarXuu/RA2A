@@ -24,7 +24,8 @@ import (
 
 func TestDefaultAppServerSocketUsesCodexHome(t *testing.T) {
 	t.Setenv("CODEX_HOME", "/state/codex")
-	if got := defaultAppServerSocket(); got != "/state/codex/app-server-control/app-server-control.sock" {
+	want := filepath.Join("/state/codex", "app-server-control", "app-server-control.sock")
+	if got := defaultAppServerSocket(); got != want {
 		t.Fatalf("socket = %q", got)
 	}
 }
