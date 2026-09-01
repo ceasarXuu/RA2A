@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/zeroconf/v2"
+	"github.com/betamos/zeroconf"
 	"github.com/pion/dtls/v3"
 	dtlsnet "github.com/pion/dtls/v3/pkg/net"
 	coapdtls "github.com/plgd-dev/go-coap/v3/dtls"
@@ -29,9 +29,11 @@ import (
 
 const (
 	serviceName             = "_ra2a._udp"
-	domain                  = "local."
 	sessionBlockwiseTimeout = 30 * time.Second
 	peerHandshakeTimeout    = 3 * time.Second
+	peerDiscoveryExpiry     = 30 * time.Second
+	peerRefreshSettle       = 500 * time.Millisecond
+	discoveryReloadInterval = time.Minute
 )
 
 var ErrPeerUnreachable = errors.New("peer unreachable before delivery")
@@ -72,7 +74,7 @@ type Node struct {
 	key        []byte
 	listener   *coapnet.DTLSListener
 	server     *coapserver.Server
-	advertiser *zeroconf.Server
+	advertiser *zeroconf.Client
 	cancel     context.CancelFunc
 	closeOnce  sync.Once
 	peersMu    sync.RWMutex
@@ -101,17 +103,23 @@ func Start(parent context.Context, config Config) (*Node, error) {
 		return nil, err
 	}
 	port := n.listener.Addr().(*net.UDPAddr).Port
-	advertiser, err := zeroconf.Register(config.ID, serviceName, domain, port,
-		[]string{"version=1", "id=" + config.ID, "name=" + config.Name}, nil)
+	n.peers[config.ID] = Peer{ID: config.ID, Name: config.Name, Address: net.JoinHostPort("127.0.0.1", fmt.Sprint(port))}
+	serviceType := zeroconf.NewType(serviceName)
+	service := zeroconf.NewService(serviceType, config.ID, uint16(port))
+	service.Text = []string{"version=1", "id=" + config.ID, "name=" + config.Name}
+	advertiser, err := zeroconf.New().
+		Network("udp4").
+		Expiry(peerDiscoveryExpiry).
+		Publish(service).
+		Browse(n.handlePeerEvent, serviceType).
+		Open()
 	if err != nil {
 		n.Close()
 		return nil, fmt.Errorf("advertise node: %w", err)
 	}
 	n.advertiser = advertiser
 
-	entries := make(chan *zeroconf.ServiceEntry, 16)
-	go n.collectPeers(ctx, entries)
-	go func() { _ = zeroconf.Browse(ctx, serviceName, domain, entries) }()
+	go n.reloadDiscovery(ctx)
 	go func() {
 		<-ctx.Done()
 		n.Close()
@@ -193,34 +201,24 @@ func (n *Node) handleSessions(w mux.ResponseWriter, request *mux.Message) {
 	}
 }
 
-func (n *Node) collectPeers(ctx context.Context, entries <-chan *zeroconf.ServiceEntry) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case entry, ok := <-entries:
-			if !ok {
-				return
-			}
-			peer, ok := n.peerFromEntry(entry)
-			if !ok {
-				continue
-			}
-			n.peersMu.Lock()
-			n.peers[peer.ID] = peer
-			n.peersMu.Unlock()
-			select {
-			case n.peerUpdate <- struct{}{}:
-			default:
-			}
-		}
+func (n *Node) handlePeerEvent(event zeroconf.Event) {
+	id, name := peerIdentity(event.Name, event.Text)
+	if id == "" || id == n.config.ID {
+		return
 	}
+	n.peersMu.Lock()
+	if event.Op == zeroconf.OpRemoved {
+		delete(n.peers, id)
+	} else if peer, ok := peerFromService(event.Service, id, name); ok {
+		n.peers[id] = peer
+	}
+	n.peersMu.Unlock()
+	n.signalPeerUpdate()
 }
 
-func (n *Node) peerFromEntry(entry *zeroconf.ServiceEntry) (Peer, bool) {
-	id := entry.Instance
-	name := entry.Instance
-	for _, item := range entry.Text {
+func peerIdentity(instance string, text []string) (string, string) {
+	id, name := instance, instance
+	for _, item := range text {
 		key, value, found := strings.Cut(item, "=")
 		if !found {
 			continue
@@ -232,20 +230,44 @@ func (n *Node) peerFromEntry(entry *zeroconf.ServiceEntry) (Peer, bool) {
 			name = value
 		}
 	}
-	if id == "" || entry.Port == 0 {
+	return id, name
+}
+
+func peerFromService(service *zeroconf.Service, id, name string) (Peer, bool) {
+	if service == nil || id == "" || service.Port == 0 {
 		return Peer{}, false
 	}
-	var ip net.IP
-	if id == n.config.ID {
-		ip = net.ParseIP("127.0.0.1")
-	} else if len(entry.AddrIPv4) > 0 {
-		ip = entry.AddrIPv4[0]
-	} else if len(entry.AddrIPv6) > 0 {
-		ip = entry.AddrIPv6[0]
-	} else {
+	var address string
+	for _, candidate := range service.Addrs {
+		if candidate.Is4() {
+			address = candidate.String()
+			break
+		}
+	}
+	if address == "" {
 		return Peer{}, false
 	}
-	return Peer{ID: id, Name: name, Address: net.JoinHostPort(ip.String(), fmt.Sprint(entry.Port))}, true
+	return Peer{ID: id, Name: name, Address: net.JoinHostPort(address, fmt.Sprint(service.Port))}, true
+}
+
+func (n *Node) reloadDiscovery(ctx context.Context) {
+	ticker := time.NewTicker(discoveryReloadInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n.advertiser.Reload()
+		}
+	}
+}
+
+func (n *Node) signalPeerUpdate() {
+	select {
+	case n.peerUpdate <- struct{}{}:
+	default:
+	}
 }
 
 func (n *Node) WaitForPeer(ctx context.Context, id string) (Peer, error) {
@@ -265,33 +287,24 @@ func (n *Node) WaitForPeer(ctx context.Context, id string) (Peer, error) {
 }
 
 func (n *Node) RefreshPeer(ctx context.Context, id, previousAddress string) (Peer, error) {
-	lookupCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	entries := make(chan *zeroconf.ServiceEntry, 4)
-	done := make(chan error, 1)
-	go func() { done <- zeroconf.Lookup(lookupCtx, id, serviceName, domain, entries) }()
+	n.advertiser.Reload()
+	timer := time.NewTimer(peerRefreshSettle)
+	defer timer.Stop()
+	settled := timer.C
 	for {
+		peer, found := n.Peer(id)
+		if found && peer.Address != previousAddress {
+			return peer, nil
+		}
 		select {
 		case <-ctx.Done():
 			return Peer{}, fmt.Errorf("refresh peer %q: %w", id, ctx.Err())
-		case err := <-done:
-			if err != nil {
-				return Peer{}, fmt.Errorf("refresh peer %q: %w", id, err)
+		case <-n.peerUpdate:
+		case <-settled:
+			settled = nil
+			if peer, found := n.Peer(id); found {
+				return peer, nil
 			}
-			return Peer{}, fmt.Errorf("refresh peer %q: no changed endpoint", id)
-		case entry, ok := <-entries:
-			if !ok {
-				entries = nil
-				continue
-			}
-			peer, valid := n.peerFromEntry(entry)
-			if !valid || peer.ID != id || peer.Address == previousAddress {
-				continue
-			}
-			n.peersMu.Lock()
-			n.peers[id] = peer
-			n.peersMu.Unlock()
-			return peer, nil
 		}
 	}
 }
@@ -389,7 +402,7 @@ func (n *Node) Close() {
 	n.closeOnce.Do(func() {
 		n.cancel()
 		if n.advertiser != nil {
-			n.advertiser.Shutdown()
+			_ = n.advertiser.Close()
 		}
 		if n.server != nil {
 			n.server.Stop()

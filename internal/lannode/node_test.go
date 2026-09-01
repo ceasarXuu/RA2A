@@ -3,12 +3,14 @@ package lannode
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/betamos/zeroconf"
 	"github.com/pion/dtls/v3"
 	coapdtls "github.com/plgd-dev/go-coap/v3/dtls"
 	"github.com/plgd-dev/go-coap/v3/message"
@@ -161,11 +163,16 @@ func TestSendMessageClassifiesDTLSHandshakeFailureAsPeerUnreachable(t *testing.T
 func TestRefreshPeerResolvesChangedEndpointAfterRestart(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	observer, err := Start(ctx, Config{ID: "refresh-observer", Name: "Refresh Observer", PIN: "A2B3C4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer observer.Close()
 	first, err := Start(ctx, Config{ID: "refresh-test-node", Name: "Refresh Test", PIN: "A2B3C4"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldPeer, err := first.WaitForPeer(ctx, "refresh-test-node")
+	oldPeer, err := observer.WaitForPeer(ctx, "refresh-test-node")
 	if err != nil {
 		first.Close()
 		t.Fatal(err)
@@ -177,12 +184,79 @@ func TestRefreshPeerResolvesChangedEndpointAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Close()
-	refreshed, err := first.RefreshPeer(ctx, "refresh-test-node", oldPeer.Address)
+	refreshed, err := observer.RefreshPeer(ctx, "refresh-test-node", oldPeer.Address)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if refreshed.Address == oldPeer.Address {
 		t.Fatalf("endpoint was not refreshed: %s", refreshed.Address)
+	}
+}
+
+func TestRefreshPeerAcceptsSameEndpointWhenServiceIsReachableAgain(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	node, err := Start(ctx, Config{ID: "same-endpoint-node", Name: "Same Endpoint", PIN: "A2B3C4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer node.Close()
+	peer, err := node.WaitForPeer(ctx, "same-endpoint-node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := node.RefreshPeer(ctx, peer.ID, peer.Address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(refreshed, peer) {
+		t.Fatalf("refreshed peer = %#v, want %#v", refreshed, peer)
+	}
+}
+
+func TestPeerRemovedEventEvictsCachedEndpoint(t *testing.T) {
+	node := &Node{config: Config{ID: "local"}, peers: make(map[string]Peer), peerUpdate: make(chan struct{}, 1)}
+	service := &zeroconf.Service{
+		Name: "remote", Port: 4000,
+		Addrs: []netip.Addr{netip.MustParseAddr("192.0.2.10")},
+		Text:  []string{"version=1", "id=remote", "name=Remote"},
+	}
+	node.handlePeerEvent(zeroconf.Event{Service: service, Op: zeroconf.OpAdded})
+	if _, ok := node.Peer("remote"); !ok {
+		t.Fatal("peer was not cached after add event")
+	}
+	node.handlePeerEvent(zeroconf.Event{Service: service, Op: zeroconf.OpRemoved})
+	if _, ok := node.Peer("remote"); ok {
+		t.Fatal("peer retained after remove event")
+	}
+}
+
+func TestNodeEvictsPeerAfterRemoteShutdown(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	observer, err := Start(ctx, Config{ID: "shutdown-observer", Name: "Shutdown Observer", PIN: "A2B3C4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer observer.Close()
+	remote, err := Start(ctx, Config{ID: "shutdown-remote", Name: "Shutdown Remote", PIN: "A2B3C4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := observer.WaitForPeer(ctx, "shutdown-remote"); err != nil {
+		remote.Close()
+		t.Fatal(err)
+	}
+	remote.Close()
+	for {
+		if _, ok := observer.Peer("shutdown-remote"); !ok {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("peer retained after remote shutdown")
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
 }
 
