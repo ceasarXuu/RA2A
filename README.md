@@ -17,23 +17,15 @@
 
 ```mermaid
 flowchart LR
-    subgraph A["设备 A"]
-        A1["Codex App<br/>Agent A"] <--> A2["RA2A MCP"] <--> A3["RA2A daemon"]
+    subgraph LAN["可信局域网"]
+        direction LR
+        S1(["设备 A<br/>Session A"]) <==>|"RA2A · 直接对话通道"| S2(["设备 B<br/>Session B"])
     end
-    subgraph B["设备 B"]
-        B3["RA2A daemon"] <--> B2["RA2A MCP"] <--> B1["Codex App<br/>Agent B"]
-    end
-    A3 <-->|"当前：局域网直连"| B3
-    A3 -.-> R["规划：Tailscale / Relay"] -.-> B3
 
-    classDef app fill:#eef2ff,stroke:#6366f1,color:#111827,stroke-width:1.5px
-    classDef mcp fill:#ecfeff,stroke:#0891b2,color:#111827,stroke-width:1.5px
-    classDef daemon fill:#f0fdf4,stroke:#16a34a,color:#111827,stroke-width:1.5px
-    classDef roadmap fill:#fff7ed,stroke:#f97316,color:#111827,stroke-width:1.5px,stroke-dasharray:5 5
-    class A1,B1 app
-    class A2,B2 mcp
-    class A3,B3 daemon
-    class R roadmap
+    classDef session fill:#eef2ff,stroke:#6366f1,color:#111827,stroke-width:2px
+    class S1,S2 session
+    style LAN stroke:#94a3b8,stroke-width:1px,stroke-dasharray:6 4
+    linkStyle 0 stroke:#16a34a,stroke-width:4px
 ```
 
 ## 支持路线
