@@ -207,15 +207,32 @@ func TestReleaseWorkflowBuildsChecksummedCrossPlatformAssets(t *testing.T) {
 	}
 }
 
-func TestReadmeUsesReleaseInstallAsPrimaryPath(t *testing.T) {
-	content, err := os.ReadFile("../README.md")
-	if err != nil {
-		t.Fatal(err)
+func TestReadmesUseReleaseInstallAsPrimaryPath(t *testing.T) {
+	tests := []struct {
+		path    string
+		markers []string
+	}{
+		{
+			path:    "../README.md",
+			markers: []string{"releases/latest/download/install-ra2a.sh", "releases/latest/download/install-ra2a.ps1", "No Git, Go"},
+		},
+		{
+			path:    "../README.zh-CN.md",
+			markers: []string{"releases/latest/download/install-ra2a.sh", "releases/latest/download/install-ra2a.ps1", "无需 Git、Go"},
+		},
 	}
-	for _, marker := range []string{"releases/latest/download/install-ra2a.sh", "releases/latest/download/install-ra2a.ps1", "无需 Git", "无需 Go"} {
-		if !strings.Contains(string(content), marker) {
-			t.Errorf("README missing remote install contract %q", marker)
-		}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			content, err := os.ReadFile(test.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, marker := range test.markers {
+				if !strings.Contains(string(content), marker) {
+					t.Errorf("%s missing remote install contract %q", test.path, marker)
+				}
+			}
+		})
 	}
 }
 
