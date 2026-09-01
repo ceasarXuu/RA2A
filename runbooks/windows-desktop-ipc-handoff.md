@@ -41,9 +41,29 @@ RA2A 的 [`internal/desktopipc/client.go`](../internal/desktopipc/client.go) 已
    - 公共 `DialContext` 只负责候选地址与错误聚合。
 3. 优先使用成熟的 `github.com/Microsoft/go-winio`（当前最新可见版本 `v0.6.2`）及其 context-aware named-pipe dial，避免自行封装 Win32 overlapped I/O 和 deadline。
 4. Windows transport 必须返回真正支持 `SetDeadline` 的 `net.Conn`，因为 `client.call` 依靠 connection deadline 限制 initialize/StartTurn。
-5. 不修改 active-writer 判定、不增加消息队列、不在结果未知后重试。
+5. 不增加消息队列，不在结果未知后重试。
 
 在 Windows 实机核对 `go-winio` 当前 API 后再 pin 依赖；不要凭 Mac 交叉编译结果宣称完成。
+
+## 后续修正：Desktop owner 必须优先
+
+后续实机发现，仅在 managed App Server 返回 active writer 后才回退 Desktop IPC 并不充分：目标空闲时 managed 路径可能直接成功，turn 虽然完整落盘，但当前 Desktop renderer 没有参与 `turn/start`，切换 task 也不会重新水合，必须重启 App 才能看到。
+
+发送顺序必须是：
+
+1. 有 Desktop 集成时先调用 `thread-follower-start-turn`，让当前 owner 创建 turn。
+2. 连接或 initialize 失败、Desktop 明确拒绝请求时，才允许回退 managed App Server。
+3. StartTurn 帧写出后，断连、超时、取消或成功响应缺少 turn ID 都属于 `DELIVERY_UNKNOWN`，不得回退或重试。
+4. 真实 UI 验收必须检查同一进程内出现 `IpcRouter`、目标 `turn/start` 和 renderer/完成通知，不能仅以 rollout 或后台 `read_thread` 存在 turn 代替。
+
+Windows 实机验证样本：
+
+```text
+marker: RA2A-DESKTOP-FIRST-LAN-20260902-0620
+turn: 01a05f04-34b3-77e3-a0a4-42b24d6f5040
+result: IpcRouter -> turn/start -> turn-complete
+reply: RA2A_DESKTOP_FIRST_LAN_OK
+```
 
 ## 测试顺序
 

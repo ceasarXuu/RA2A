@@ -139,6 +139,108 @@ func TestClientDoesNotRetryAmbiguousDesktopTimeout(t *testing.T) {
 	}
 }
 
+func TestClientTreatsDisconnectAfterStartWriteAsDeliveryUnknown(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	serverDone := make(chan error, 1)
+	go func() {
+		initialize, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeFrame(serverConn, envelope{
+			Type:       "response",
+			RequestID:  initialize.RequestID,
+			ResultType: "success",
+			Result:     map[string]any{"clientId": "desktop-client-1"},
+		}); err != nil {
+			serverDone <- err
+			return
+		}
+		if _, err := readFrame(serverConn); err != nil {
+			serverDone <- err
+			return
+		}
+		serverDone <- serverConn.Close()
+	}()
+
+	client := New(clientConn)
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1")
+	if !IsDeliveryUnknown(err) {
+		t.Fatalf("error = %v, want delivery unknown", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
+
+func TestClientTreatsRejectedStartAsDefinitelyNotDelivered(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	go func() {
+		initialize, _ := readFrame(serverConn)
+		_ = writeFrame(serverConn, envelope{
+			Type:       "response",
+			RequestID:  initialize.RequestID,
+			ResultType: "success",
+			Result:     map[string]any{"clientId": "desktop-client-1"},
+		})
+		start, _ := readFrame(serverConn)
+		_ = writeFrame(serverConn, envelope{
+			Type:       "response",
+			RequestID:  start.RequestID,
+			ResultType: "error",
+			Error:      "no-client-found: thread stream owner is unavailable",
+		})
+	}()
+
+	client := New(clientConn)
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1")
+	if !IsNotDelivered(err) || IsDeliveryUnknown(err) {
+		t.Fatalf("error = %v, want definitely not delivered", err)
+	}
+}
+
+func TestClientTreatsSuccessfulStartWithoutTurnIDAsDeliveryUnknown(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	go func() {
+		initialize, _ := readFrame(serverConn)
+		_ = writeFrame(serverConn, envelope{
+			Type:       "response",
+			RequestID:  initialize.RequestID,
+			ResultType: "success",
+			Result:     map[string]any{"clientId": "desktop-client-1"},
+		})
+		start, _ := readFrame(serverConn)
+		_ = writeFrame(serverConn, envelope{
+			Type:       "response",
+			RequestID:  start.RequestID,
+			ResultType: "success",
+			Result:     map[string]any{"result": map[string]any{}},
+		})
+	}()
+
+	client := New(clientConn)
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1")
+	if !IsDeliveryUnknown(err) {
+		t.Fatalf("error = %v, want delivery unknown", err)
+	}
+}
+
 func TestSocketCandidatesPreferCodexHomeThenLegacyTempPath(t *testing.T) {
 	got := SocketCandidates("darwin", "/Users/test/.codex", "/private/tmp", 501)
 	want := []string{

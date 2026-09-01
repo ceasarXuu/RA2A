@@ -412,48 +412,79 @@ func TestRunMCPExposesProductionTools(t *testing.T) {
 	}
 }
 
-func TestSendWithDesktopFallbackOnlyOnActiveWriter(t *testing.T) {
+func TestSendWithDesktopPreferenceUsesDesktopOwnerFirst(t *testing.T) {
+	managedCalls := 0
 	desktopCalls := 0
-	desktop := func(context.Context, string, string) error {
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, func(context.Context, string, string) error {
 		desktopCalls++
 		return nil
-	}
-	if err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		return nil
-	}, desktop); err != nil || desktopCalls != 0 {
-		t.Fatalf("managed success err=%v desktopCalls=%d", err, desktopCalls)
-	}
-	want := errors.New("managed unavailable")
-	if err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		return want
-	}, desktop); !errors.Is(err, want) || desktopCalls != 0 {
-		t.Fatalf("managed failure err=%v desktopCalls=%d", err, desktopCalls)
-	}
-	if err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		return codexhost.ErrSessionBusy
-	}, desktop); err != nil || desktopCalls != 1 {
-		t.Fatalf("writer fallback err=%v desktopCalls=%d", err, desktopCalls)
-	}
-}
-
-func TestSendWithDesktopFallbackPreservesBusyWhenIPCFails(t *testing.T) {
-	err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		return codexhost.ErrSessionBusy
-	}, func(context.Context, string, string) error {
-		return errors.New("IPC unavailable")
 	})
-	if !errors.Is(err, codexhost.ErrSessionBusy) || !strings.Contains(err.Error(), "IPC unavailable") {
-		t.Fatalf("error = %v", err)
+	if err != nil || desktopCalls != 1 || managedCalls != 0 {
+		t.Fatalf("err=%v desktopCalls=%d managedCalls=%d", err, desktopCalls, managedCalls)
 	}
 }
 
-func TestSendWithDesktopFallbackPreservesUnknownDelivery(t *testing.T) {
-	err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		return codexhost.ErrSessionBusy
+func TestSendWithDesktopPreferenceFallsBackOnlyWhenDefinitelyNotDelivered(t *testing.T) {
+	managedCalls := 0
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, func(context.Context, string, string) error {
+		return &desktopipc.NotDeliveredError{Cause: errors.New("no Desktop owner")}
+	})
+	if err != nil || managedCalls != 1 {
+		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
+	}
+}
+
+func TestSendWithDesktopPreferenceDoesNotDuplicateUnknownDelivery(t *testing.T) {
+	managedCalls := 0
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
 	}, func(context.Context, string, string) error {
 		return &desktopipc.DeliveryUnknownError{Cause: context.DeadlineExceeded}
 	})
-	if !errors.Is(err, control.ErrDeliveryUnknown) || errors.Is(err, codexhost.ErrSessionBusy) {
+	if !errors.Is(err, control.ErrDeliveryUnknown) || managedCalls != 0 {
+		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
+	}
+}
+
+func TestSendWithDesktopPreferenceDoesNotFallbackOnUnclassifiedError(t *testing.T) {
+	managedCalls := 0
+	want := errors.New("unexpected Desktop failure")
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, func(context.Context, string, string) error {
+		return want
+	})
+	if !errors.Is(err, want) || managedCalls != 0 {
+		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
+	}
+}
+
+func TestSendWithDesktopPreferencePreservesManagedFailure(t *testing.T) {
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		return codexhost.ErrSessionBusy
+	}, func(context.Context, string, string) error {
+		return &desktopipc.NotDeliveredError{Cause: errors.New("Desktop unavailable")}
+	})
+	if !errors.Is(err, codexhost.ErrSessionBusy) || !strings.Contains(err.Error(), "Desktop unavailable") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSendWithDesktopPreferenceUsesManagedWhenDesktopIntegrationIsDisabled(t *testing.T) {
+	managedCalls := 0
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, nil)
+	if err != nil || managedCalls != 1 {
+		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
 	}
 }

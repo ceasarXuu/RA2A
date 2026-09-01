@@ -272,19 +272,26 @@ func startCodexSessionSource(ctx context.Context, codexPath, appServerSocket str
 }
 
 func (source *codexSessionSource) SendMessage(ctx context.Context, target, prompt string) error {
-	return sendWithDesktopFallback(ctx, target, prompt, source.host.SendMessage, source.desktopSend)
+	return sendWithDesktopPreference(ctx, target, prompt, source.host.SendMessage, source.desktopSend)
 }
 
-func sendWithDesktopFallback(ctx context.Context, target, prompt string, managed, desktop messageSender) error {
-	err := managed(ctx, target, prompt)
-	if err == nil || !errors.Is(err, codexhost.ErrSessionBusy) || desktop == nil {
-		return err
+func sendWithDesktopPreference(ctx context.Context, target, prompt string, managed, desktop messageSender) error {
+	if desktop == nil {
+		return managed(ctx, target, prompt)
 	}
-	if desktopErr := desktop(ctx, target, prompt); desktopErr != nil {
-		if desktopipc.IsDeliveryUnknown(desktopErr) {
-			return fmt.Errorf("%w: %v", control.ErrDeliveryUnknown, desktopErr)
-		}
-		return fmt.Errorf("%w; Desktop IPC fallback failed: %v", err, desktopErr)
+	desktopErr := desktop(ctx, target, prompt)
+	if desktopErr == nil {
+		return nil
+	}
+	if desktopipc.IsDeliveryUnknown(desktopErr) {
+		return fmt.Errorf("%w: %v", control.ErrDeliveryUnknown, desktopErr)
+	}
+	if !desktopipc.IsNotDelivered(desktopErr) {
+		return desktopErr
+	}
+	managedErr := managed(ctx, target, prompt)
+	if managedErr != nil {
+		return fmt.Errorf("%w; Desktop owner route unavailable: %v", managedErr, desktopErr)
 	}
 	return nil
 }
@@ -292,12 +299,12 @@ func sendWithDesktopFallback(ctx context.Context, target, prompt string, managed
 func sendDesktopMessage(ctx context.Context, target, prompt string) error {
 	connection, _, err := desktopipc.DialContext(ctx, "")
 	if err != nil {
-		return err
+		return &desktopipc.NotDeliveredError{Cause: err}
 	}
 	defer connection.Close()
 	client := desktopipc.New(connection)
 	if err := client.Initialize(ctx); err != nil {
-		return err
+		return &desktopipc.NotDeliveredError{Cause: err}
 	}
 	_, err = client.StartTurn(ctx, target, prompt, desktopipc.NewMessageID())
 	return err

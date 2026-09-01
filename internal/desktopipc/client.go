@@ -42,14 +42,38 @@ type DeliveryUnknownError struct {
 	Cause error
 }
 
+type NotDeliveredError struct {
+	Cause error
+}
+
+type requestRejectedError struct {
+	Method string
+	Cause  any
+}
+
 func (err *DeliveryUnknownError) Error() string {
 	return fmt.Sprintf("desktop IPC delivery result is unknown: %v", err.Cause)
 }
 
 func (err *DeliveryUnknownError) Unwrap() error { return err.Cause }
 
+func (err *NotDeliveredError) Error() string {
+	return fmt.Sprintf("Desktop IPC request was not delivered: %v", err.Cause)
+}
+
+func (err *NotDeliveredError) Unwrap() error { return err.Cause }
+
+func (err *requestRejectedError) Error() string {
+	return fmt.Sprintf("Desktop IPC %s error: %v", err.Method, err.Cause)
+}
+
 func IsDeliveryUnknown(err error) bool {
 	var target *DeliveryUnknownError
+	return errors.As(err, &target)
+}
+
+func IsNotDelivered(err error) bool {
+	var target *NotDeliveredError
 	return errors.As(err, &target)
 }
 
@@ -86,7 +110,7 @@ func (client *Client) StartTurn(
 	messageID string,
 ) (TurnResult, error) {
 	if client.clientID == "" {
-		return TurnResult{}, errors.New("Desktop IPC client is not initialized")
+		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop IPC client is not initialized")}
 	}
 	result, err := client.call(ctx, envelope{
 		Type:           "request",
@@ -106,16 +130,21 @@ func (client *Client) StartTurn(
 		},
 	})
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || isTimeout(err) {
-			return TurnResult{}, &DeliveryUnknownError{Cause: err}
+		var rejected *requestRejectedError
+		if errors.As(err, &rejected) {
+			return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("start Desktop-owned turn: %w", err)}
 		}
-		return TurnResult{}, fmt.Errorf("start Desktop-owned turn: %w", err)
+		return TurnResult{}, &DeliveryUnknownError{Cause: fmt.Errorf("start Desktop-owned turn: %w", err)}
 	}
 	if nested, ok := result["result"].(map[string]any); ok {
 		result = nested
 	}
 	turn, _ := result["turn"].(map[string]any)
-	return TurnResult{TurnID: stringField(turn, "id")}, nil
+	turnID := stringField(turn, "id")
+	if turnID == "" {
+		return TurnResult{}, &DeliveryUnknownError{Cause: errors.New("Desktop IPC accepted start turn without a turn ID")}
+	}
+	return TurnResult{TurnID: turnID}, nil
 }
 
 func (client *Client) call(ctx context.Context, request envelope) (map[string]any, error) {
@@ -151,7 +180,7 @@ func (client *Client) call(ctx context.Context, request envelope) (map[string]an
 			continue
 		}
 		if response.ResultType == "error" || response.Error != nil {
-			return nil, fmt.Errorf("Desktop IPC %s error: %v", request.Method, response.Error)
+			return nil, &requestRejectedError{Method: request.Method, Cause: response.Error}
 		}
 		return response.Result, nil
 	}
@@ -215,9 +244,4 @@ func newRequestID() string {
 func stringField(value map[string]any, key string) string {
 	text, _ := value[key].(string)
 	return text
-}
-
-func isTimeout(err error) bool {
-	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
 }
