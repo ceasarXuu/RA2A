@@ -15,6 +15,7 @@ import (
 
 	"github.com/libp2p/zeroconf/v2"
 	"github.com/pion/dtls/v3"
+	dtlsnet "github.com/pion/dtls/v3/pkg/net"
 	coapdtls "github.com/plgd-dev/go-coap/v3/dtls"
 	coapserver "github.com/plgd-dev/go-coap/v3/dtls/server"
 	"github.com/plgd-dev/go-coap/v3/message"
@@ -23,13 +24,17 @@ import (
 	coapnet "github.com/plgd-dev/go-coap/v3/net"
 	"github.com/plgd-dev/go-coap/v3/net/blockwise"
 	"github.com/plgd-dev/go-coap/v3/options"
+	udpClient "github.com/plgd-dev/go-coap/v3/udp/client"
 )
 
 const (
 	serviceName             = "_ra2a._udp"
 	domain                  = "local."
 	sessionBlockwiseTimeout = 30 * time.Second
+	peerHandshakeTimeout    = 3 * time.Second
 )
+
+var ErrPeerUnreachable = errors.New("peer unreachable before delivery")
 
 type Config struct {
 	ID          string
@@ -259,6 +264,38 @@ func (n *Node) WaitForPeer(ctx context.Context, id string) (Peer, error) {
 	}
 }
 
+func (n *Node) RefreshPeer(ctx context.Context, id, previousAddress string) (Peer, error) {
+	lookupCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	entries := make(chan *zeroconf.ServiceEntry, 4)
+	done := make(chan error, 1)
+	go func() { done <- zeroconf.Lookup(lookupCtx, id, serviceName, domain, entries) }()
+	for {
+		select {
+		case <-ctx.Done():
+			return Peer{}, fmt.Errorf("refresh peer %q: %w", id, ctx.Err())
+		case err := <-done:
+			if err != nil {
+				return Peer{}, fmt.Errorf("refresh peer %q: %w", id, err)
+			}
+			return Peer{}, fmt.Errorf("refresh peer %q: no changed endpoint", id)
+		case entry, ok := <-entries:
+			if !ok {
+				entries = nil
+				continue
+			}
+			peer, valid := n.peerFromEntry(entry)
+			if !valid || peer.ID != id || peer.Address == previousAddress {
+				continue
+			}
+			n.peersMu.Lock()
+			n.peers[id] = peer
+			n.peersMu.Unlock()
+			return peer, nil
+		}
+	}
+}
+
 func (n *Node) Peers() []Peer {
 	n.peersMu.RLock()
 	peers := make([]Peer, 0, len(n.peers))
@@ -278,13 +315,7 @@ func (n *Node) Peer(id string) (Peer, bool) {
 }
 
 func (n *Node) ListSessions(ctx context.Context, peer Peer) ([]Session, error) {
-	clientOptions := coapdtls.NewDTLSClientOptions(
-		dtls.WithPSK(func([]byte) ([]byte, error) { return n.key, nil }),
-		dtls.WithPSKIdentityHint([]byte("ra2a-client")),
-		dtls.WithCipherSuites(dtls.TLS_PSK_WITH_AES_128_GCM_SHA256),
-		dtls.WithExtendedMasterSecret(dtls.RequireExtendedMasterSecret),
-	)
-	client, err := coapdtls.Dial(peer.Address, clientOptions)
+	client, err := n.dialPeer(ctx, peer)
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", peer.ID, err)
 	}
@@ -313,13 +344,7 @@ func (n *Node) SendMessage(ctx context.Context, peer Peer, outgoing Message) err
 	if err != nil {
 		return fmt.Errorf("encode message: %w", err)
 	}
-	clientOptions := coapdtls.NewDTLSClientOptions(
-		dtls.WithPSK(func([]byte) ([]byte, error) { return n.key, nil }),
-		dtls.WithPSKIdentityHint([]byte("ra2a-client")),
-		dtls.WithCipherSuites(dtls.TLS_PSK_WITH_AES_128_GCM_SHA256),
-		dtls.WithExtendedMasterSecret(dtls.RequireExtendedMasterSecret),
-	)
-	client, err := coapdtls.Dial(peer.Address, clientOptions)
+	client, err := n.dialPeer(ctx, peer)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", peer.ID, err)
 	}
@@ -334,6 +359,30 @@ func (n *Node) SendMessage(ctx context.Context, peer Peer, outgoing Message) err
 		return fmt.Errorf("send message to %s: CoAP code %v: %s", peer.ID, response.Code(), strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func (n *Node) dialPeer(ctx context.Context, peer Peer) (*udpClient.Conn, error) {
+	handshakeCtx, cancel := context.WithTimeout(ctx, peerHandshakeTimeout)
+	defer cancel()
+	connection, err := (&net.Dialer{}).DialContext(handshakeCtx, "udp", peer.Address)
+	if err != nil {
+		return nil, fmt.Errorf("%w: connect to %s: %v", ErrPeerUnreachable, peer.ID, err)
+	}
+	clientOptions := []dtls.ClientOption{
+		dtls.WithPSK(func([]byte) ([]byte, error) { return n.key, nil }),
+		dtls.WithPSKIdentityHint([]byte("ra2a-client")),
+		dtls.WithCipherSuites(dtls.TLS_PSK_WITH_AES_128_GCM_SHA256),
+		dtls.WithExtendedMasterSecret(dtls.RequireExtendedMasterSecret),
+	}
+	dtlsConnection, err := dtls.ClientWithOptions(dtlsnet.PacketConnFromConn(connection), connection.RemoteAddr(), clientOptions...)
+	if err == nil {
+		err = dtlsConnection.HandshakeContext(handshakeCtx)
+	}
+	if err != nil {
+		_ = connection.Close()
+		return nil, fmt.Errorf("%w: DTLS handshake with %s: %v", ErrPeerUnreachable, peer.ID, err)
+	}
+	return coapdtls.Client(dtlsConnection, options.WithCloseSocket()), nil
 }
 
 func (n *Node) Close() {

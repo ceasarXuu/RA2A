@@ -3,7 +3,10 @@ package control
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -12,13 +15,17 @@ import (
 )
 
 type fakeLAN struct {
-	peers    []lannode.Peer
-	sessions map[string][]lannode.Session
-	blocked  map[string]bool
-	delays   map[string]time.Duration
-	sentPeer lannode.Peer
-	sent     lannode.Message
-	sendErr  error
+	peers       []lannode.Peer
+	sessions    map[string][]lannode.Session
+	blocked     map[string]bool
+	delays      map[string]time.Duration
+	sentPeer    lannode.Peer
+	sentPeers   []lannode.Peer
+	sent        lannode.Message
+	sendErr     error
+	sendErrs    []error
+	changedPeer lannode.Peer
+	changeErr   error
 }
 
 func (lan *fakeLAN) Peers() []lannode.Peer { return lan.peers }
@@ -29,6 +36,10 @@ func (lan *fakeLAN) Peer(id string) (lannode.Peer, bool) {
 		}
 	}
 	return lannode.Peer{}, false
+}
+
+func (lan *fakeLAN) RefreshPeer(context.Context, string, string) (lannode.Peer, error) {
+	return lan.changedPeer, lan.changeErr
 }
 func (lan *fakeLAN) ListSessions(ctx context.Context, peer lannode.Peer) ([]lannode.Session, error) {
 	if lan.blocked[peer.ID] {
@@ -86,6 +97,12 @@ func TestCoordinatorKeepsDiscoveredTargetWhenAnotherPeerHangs(t *testing.T) {
 }
 func (lan *fakeLAN) SendMessage(_ context.Context, peer lannode.Peer, message lannode.Message) error {
 	lan.sentPeer, lan.sent = peer, message
+	lan.sentPeers = append(lan.sentPeers, peer)
+	if len(lan.sendErrs) > 0 {
+		err := lan.sendErrs[0]
+		lan.sendErrs = lan.sendErrs[1:]
+		return err
+	}
 	return lan.sendErr
 }
 
@@ -159,6 +176,43 @@ func TestCoordinatorPreservesRemoteDeliveryUnknown(t *testing.T) {
 	}
 }
 
+func TestCoordinatorRetriesChangedEndpointAfterHandshakeFailure(t *testing.T) {
+	oldPeer := lannode.Peer{ID: "remote", Name: "Remote", Address: "192.0.2.10:4000"}
+	newPeer := lannode.Peer{ID: "remote", Name: "Remote", Address: "192.0.2.10:5000"}
+	lan := &fakeLAN{
+		peers:       []lannode.Peer{oldPeer},
+		sendErrs:    []error{fmt.Errorf("%w: handshake timeout", lannode.ErrPeerUnreachable), nil},
+		changedPeer: newPeer,
+	}
+	err := NewCoordinator("local", lan).Send(context.Background(), SendRequest{
+		To: "ra2a://remote/thread-2", Text: "hello", SourceSessionID: "thread-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(lan.sentPeers, []lannode.Peer{oldPeer, newPeer}) {
+		t.Fatalf("sent peers = %#v", lan.sentPeers)
+	}
+}
+
+func TestCoordinatorReportsHandshakeFailureAsTargetUnreachable(t *testing.T) {
+	peer := lannode.Peer{ID: "remote", Name: "Remote", Address: "192.0.2.10:4000"}
+	lan := &fakeLAN{
+		peers:     []lannode.Peer{peer},
+		sendErr:   fmt.Errorf("%w: handshake timeout", lannode.ErrPeerUnreachable),
+		changeErr: context.DeadlineExceeded,
+	}
+	err := NewCoordinator("local", lan).Send(context.Background(), SendRequest{
+		To: "ra2a://remote/thread-2", Text: "hello", SourceSessionID: "thread-1",
+	})
+	if !errors.Is(err, ErrTargetUnreachable) {
+		t.Fatalf("error = %v, want TARGET_UNREACHABLE", err)
+	}
+	if errors.Is(err, ErrDeliveryUnknown) {
+		t.Fatalf("pre-delivery failure must not be DELIVERY_UNKNOWN: %v", err)
+	}
+}
+
 func TestCoordinatorRejectsUnknownTarget(t *testing.T) {
 	err := NewCoordinator("local", &fakeLAN{}).Send(context.Background(), SendRequest{
 		To: "ra2a://missing/thread-2", Text: "hello", SourceSessionID: "thread-1",
@@ -193,6 +247,17 @@ func TestHTTPClientPreservesDeliveryErrorCode(t *testing.T) {
 	err := NewClient(server.URL).Send(context.Background(), SendRequest{To: "ra2a://n/s", Text: "x", SourceSessionID: "c"})
 	if err == nil || !strings.Contains(err.Error(), "SESSION_BUSY") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestHTTPHandlerMapsTargetUnreachableToServiceUnavailable(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/v1/send", strings.NewReader(
+		`{"to":"ra2a://n/s","text":"x","sourceSessionId":"c"}`,
+	))
+	recorder := httptest.NewRecorder()
+	NewHandler(&fakeBackend{sendErr: ErrTargetUnreachable}).ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
 	}
 }
 

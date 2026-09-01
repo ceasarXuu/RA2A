@@ -146,6 +146,46 @@ func TestSendMessageReturnsSessionBusyPrecondition(t *testing.T) {
 	}
 }
 
+func TestSendMessageClassifiesDTLSHandshakeFailureAsPeerUnreachable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	node := &Node{key: []byte("A2B3C4")}
+	err := node.SendMessage(ctx, Peer{ID: "offline", Address: "192.0.2.1:65000"}, Message{
+		TargetSessionID: "thread", Text: "hello",
+	})
+	if !errors.Is(err, ErrPeerUnreachable) {
+		t.Fatalf("error = %v, want ErrPeerUnreachable", err)
+	}
+}
+
+func TestRefreshPeerResolvesChangedEndpointAfterRestart(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	first, err := Start(ctx, Config{ID: "refresh-test-node", Name: "Refresh Test", PIN: "A2B3C4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPeer, err := first.WaitForPeer(ctx, "refresh-test-node")
+	if err != nil {
+		first.Close()
+		t.Fatal(err)
+	}
+	first.Close()
+
+	second, err := Start(ctx, Config{ID: "refresh-test-node", Name: "Refresh Test", PIN: "A2B3C4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	refreshed, err := first.RefreshPeer(ctx, "refresh-test-node", oldPeer.Address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Address == oldPeer.Address {
+		t.Fatalf("endpoint was not refreshed: %s", refreshed.Address)
+	}
+}
+
 func TestPeersReturnsSortedSnapshot(t *testing.T) {
 	node := &Node{peers: map[string]Peer{
 		"z-node": {ID: "z-node", Name: "Z", Address: "127.0.0.1:2"},

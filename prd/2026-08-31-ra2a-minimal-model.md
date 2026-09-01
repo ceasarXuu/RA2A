@@ -233,7 +233,7 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 4. Given 两台设备 PIN 不同，when 任一方请求 session 列表或发送消息，then 请求被拒绝且不泄露 session 数据。
 5. Given 目标 session 正在运行，when 收到新消息，then 返回明确的 `SESSION_BUSY`，且不修改当前回合。
 6. Given 目标设备离线，when 广播过期，then 该节点不再出现在 `list_targets` 的可用目标中。
-7. Given 发送请求超时，then 返回 `DELIVERY_UNKNOWN`，且发送端不自动重试。
+7. Given DTLS 握手前目标不可达，then 重新解析一次 mDNS 端点，仅在端点变化时安全重试一次；仍不可达返回 `TARGET_UNREACHABLE`。Given 请求已写出但响应超时，then 返回 `DELIVERY_UNKNOWN`，且发送端不自动重试。
 8. Given 节点因短暂网络波动失联，when 网络恢复，then 节点自动重新发现并恢复通信，无需重启服务或修改配置。
 9. Given 一台受支持平台的新设备已安装 Codex，when 用户或 Agent 按 README 执行对应安装脚本，then 能以无交互方式完成安装并得到可验证的成功或明确失败结果。
 10. Given 同一版本分别运行在 macOS、Linux 和 Windows，when 执行发现与消息投递，then 对外协议和 MCP 工具行为一致。
@@ -262,7 +262,7 @@ PIN 不是可省略的装饰：向 Codex session 注入文本可能触发文件�
 | PD10 | 第一版目标仅限于 Codex App | 只围绕 Codex App 设计、验证和验收首版闭环 | 第一版不得扩展为 CLI、IDE、云任务或通用 MCP Host 兼容项目 | 收紧首版边界，优先验证核心可行性 | 验收范围包含非 Codex App 客户端，或为其增加兼容层 | user-confirmed-direct: “第一版目标仅限于 codex app” | active |
 | PD11 | 默认向信任组公开全部未归档 session 的 ID、标题和状态 | `list_targets` 返回全部未归档 session 的最小摘要 | 第一版不得增加 session 手动发布机制或隐藏部分未归档 session | 保持发现模型和工具数量最小 | 同组节点无法发现某个未归档 session，或需要先手动发布 | user-confirmed-direct: 对“默认公开所有未归档 session 的 ID、标题和状态”回复“同意” | active |
 | PD12 | 忙碌 session 拒绝新消息 | 返回 `SESSION_BUSY`，不修改当前回合 | 不得排队或通过 `turn/steer` 干预当前任务 | 避免并发消息改变正在执行的工作 | 忙碌 session 接收、排队或合并了远端消息 | user-confirmed-direct: 对“忙碌时直接返回 `SESSION_BUSY`”回复“同意” | active |
-| PD13 | 结果未知的消息不自动重试 | 超时返回 `DELIVERY_UNKNOWN`；发现和连接继续自愈 | 不得因超时自动重发消息 | 避免重复创建 Codex 回合 | 超时后 daemon 自动再次投递同一消息 | user-confirmed-direct: 对“网络超时不自动重试”回复“同意” | active |
+| PD13 | 结果未知的消息不自动重试 | 请求写出后的超时返回 `DELIVERY_UNKNOWN`；DTLS 握手前失败可重新解析端点，并仅在端点变化时安全重试一次 | 不得在请求可能已被远端处理后自动重发消息 | 避免重复创建 Codex 回合，同时允许从陈旧发现端点自愈 | 请求写出后 daemon 自动再次投递同一消息，或握手失败后不校验端点变化就重试 | user-confirmed-direct: 对“网络超时不自动重试”回复“同意”；对“刷新 mDNS 端点并区分握手前失败”的修复建议回复“修复” | active |
 | PD14 | 发送成功只表示远端创建回合 | `accepted` 在远端创建回合后返回；回复使用独立消息 | 不得把 accepted 表述为 Agent 已完成，也不得同步等待结果 | 保持异步消息模型 | HTTP 请求等待 Agent 完成，或 accepted 被解释为任务完成 | user-confirmed-direct: 对“成功只表示远端已经创建 Codex 回合”回复“同意” | active |
 | PD15 | RA2A 以用户级 daemon 常驻 | 首次 `ra2a` 引导时注册并启动；登录时自动启动；崩溃时由操作系统重启 | Codex App 或单个 session 不得拥有 daemon 生命周期，也不得要求系统级/root 常驻服务 | 保证唯一实例、自愈和用户态 Codex 访问 | 每个 session 启动独立服务，或关闭 Codex App 后服务必然消失 | user-confirmed-direct: 对新交互方案及确认问题回复“都确认” | active |
 | PD16 | 第一版使用长期共享的 6 位 PIN | PIN 保存在各节点用户配置中并长期有效；其他设备通过线下复制相同 PIN 加入信任组 | 不得实现一次性 PIN、过期、PAKE 配对、自动轮换或逐设备吊销生命周期 | 用户要求第一版进一步简化密钥模型 | PIN 自动失效、每台设备产生不同长期密钥，或加入设备必须完成额外配对流程 | user-confirmed-direct: “比如生成一个 6位字符之类的”；“第一版做简单点，不要搞这种生命周期，就做成长期的” | active |

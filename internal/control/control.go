@@ -22,9 +22,11 @@ import (
 
 const DefaultEndpoint = "http://127.0.0.1:47321"
 const targetProbeTimeout = 8 * time.Second
+const peerRefreshTimeout = 2 * time.Second
 
 var ErrInvalidRequest = errors.New("INVALID_REQUEST")
 var ErrTargetNotFound = errors.New("TARGET_NOT_FOUND")
+var ErrTargetUnreachable = errors.New("TARGET_UNREACHABLE")
 var ErrDeliveryUnknown = errors.New("DELIVERY_UNKNOWN")
 
 type Target struct {
@@ -49,6 +51,7 @@ type Backend interface {
 type LAN interface {
 	Peers() []lannode.Peer
 	Peer(string) (lannode.Peer, bool)
+	RefreshPeer(context.Context, string, string) (lannode.Peer, error)
 	ListSessions(context.Context, lannode.Peer) ([]lannode.Session, error)
 	SendMessage(context.Context, lannode.Peer, lannode.Message) error
 }
@@ -146,12 +149,25 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 	if err != nil {
 		return fmt.Errorf("create message ID: %w", err)
 	}
-	err = coordinator.lan.SendMessage(ctx, peer, lannode.Message{
+	outgoing := lannode.Message{
 		TargetSessionID: sessionID,
 		Text:            request.Text,
 		Source:          "ra2a://" + coordinator.localID + "/" + request.SourceSessionID,
 		MessageID:       messageID,
-	})
+	}
+	err = coordinator.lan.SendMessage(ctx, peer, outgoing)
+	if errors.Is(err, lannode.ErrPeerUnreachable) {
+		refreshCtx, cancel := context.WithTimeout(ctx, peerRefreshTimeout)
+		refreshed, refreshErr := coordinator.lan.RefreshPeer(refreshCtx, nodeID, peer.Address)
+		cancel()
+		if refreshErr != nil {
+			return fmt.Errorf("%w: %v", ErrTargetUnreachable, err)
+		}
+		err = coordinator.lan.SendMessage(ctx, refreshed, outgoing)
+		if errors.Is(err, lannode.ErrPeerUnreachable) {
+			return fmt.Errorf("%w: %v", ErrTargetUnreachable, err)
+		}
+	}
 	if err != nil && strings.Contains(err.Error(), ErrDeliveryUnknown.Error()) {
 		return fmt.Errorf("%w: %v", ErrDeliveryUnknown, err)
 	}
@@ -204,6 +220,8 @@ func NewHandler(backend Backend) http.Handler {
 				status = http.StatusBadRequest
 			case errors.Is(err, ErrTargetNotFound):
 				status = http.StatusNotFound
+			case errors.Is(err, ErrTargetUnreachable):
+				status = http.StatusServiceUnavailable
 			case errors.Is(err, ErrDeliveryUnknown):
 				status = http.StatusGatewayTimeout
 			case strings.Contains(err.Error(), "SESSION_BUSY"):

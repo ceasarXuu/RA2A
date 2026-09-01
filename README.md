@@ -52,7 +52,7 @@ Codex App / remote client ──► managed App Server ──┘
 - `list_targets()`：返回 mDNS 已发现的 RA2A 节点、节点可用状态，以及各节点未归档 session 的 `id`、标题和状态。节点状态为 `ready`、`degraded` 或 `unreachable`；`degraded` 会保留最近成功结果并设置 `sessionsStale=true`，网络波动不再让节点从列表中消失。
 - `send_message(to, text)`：向 `ra2a://<node-id>/<session-id>` 创建一个远端 Codex 回合。工具从 MCP `_meta.threadId` 取得调用 session，自动生成可回复的 `from` 地址和唯一 message ID。
 
-`accepted` 只表示远端已创建回合。忙碌 session 返回 `SESSION_BUSY`；结果未知的超时返回 `DELIVERY_UNKNOWN` 且不会自动重发；调用上下文缺少 thread ID 时返回 `CALLER_SESSION_UNKNOWN`，不会伪造来源。
+`accepted` 只表示远端已创建回合。忙碌 session 返回 `SESSION_BUSY`；DTLS 握手前不可达时会主动重新解析一次 mDNS 端点，只在端点确实变化后安全重试，仍不可达则返回 `TARGET_UNREACHABLE`；请求写出后的结果未知超时返回 `DELIVERY_UNKNOWN` 且不会自动重发。调用上下文缺少 thread ID 时返回 `CALLER_SESSION_UNKNOWN`，不会伪造来源。
 
 ## 本地开发验证
 
