@@ -30,15 +30,26 @@ flowchart LR
 
 ## 支持路线
 
-| 维度 | ✅ 当前支持 | 🧭 计划支持 | 🔭 长期计划 |
+### Agent / App
+
+| Agent / App | 状态 | 说明 |
+|---|---|---|
+| **Codex App** | ✅ 当前支持 | macOS 与 Windows 跨设备真实验收通过 |
+| Claude Code | 🧭 计划支持 | 接入对应会话接口 |
+| Claude Desktop App | 🧭 计划支持 | 支持桌面会话定向投递 |
+| OpenCode | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
+| Pi | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
+| DeepSeek Harness | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
+
+### 平台
+
+| 平台 | 状态 | 架构 | 后台保活 |
 |---|---|---|---|
-| **Agent / Host** | **Codex App** | Claude Code、Claude Desktop App、OpenCode、Pi、DeepSeek Harness | — |
-| **网络** | 局域网直连 | Tailscale | Relay 中继 |
+| **macOS** | ✅ 当前支持 | amd64、arm64 | LaunchAgent |
+| **Linux** | ✅ 当前支持 | amd64、arm64 | systemd user |
+| **Windows** | ✅ 当前支持 | amd64、arm64 | 计划任务 |
 
-运行平台：**macOS、Linux、Windows**；发布产物覆盖 **amd64、arm64**。
-
-> [!NOTE]
-> 计划项表示产品方向，不代表已经实现或承诺具体交付时间。
+**网络路线：** ✅ 局域网直连（当前） → 🧭 Tailscale（计划） → 🔭 Relay 中继（长期）
 
 ## 为什么是 RA2A
 
