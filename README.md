@@ -118,7 +118,7 @@ RA2A registers the same binary as a Codex stdio MCP server and forwards tool cal
 
 Peer discovery is lifecycle-aware: goodbye or expired mDNS records remove stale endpoints, and the daemon periodically reloads network interfaces after Wi-Fi changes or system wake. If DTLS fails before delivery, RA2A refreshes discovery and safely retries once against the recovered endpoint, including when a node returns on the same address.
 
-RA2A prefers the current Codex Desktop owner when starting a turn, including while the target is idle. This keeps the open Desktop UI synchronized. It falls back to its managed Codex App Server only when Desktop confirms that the request was not delivered. The owner-first flow has passed real Windows validation; use the [macOS Desktop owner UI validation handoff](runbooks/macos-desktop-owner-ui-validation-handoff.md) for the pending macOS regression check.
+RA2A prefers the current Codex Desktop owner when starting a turn, including while the target is idle. This keeps the open Desktop UI synchronized. It falls back to its managed Codex App Server only when Desktop confirms that the request was not delivered. The owner-first flow has passed real Windows validation and a 20-round macOS cross-device soak test without UI refresh degradation.
 
 - Codex App is the only supported host today. Offline delivery, persistent queues, and workflow orchestration are out of scope.
 - Desktop IPC has no OpenAI compatibility guarantee. RA2A may use the managed App Server after a confirmed pre-delivery failure, but never retries after an uncertain delivery.
