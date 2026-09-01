@@ -15,21 +15,57 @@ RA2A 是一个面向 **Codex App** 的轻量级局域网协作桥梁。
 
 **无需中心服务 · 无需公网中转 · 单一可执行程序 · 安装后自动保活**
 
-[快速开始](#快速开始) · [工作原理](#工作原理) · [Agent 工具](#agent-工具) · [设计边界](#设计边界)
+[快速开始](#快速开始) · [Agent 支持](#agent-支持) · [连接路线](#连接路线) · [工作原理](#工作原理)
 
 </div>
 
+```mermaid
+flowchart LR
+    subgraph A["设备 A"]
+        A1["Codex App<br/>Agent A"] <--> A2["RA2A MCP"] <--> A3["RA2A daemon"]
+    end
+
+    subgraph B["设备 B"]
+        B3["RA2A daemon"] <--> B2["RA2A MCP"] <--> B1["Codex App<br/>Agent B"]
+    end
+
+    A3 <-->|"当前：mDNS + CoAP/DTLS"| B3
+    A3 -.-> R["规划：Tailscale<br/>Relay 中继（长期）"] -.-> B3
+```
+
+## Agent 支持
+
+| 状态 | Agent / Host | 说明 |
+|---|---|---|
+| **当前支持** | Codex App | 已完成 macOS 与 Windows 跨设备真实验收 |
+| **计划支持** | Claude Code | 通过对应会话接口接入 RA2A 网络 |
+| **计划支持** | Claude Desktop App | 面向桌面会话的定向消息投递 |
+| **计划支持** | OpenCode | 复用 RA2A 的发现与消息协议 |
+| **计划支持** | Pi | 复用 RA2A 的发现与消息协议 |
+| **计划支持** | DeepSeek Harness | 复用 RA2A 的发现与消息协议 |
+
+当前可用版本只面向 **Codex App**；计划项表示产品方向，不代表已经实现或承诺具体交付时间。
+
+## 连接路线
+
+| 阶段 | 连接方式 | 用途 |
+|---|---|---|
+| **当前支持** | 局域网直连 | mDNS 自动发现，CoAP/DTLS 传输消息 |
+| **计划支持** | Tailscale | 连接不在同一物理局域网、但属于同一 Tailscale 私有网络的设备 |
+| **长期计划** | Relay 中继 | 为无法直连的设备提供跨网络发现与消息转发 |
+
 ## 为什么是 RA2A
 
-Codex Agent 通常被限制在当前设备和当前会话中。RA2A 补上了局域网内的协作通道：一台设备上的 Agent 可以发现另一台设备，查看可用 session，并把任务或上下文准确投递过去。
+多设备联调时，任务、日志和会话往往分散在不同机器上。RA2A 让 Agent 直接发现目标设备，并把消息送进指定 session：
 
-- **按 session 协作**：消息直接进入指定 Codex 会话，而不是停留在另一个收件箱。
-- **自动发现与恢复**：使用 mDNS 发现节点，网络波动后自动重新解析端点并恢复连接。
-- **不抢占 Codex 会话**：目标 session 已由 Desktop 持有时，交给现有 Desktop owner 创建新 turn；注入后仍可在原会话继续沟通。
-- **轻量部署**：每台设备只运行一个 RA2A daemon，由操作系统负责登录启动和崩溃重启。
-- **Agent 友好**：正式 MCP 仅暴露两个清晰工具，错误结果区分忙碌、不可达与投递状态未知。
+- **定向**：消息准确进入目标 session。
+- **连续**：不抢占 Desktop writer，注入后仍可继续原会话。
+- **自愈**：网络波动后自动重新发现和恢复连接。
 
-典型场景：让 Mac 上负责规划的 Agent，把实现任务交给 Windows 工作站上的 Agent；完成后，Windows Agent 再将结果回传到来源 session。
+## 典型场景
+
+1. **多设备联调**：Mac 上开发、Windows 上复现，或 Linux 设备提供运行环境。Agent 可以把构建、复现、日志采集和验证请求直接发送到对应设备的专用 session，再把结果回传，无需人工复制上下文。
+2. **跨设备 Agent 分工**：让 Mac 上负责规划的 Agent，把实现任务交给 Windows 工作站上的 Agent；完成后，Windows Agent 再将结果回复到来源 session。
 
 ## 快速开始
 
@@ -88,15 +124,7 @@ Mac / Planner
 
 ## 工作原理
 
-RA2A 采用单宿主模型。安装器把同一个二进制注册为 Codex stdio MCP；每次工具调用通过 loopback 访问常驻 daemon，不会重复启动 LAN 节点或 App Server。
-
-```text
-Codex Agent ── stdio ──► RA2A MCP ── loopback ──► RA2A daemon
-                                                    │
-                          mDNS + CoAP/DTLS ◄────────┤
-                                                    │
-Codex App / remote client ──► managed App Server ───┘
-```
+如顶部原理图所示，RA2A 采用单宿主模型。安装器把同一个二进制注册为 Codex stdio MCP；每次工具调用通过 loopback 访问常驻 daemon，不会重复启动 LAN 节点或 App Server。
 
 核心路径：
 
@@ -119,7 +147,7 @@ macOS 与 Windows Codex Desktop 均已完成真实跨设备验收：消息可以
 | 消息传输 | CoAP over DTLS-PSK |
 | 后台保活 | macOS LaunchAgent、Linux systemd user、Windows 计划任务 |
 
-第一版不承诺兼容 Codex CLI、IDE 扩展、云任务或其他 MCP Host，也不包含中心服务、离线消息、持久队列、工作流编排和公网通信。
+当前版本仅正式支持 Codex App；其他 Agent / Host 与跨网络连接方式见前文路线。当前不包含离线消息、持久队列和工作流编排。
 
 ## 日常命令
 
