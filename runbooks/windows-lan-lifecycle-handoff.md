@@ -16,7 +16,8 @@
 
 ```powershell
 git pull --ff-only
-if ((git rev-parse HEAD).Trim() -ne '94d7d263b79315a8fd2bdd528ce102bdea160180') { throw 'Unexpected RA2A commit' }
+git merge-base --is-ancestor 94d7d263b79315a8fd2bdd528ce102bdea160180 HEAD
+if ($LASTEXITCODE -ne 0) { throw 'LAN lifecycle fix is missing' }
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ra2a restart
 ra2a version
