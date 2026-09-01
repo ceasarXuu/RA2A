@@ -12,12 +12,14 @@
 |---|---|---|---|
 | App Server probe | `internal/appserverprobe`、`cmd/appserver-probe` | 使用 JSON-RPC 初始化 App Server、列举/恢复 thread、直接调用 MCP 工具、启动回合 | 默认仅调用 `thread/list`，写操作必须显式传入 `--allow-write` |
 | MCP context probe | `internal/mcpcontext`、`cmd/mcp-context-probe` | 实现最小 STDIO MCP，报告 `_meta` 键名和 thread/session 身份候选 | 不读取文件、不访问网络、不输出非身份元数据值 |
+| Desktop IPC probe | `internal/desktopipc`、`cmd/desktop-ipc-probe` | 连接 Codex Desktop 已有的私有 IPC，由 Desktop 自己为目标 thread 启动回合 | 必须显式传入 `--allow-write`；请求超时后不自动重试 |
 
-两个模块只依赖 Go 标准库，可以单独构建：
+三个模块只依赖 Go 标准库，可以单独构建：
 
 ```sh
 go build ./cmd/appserver-probe
 go build ./cmd/mcp-context-probe
+go build ./cmd/desktop-ipc-probe
 ```
 
 完整验证：
@@ -88,3 +90,35 @@ go build ./cmd/...
 ## Product Decision Delta
 
 本阶段新增了用户明确确认的产品边界：V1 使用 RA2A 受管的单一 App Server；普通 Desktop 本地 session 不属于正式可写目标。该决策已记录到 PRD 的 Confirmed Product Decisions。
+
+## 2026-09-01 Desktop 私有 IPC 实验
+
+本实验验证一个尚未进入正式产品链路的 hack：RA2A 不启动第二个 writer，而是作为客户端连接 Codex Desktop 已持有的 IPC socket，再请求 Desktop 为其当前持有的 thread 启动回合。
+
+```text
+远端 RA2A → 本机 RA2A → Desktop IPC → Desktop 私有 App Server → 原 Desktop session
+```
+
+macOS 实机结果：
+
+1. 暂停 RA2A 受管宿主后，在 Codex Desktop 打开 `接收消息注入测试`，确认目标 thread 的 writer 由 Desktop 进程持有。
+2. probe 连接 `$CODEX_HOME/ipc/ipc.sock`，完成私有 `initialize`，再调用 v2 `thread-follower-start-turn`。
+3. 第一次注入返回 turn `01a05a6a-6dc1-7673-924c-b9eaf37c4c84`，原 session 回复 `RA2A_DESKTOP_IPC_OK`。
+4. 第二次向同一 session 注入返回 turn `01a05a6a-cf06-75c1-8029-21abefb28296`，原 session 回复 `RA2A_DESKTOP_IPC_REPEAT_OK`。
+5. 两次完成后 writer 始终属于 Codex Desktop；没有出现 `already has an active writer`，也不需要注入后释放或归还 writer。
+6. 实验结束后已恢复 RA2A LaunchAgent 和受管 App Server。
+
+结论：该路径在当前 Codex Desktop macOS 版本上可重复工作，并能避免第二个 App Server 抢占 writer。它不是 OpenAI 公布的稳定接口，方法名、帧格式和 socket 位置都可能随 Desktop 更新变化；官方开发者文档也未提供该 IPC 的兼容承诺。因此当前只保留为显式实验命令，不替换正式 `send_message`，也不修改上文已确认的 V1 产品决策。
+
+当前边界：仅实机验证 macOS Unix socket；Windows named pipe 和 Linux 尚未验证。消息已写出但响应超时时，结果被标记为 unknown 且不得自动重试，避免重复注入。
+
+复现实验（会真实写入目标 Desktop session）：
+
+```sh
+go run ./cmd/desktop-ipc-probe \
+  --thread-id '<thread-id>' \
+  --message-id '<稳定且唯一的消息 ID>' \
+  --message '<消息>' \
+  --timeout 20s \
+  --allow-write
+```
