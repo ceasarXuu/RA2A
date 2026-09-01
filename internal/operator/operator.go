@@ -29,13 +29,6 @@ func ConfigPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if runtime.GOOS == "windows" {
-		root := os.Getenv("LOCALAPPDATA")
-		if root == "" {
-			root = filepath.Join(home, "AppData", "Local")
-		}
-		return filepath.Join(root, "RA2A", "config.json"), nil
-	}
 	return filepath.Join(home, ".config", "ra2a", "config.json"), nil
 }
 
@@ -45,6 +38,15 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	data, err := os.ReadFile(path)
+	legacy := false
+	if errors.Is(err, os.ErrNotExist) && runtime.GOOS == "windows" {
+		legacyPath, pathErr := legacyWindowsConfigPath()
+		if pathErr != nil {
+			return Config{}, pathErr
+		}
+		data, err = os.ReadFile(legacyPath)
+		legacy = err == nil
+	}
 	if err != nil {
 		return Config{}, err
 	}
@@ -52,7 +54,27 @@ func Load() (Config, error) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
-	return config, Validate(config)
+	if err := Validate(config); err != nil {
+		return Config{}, err
+	}
+	if legacy {
+		if err := Save(config); err != nil {
+			return Config{}, fmt.Errorf("migrate Windows config: %w", err)
+		}
+	}
+	return config, nil
+}
+
+func legacyWindowsConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	root := os.Getenv("LOCALAPPDATA")
+	if root == "" {
+		root = filepath.Join(home, "AppData", "Local")
+	}
+	return filepath.Join(root, "RA2A", "config.json"), nil
 }
 
 func Save(config Config) error {
@@ -287,9 +309,18 @@ func installLinux(executable string) error {
 }
 
 func installWindows(executable string) error {
+	script := windowsScheduledTaskScript(executable)
+	output, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("register/start Windows scheduled task: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func windowsScheduledTaskScript(executable string) string {
 	quoted := strings.ReplaceAll(executable, "'", "''")
-	script := fmt.Sprintf(`$a=New-ScheduledTaskAction -Execute '%s' -Argument 'daemon';$t=New-ScheduledTaskTrigger -AtLogOn;$s=New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable;Register-ScheduledTask -TaskName RA2A -Action $a -Trigger $t -Settings $s -Force|Out-Null;Start-ScheduledTask -TaskName RA2A`, quoted)
-	return exec.Command("powershell.exe", "-NoProfile", "-Command", script).Run()
+	workingDirectory := strings.ReplaceAll(filepath.Dir(executable), "'", "''")
+	return fmt.Sprintf(`$ErrorActionPreference='Stop';$u=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name;$a=New-ScheduledTaskAction -Execute '%s' -Argument 'daemon' -WorkingDirectory '%s';$t=New-ScheduledTaskTrigger -AtLogOn -User $u;$w=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1);$p=New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive -RunLevel Limited;$s=New-ScheduledTaskSettingsSet -RestartCount 255 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries;Register-ScheduledTask -TaskName RA2A -Action $a -Trigger @($t,$w) -Principal $p -Settings $s -Force|Out-Null;Start-ScheduledTask -TaskName RA2A`, quoted, workingDirectory)
 }
 
 func xmlEscape(value string) string {

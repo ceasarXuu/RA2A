@@ -35,9 +35,12 @@ try {
     $Actual = (Get-FileHash -LiteralPath $TemporaryBinary -Algorithm SHA256).Hash
     if (-not $Expected -or $Expected -ine $Actual) { throw 'Release checksum verification failed' }
 
-    $InstallRoot = Join-Path $env:LOCALAPPDATA 'RA2A'
-    $BinDir = Join-Path $InstallRoot 'bin'
+    $BinDir = Join-Path $HOME '.local\bin'
     $BinaryPath = Join-Path $BinDir 'ra2a.exe'
+    $ConfigPath = Join-Path $HOME '.config\ra2a\config.json'
+    $LegacyInstallRoot = Join-Path $env:LOCALAPPDATA 'RA2A'
+    $LegacyConfigPath = Join-Path $LegacyInstallRoot 'config.json'
+    $LegacyBinaryPath = Join-Path $LegacyInstallRoot 'bin\ra2a.exe'
     $ExistingTask = Get-ScheduledTask -TaskName RA2A -ErrorAction SilentlyContinue
     if ($ExistingTask) { Stop-ScheduledTask -TaskName RA2A -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
@@ -58,11 +61,15 @@ try {
         if (-not $Codex) { throw 'Codex executable not found; pass -Codex C:\absolute\path\to\codex.exe' }
         & $BinaryPath setup --pin $Pin --node-id $NodeId --name $Name --codex $Codex
         if ($LASTEXITCODE -ne 0) { throw 'RA2A setup failed' }
-    } elseif (Test-Path -LiteralPath (Join-Path $InstallRoot 'config.json')) {
+    } elseif ((Test-Path -LiteralPath $ConfigPath) -or (Test-Path -LiteralPath $LegacyConfigPath)) {
         & $BinaryPath restart
         if ($LASTEXITCODE -ne 0) { throw 'RA2A restart failed' }
     } else {
         Write-Output "Run $BinaryPath to finish setup."
+    }
+    if (Test-Path -LiteralPath $ConfigPath) {
+        Remove-Item -LiteralPath $LegacyBinaryPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $LegacyConfigPath -Force -ErrorAction SilentlyContinue
     }
 } finally {
     Remove-Item -LiteralPath $TemporaryRoot -Recurse -Force -ErrorAction SilentlyContinue

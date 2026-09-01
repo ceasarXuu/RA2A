@@ -8,16 +8,21 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $TaskName = 'RA2A'
-$InstallRoot = Join-Path $env:LOCALAPPDATA 'RA2A'
-$BinDir = Join-Path $InstallRoot 'bin'
+$BinDir = Join-Path $HOME '.local\bin'
 $BinaryPath = Join-Path $BinDir 'ra2a.exe'
+$ConfigPath = Join-Path $HOME '.config\ra2a\config.json'
+$LegacyInstallRoot = Join-Path $env:LOCALAPPDATA 'RA2A'
+$LegacyConfigPath = Join-Path $LegacyInstallRoot 'config.json'
+$LegacyBinaryPath = Join-Path $LegacyInstallRoot 'bin\ra2a.exe'
 
 if ($Uninstall) {
     $Mcp = $Codex
     if (-not $Mcp) { $Mcp = (Get-Command codex -ErrorAction SilentlyContinue).Source }
     if ($Mcp) { & $Mcp mcp remove ra2a 2>$null }
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $InstallRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $BinaryPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Split-Path -Parent $ConfigPath) -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $LegacyInstallRoot -Recurse -Force -ErrorAction SilentlyContinue
     Write-Output 'RA2A uninstalled for current user'
     exit 0
 }
@@ -35,15 +40,22 @@ try {
     Pop-Location
 }
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-$ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Move-Item -LiteralPath $BuildPath -Destination $BinaryPath -Force
-if ($ExistingTask) { Start-ScheduledTask -TaskName $TaskName }
 Write-Output 'RA2A command installed'
 Write-Output "binary: $BinaryPath"
 
 $SetupRequested = $PSBoundParameters.ContainsKey('Pin') -or $PSBoundParameters.ContainsKey('NodeId') -or $PSBoundParameters.ContainsKey('Name') -or $PSBoundParameters.ContainsKey('Codex')
 if (-not $SetupRequested) {
+    if ((Test-Path -LiteralPath $ConfigPath) -or (Test-Path -LiteralPath $LegacyConfigPath)) {
+        & $BinaryPath restart
+        if ($LASTEXITCODE -ne 0) { throw 'RA2A restart failed' }
+        if (Test-Path -LiteralPath $ConfigPath) {
+            Remove-Item -LiteralPath $LegacyBinaryPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $LegacyConfigPath -Force -ErrorAction SilentlyContinue
+        }
+        exit 0
+    }
     Write-Output 'Run ra2a to finish setup.'
     exit 0
 }
@@ -61,3 +73,7 @@ if (-not $Codex -or -not (Test-Path -LiteralPath $Codex -PathType Leaf)) {
 }
 & $BinaryPath setup --pin $Pin --node-id $NodeId --name $Name --codex $Codex
 if ($LASTEXITCODE -ne 0) { throw 'RA2A setup failed' }
+if (Test-Path -LiteralPath $ConfigPath) {
+    Remove-Item -LiteralPath $LegacyBinaryPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $LegacyConfigPath -Force -ErrorAction SilentlyContinue
+}

@@ -176,7 +176,7 @@ func TestPowerShellInstallerDelegatesLifecycleToRA2A(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"go build", "setup", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "Uninstall", "Run ra2a to finish setup", "if ($ExistingTask) { Start-ScheduledTask", "$Mcp = $Codex"} {
+	for _, marker := range []string{"go build", "setup", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "Uninstall", "Run ra2a to finish setup", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'", "$Mcp = $Codex"} {
 		if !strings.Contains(string(content), marker) {
 			t.Errorf("install.ps1 missing %q", marker)
 		}
@@ -188,7 +188,7 @@ func TestRemotePowerShellInstallerUsesReleaseAndSHA256(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"releases/latest", "Get-FileHash", "SHA256", "ra2a-$Version-windows-$Architecture.exe", "Move-Item", "setup --pin"} {
+	for _, marker := range []string{"releases/latest", "Get-FileHash", "SHA256", "ra2a-$Version-windows-$Architecture.exe", "Move-Item", "setup --pin", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'"} {
 		if !strings.Contains(string(content), marker) {
 			t.Errorf("install-remote.ps1 missing %q", marker)
 		}

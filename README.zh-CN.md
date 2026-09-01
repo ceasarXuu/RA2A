@@ -75,7 +75,7 @@ ra2a
 
 ```powershell
 irm https://github.com/ceasarXuu/RA2A/releases/latest/download/install-ra2a.ps1 | iex
-$env:Path = "$env:LOCALAPPDATA\RA2A\bin;$env:Path"
+$env:Path = "$HOME\.local\bin;$env:Path"
 ra2a
 ```
 

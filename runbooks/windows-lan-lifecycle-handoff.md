@@ -61,7 +61,7 @@ ra2a version
 Get-ScheduledTask -TaskName RA2A | Format-List *
 Get-ScheduledTaskInfo -TaskName RA2A | Format-List *
 Get-CimInstance Win32_Process -Filter "Name='ra2a.exe'" | Select-Object ProcessId, ExecutablePath, CommandLine
-$c = Get-Content "$env:LOCALAPPDATA\RA2A\config.json" | ConvertFrom-Json
+$c = Get-Content "$HOME\.config\ra2a\config.json" | ConvertFrom-Json
 [pscustomobject]@{ nodeId=$c.nodeId; name=$c.name; pinConfigured=([string]$c.pin).Length -eq 6; codex=$c.codex }
 ```
 
