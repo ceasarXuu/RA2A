@@ -34,7 +34,7 @@ func TestRunVersionPrintsCurrentVersion(t *testing.T) {
 	if err := run(context.Background(), []string{"version"}, &output, fakeSourceFactory(nil)); err != nil {
 		t.Fatalf("version: %v", err)
 	}
-	if output.String() != "v0.0.4\n" {
+	if output.String() != "v0.0.5\n" {
 		t.Fatalf("version output = %q", output.String())
 	}
 }
@@ -211,7 +211,7 @@ func TestRunSetupSupportsNonInteractiveInstall(t *testing.T) {
 
 func TestRunUpdateInstallsChecksummedGitHubRelease(t *testing.T) {
 	configuredOperatorHome(t)
-	assetName := "ra2a-v0.0.5-" + runtime.GOOS + "-" + runtime.GOARCH
+	assetName := "ra2a-v0.0.5-test-update-" + runtime.GOOS + "-" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
 		assetName += ".exe"
 	}
@@ -221,7 +221,7 @@ func TestRunUpdateInstallsChecksummedGitHubRelease(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/latest":
-			fmt.Fprintf(writer, `{"tag_name":"v0.0.5","assets":[{"name":%q,"browser_download_url":%q},{"name":%q,"browser_download_url":%q}]}`,
+			fmt.Fprintf(writer, `{"tag_name":"v0.0.5-test-update","assets":[{"name":%q,"browser_download_url":%q},{"name":%q,"browser_download_url":%q}]}`,
 				assetName, server.URL+"/binary", assetName+".sha256", server.URL+"/checksum")
 		case "/binary":
 			_, _ = writer.Write(payload)
@@ -246,7 +246,7 @@ func TestRunUpdateInstallsChecksummedGitHubRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, payload) || !strings.Contains(output.String(), "updated: v0.0.5") {
+	if !bytes.Equal(got, payload) || !strings.Contains(output.String(), "updated: v0.0.5-test-update") {
 		t.Fatalf("binary=%q output=%q", got, output.String())
 	}
 }

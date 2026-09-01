@@ -182,7 +182,7 @@ macOS 日志位于 `~/.config/ra2a/logs/`；Linux 可使用 `journalctl --user -
 | `ra2a restart` | 重启后台服务 |
 | `ra2a name [名称]` | 设置设备名称；省略参数时交互输入 |
 | `ra2a pin [6位PIN]` | 设置长期共享 PIN；省略参数时交互输入 |
-| `ra2a version` | 输出当前版本，当前为 `v0.0.4` |
+| `ra2a version` | 输出当前版本，当前为 `v0.0.5` |
 | `ra2a update` | 从 GitHub 最新正式 Release 下载当前平台产物，校验 SHA-256 后更新并重启 |
 
 正常升级直接执行：
@@ -216,8 +216,8 @@ GitHub Release 是正式发版主流程。程序版本由 `ra2a version` 输出�
 维护者发布当前版本的标准命令：
 
 ```bash
-git tag v0.0.4
-git push origin v0.0.4
+git tag v0.0.5
+git push origin v0.0.5
 ```
 
 不要重复使用或移动已发布 tag；下一版应先修改程序版本并通过测试，再创建对应的新 tag。`ra2a update` 只消费 GitHub 的 latest 正式 Release，不使用草稿或预发布版本。
