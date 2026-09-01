@@ -12,7 +12,7 @@ tag: v0.0.5
 target: ra2a://rog306/019f43ef-d5a0-7910-bd34-c5c825d1e94a
 ```
 
-完整证据见 [`coe/2026-09-02-00-49-windows-desktop-ipc.md`](../coe/2026-09-02-00-49-windows-desktop-ipc.md)。
+原始 Chain-of-Evidence 现场记录保存在开发者本地且被仓库忽略的 `/coe` 目录；本 runbook 记录可转交、可复现的结论和验收要求。
 
 ## 已确认根因
 
