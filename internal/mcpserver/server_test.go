@@ -36,10 +36,13 @@ func TestServeListsOnlyProductionTools(t *testing.T) {
 	if len(tools) != 2 || tools[0].(map[string]any)["name"] != "list_targets" || tools[1].(map[string]any)["name"] != "send_message" {
 		t.Fatalf("tools = %#v", tools)
 	}
+	if description := tools[0].(map[string]any)["description"].(string); !strings.Contains(description, "discovered") || !strings.Contains(description, "status") {
+		t.Fatalf("list_targets description = %q", description)
+	}
 }
 
 func TestListTargetsReturnsStructuredTargets(t *testing.T) {
-	backend := &fakeBackend{targets: []control.Target{{ID: "node-b", Name: "Node B"}}}
+	backend := &fakeBackend{targets: []control.Target{{ID: "node-b", Name: "Node B", Status: "degraded", SessionsStale: true}}}
 	responses := serveRequests(t, backend,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_targets","arguments":{}}}`,
 	)
@@ -47,6 +50,10 @@ func TestListTargetsReturnsStructuredTargets(t *testing.T) {
 	structured := result["structuredContent"].(map[string]any)
 	if result["isError"] != false || len(structured["targets"].([]any)) != 1 {
 		t.Fatalf("result = %#v", result)
+	}
+	target := structured["targets"].([]any)[0].(map[string]any)
+	if target["status"] != "degraded" || target["sessionsStale"] != true {
+		t.Fatalf("target = %#v", target)
 	}
 }
 

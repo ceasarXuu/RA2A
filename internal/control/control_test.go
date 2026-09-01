@@ -61,12 +61,12 @@ func TestCoordinatorAllowsSlowCodexSessionEnumeration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(targets) != 1 || targets[0].ID != "remote" {
+	if len(targets) != 1 || targets[0].ID != "remote" || targets[0].Status != "ready" || targets[0].SessionsStale {
 		t.Fatalf("targets = %#v, want slow remote peer", targets)
 	}
 }
 
-func TestCoordinatorReturnsReachableTargetsWhenAnotherPeerHangs(t *testing.T) {
+func TestCoordinatorKeepsDiscoveredTargetWhenAnotherPeerHangs(t *testing.T) {
 	lan := &fakeLAN{
 		peers:   []lannode.Peer{{ID: "blocked", Name: "Blocked"}, {ID: "online", Name: "Online"}},
 		blocked: map[string]bool{"blocked": true},
@@ -80,8 +80,8 @@ func TestCoordinatorReturnsReachableTargetsWhenAnotherPeerHangs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("healthy peer should survive blocked peer: %v", err)
 	}
-	if len(targets) != 1 || targets[0].ID != "online" {
-		t.Fatalf("targets = %#v, want online peer", targets)
+	if len(targets) != 2 || targets[0].ID != "blocked" || targets[0].Status != "unreachable" || targets[1].ID != "online" || targets[1].Status != "ready" {
+		t.Fatalf("targets = %#v, want visible blocked and online peers", targets)
 	}
 }
 func (lan *fakeLAN) SendMessage(_ context.Context, peer lannode.Peer, message lannode.Message) error {
@@ -89,7 +89,7 @@ func (lan *fakeLAN) SendMessage(_ context.Context, peer lannode.Peer, message la
 	return lan.sendErr
 }
 
-func TestCoordinatorListsOnlyReachableTargets(t *testing.T) {
+func TestCoordinatorMarksDiscoveredOfflineTargetUnreachable(t *testing.T) {
 	lan := &fakeLAN{
 		peers: []lannode.Peer{{ID: "online", Name: "Online"}, {ID: "stale", Name: "Stale"}},
 		sessions: map[string][]lannode.Session{
@@ -100,8 +100,33 @@ func TestCoordinatorListsOnlyReachableTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(targets) != 1 || targets[0].ID != "online" || targets[0].Sessions[0].ID != "thread-1" {
+	if len(targets) != 2 || targets[0].ID != "online" || targets[0].Status != "ready" || targets[0].Sessions[0].ID != "thread-1" {
 		t.Fatalf("targets = %#v", targets)
+	}
+	if targets[1].ID != "stale" || targets[1].Status != "unreachable" || targets[1].SessionsStale || len(targets[1].Sessions) != 0 {
+		t.Fatalf("targets = %#v", targets)
+	}
+}
+
+func TestCoordinatorRetainsLastSessionsWhenTargetDegrades(t *testing.T) {
+	lan := &fakeLAN{
+		peers: []lannode.Peer{{ID: "remote", Name: "Remote"}},
+		sessions: map[string][]lannode.Session{
+			"remote": {{ID: "thread-1", Title: "Ready", Status: "idle"}},
+		},
+	}
+	coordinator := NewCoordinator("local", lan)
+	first, err := coordinator.ListTargets(context.Background())
+	if err != nil || len(first) != 1 || first[0].Status != "ready" {
+		t.Fatalf("first targets=%#v err=%v", first, err)
+	}
+	delete(lan.sessions, "remote")
+	second, err := coordinator.ListTargets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 1 || second[0].Status != "degraded" || !second[0].SessionsStale || len(second[0].Sessions) != 1 || second[0].Sessions[0].ID != "thread-1" {
+		t.Fatalf("second targets=%#v", second)
 	}
 }
 

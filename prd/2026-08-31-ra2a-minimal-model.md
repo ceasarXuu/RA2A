@@ -94,7 +94,7 @@ list_targets() -> Node[] + Session[]
 send_message(to, text) -> accepted | error
 ```
 
-- `list_targets` 返回当前已验证且在线的节点，以及这些节点上全部未归档 session 的 ID、标题和状态。
+- `list_targets` 返回 mDNS 已发现的节点、节点可用状态，以及这些节点上全部未归档 session 的 ID、标题和状态。`ready` 表示本次 session 探测成功；`degraded` 表示探测失败但存在带 `sessionsStale=true` 的最近成功结果；`unreachable` 表示已发现但尚无可用 session 快照。网络波动不得让已发现节点被静默隐藏。
 - `send_message` 的产品目标是从 MCP 调用上下文取得当前调用者 session，自动形成 `from` 地址；调用者只需要提供 `to` 和 `text`。
 - OpenAI 官方 MCP 文档目前没有承诺工具调用会携带调用者 thread/session ID。实现前必须用探针确认该能力；若不存在，不得伪造或猜测 `from`，而应暂停实现并重新确认最小交互契约。
 
@@ -143,7 +143,7 @@ unknown → online → reconnecting
 ```
 
 - mDNS 发现并鉴权成功后为 `online`。
-- 广播过期或连接失败后进入 `reconnecting`，暂时从可选目标中移除。
+- 广播过期后节点从发现结果移除；连接失败后进入 `reconnecting`，继续显示为 `degraded` 或 `unreachable`，但不得把它伪装成可发送目标。
 - 服务持续重新发现和重连；网络恢复后自动回到 `online`，无需人工重启、重新安装或重新配置。
 - 本机 Codex App Server 连接中断时遵循同样规则；恢复前报告明确的本地不可用状态。
 

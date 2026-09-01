@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/lannode"
@@ -27,9 +28,11 @@ var ErrTargetNotFound = errors.New("TARGET_NOT_FOUND")
 var ErrDeliveryUnknown = errors.New("DELIVERY_UNKNOWN")
 
 type Target struct {
-	ID       string            `json:"id"`
-	Name     string            `json:"name"`
-	Sessions []lannode.Session `json:"sessions"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Status        string            `json:"status"`
+	SessionsStale bool              `json:"sessionsStale"`
+	Sessions      []lannode.Session `json:"sessions"`
 }
 
 type SendRequest struct {
@@ -51,52 +54,83 @@ type LAN interface {
 }
 
 type Coordinator struct {
-	localID string
-	lan     LAN
+	localID  string
+	lan      LAN
+	cacheMu  sync.RWMutex
+	sessions map[string][]lannode.Session
 }
 
 func NewCoordinator(localID string, lan LAN) *Coordinator {
-	return &Coordinator{localID: localID, lan: lan}
+	return &Coordinator{localID: localID, lan: lan, sessions: make(map[string][]lannode.Session)}
 }
 
 func (coordinator *Coordinator) ListTargets(ctx context.Context) ([]Target, error) {
 	type probeResult struct {
+		peer   lannode.Peer
 		target Target
 		err    error
 	}
 	peers := coordinator.lan.Peers()
 	results := make(chan probeResult, len(peers))
+	targets := make(map[string]Target, len(peers))
+	for _, peer := range peers {
+		targets[peer.ID] = coordinator.unavailableTarget(peer)
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, targetProbeTimeout)
 	defer cancel()
 	for _, peer := range peers {
 		go func(peer lannode.Peer) {
 			sessions, err := coordinator.lan.ListSessions(probeCtx, peer)
-			results <- probeResult{target: Target{ID: peer.ID, Name: peer.Name, Sessions: sessions}, err: err}
+			results <- probeResult{peer: peer, target: Target{ID: peer.ID, Name: peer.Name, Status: "ready", Sessions: sessions}, err: err}
 		}(peer)
 	}
-	targets := make([]Target, 0, len(peers))
 	for range peers {
 		select {
 		case result := <-results:
 			if result.err == nil {
-				targets = append(targets, result.target)
+				coordinator.storeSessions(result.peer.ID, result.target.Sessions)
+				targets[result.peer.ID] = result.target
 			}
 		case <-probeCtx.Done():
 			for {
 				select {
 				case result := <-results:
 					if result.err == nil {
-						targets = append(targets, result.target)
+						coordinator.storeSessions(result.peer.ID, result.target.Sessions)
+						targets[result.peer.ID] = result.target
 					}
 				default:
-					sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
-					return targets, nil
+					return sortedTargets(targets), nil
 				}
 			}
 		}
 	}
+	return sortedTargets(targets), nil
+}
+
+func (coordinator *Coordinator) unavailableTarget(peer lannode.Peer) Target {
+	coordinator.cacheMu.RLock()
+	sessions, ok := coordinator.sessions[peer.ID]
+	coordinator.cacheMu.RUnlock()
+	if !ok {
+		return Target{ID: peer.ID, Name: peer.Name, Status: "unreachable", Sessions: []lannode.Session{}}
+	}
+	return Target{ID: peer.ID, Name: peer.Name, Status: "degraded", SessionsStale: true, Sessions: append([]lannode.Session(nil), sessions...)}
+}
+
+func (coordinator *Coordinator) storeSessions(id string, sessions []lannode.Session) {
+	coordinator.cacheMu.Lock()
+	coordinator.sessions[id] = append([]lannode.Session(nil), sessions...)
+	coordinator.cacheMu.Unlock()
+}
+
+func sortedTargets(byID map[string]Target) []Target {
+	targets := make([]Target, 0, len(byID))
+	for _, target := range byID {
+		targets = append(targets, target)
+	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
-	return targets, nil
+	return targets
 }
 
 func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) error {

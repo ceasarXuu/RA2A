@@ -84,7 +84,7 @@ func productionTools() []any {
 	return []any{
 		map[string]any{
 			"name":        "list_targets",
-			"description": "List reachable RA2A nodes and their unarchived Codex sessions.",
+			"description": "List discovered RA2A nodes, their availability status, and current or stale Codex sessions.",
 			"inputSchema": map[string]any{
 				"type": "object", "properties": map[string]any{}, "additionalProperties": false,
 			},
