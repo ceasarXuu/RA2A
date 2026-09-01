@@ -32,6 +32,10 @@ func TestServeListsOnlyProductionTools(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
 	)
 	result := responses[1]["result"].(map[string]any)
+	initialize := responses[0]["result"].(map[string]any)
+	if initialize["serverInfo"].(map[string]any)["version"] != "v0.0.4" {
+		t.Fatalf("serverInfo = %#v", initialize["serverInfo"])
+	}
 	tools := result["tools"].([]any)
 	if len(tools) != 2 || tools[0].(map[string]any)["name"] != "list_targets" || tools[1].(map[string]any)["name"] != "send_message" {
 		t.Fatalf("tools = %#v", tools)

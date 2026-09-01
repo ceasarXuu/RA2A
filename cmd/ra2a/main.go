@@ -16,6 +16,7 @@ import (
 
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
 	"github.com/ceasarXuu/RA2A/internal/control"
+	"github.com/ceasarXuu/RA2A/internal/desktopipc"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 	"github.com/ceasarXuu/RA2A/internal/mcpserver"
 	"github.com/ceasarXuu/RA2A/internal/operator"
@@ -30,8 +31,11 @@ type sessionSource interface {
 type sessionSourceFactory func(context.Context, string, string, io.Writer) (sessionSource, error)
 
 type codexSessionSource struct {
-	host *codexhost.Host
+	host        *codexhost.Host
+	desktopSend messageSender
 }
+
+type messageSender func(context.Context, string, string) error
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -264,11 +268,39 @@ func startCodexSessionSource(ctx context.Context, codexPath, appServerSocket str
 	if err != nil {
 		return nil, err
 	}
-	return &codexSessionSource{host: host}, nil
+	return &codexSessionSource{host: host, desktopSend: sendDesktopMessage}, nil
 }
 
 func (source *codexSessionSource) SendMessage(ctx context.Context, target, prompt string) error {
-	return source.host.SendMessage(ctx, target, prompt)
+	return sendWithDesktopFallback(ctx, target, prompt, source.host.SendMessage, source.desktopSend)
+}
+
+func sendWithDesktopFallback(ctx context.Context, target, prompt string, managed, desktop messageSender) error {
+	err := managed(ctx, target, prompt)
+	if err == nil || !errors.Is(err, codexhost.ErrSessionBusy) || desktop == nil {
+		return err
+	}
+	if desktopErr := desktop(ctx, target, prompt); desktopErr != nil {
+		if desktopipc.IsDeliveryUnknown(desktopErr) {
+			return fmt.Errorf("%w: %v", control.ErrDeliveryUnknown, desktopErr)
+		}
+		return fmt.Errorf("%w; Desktop IPC fallback failed: %v", err, desktopErr)
+	}
+	return nil
+}
+
+func sendDesktopMessage(ctx context.Context, target, prompt string) error {
+	connection, _, err := desktopipc.DialContext(ctx, "")
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	client := desktopipc.New(connection)
+	if err := client.Initialize(ctx); err != nil {
+		return err
+	}
+	_, err = client.StartTurn(ctx, target, prompt, desktopipc.NewMessageID())
+	return err
 }
 
 func (source *codexSessionSource) ListSessions(ctx context.Context) ([]lannode.Session, error) {

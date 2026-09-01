@@ -152,6 +152,9 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 		Source:          "ra2a://" + coordinator.localID + "/" + request.SourceSessionID,
 		MessageID:       messageID,
 	})
+	if err != nil && strings.Contains(err.Error(), ErrDeliveryUnknown.Error()) {
+		return fmt.Errorf("%w: %v", ErrDeliveryUnknown, err)
+	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return fmt.Errorf("%w: %v", ErrDeliveryUnknown, err)
 	}

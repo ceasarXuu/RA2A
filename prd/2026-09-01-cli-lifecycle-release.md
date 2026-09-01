@@ -13,7 +13,7 @@
 - 后续执行 `ra2a` 只确保服务运行并显示状态，不重复初始化或改变 PIN。
 - 提供 `restart`、`pin`、`name`、`version`、`update` 子命令。
 - `update` 从 GitHub Releases 获取对应平台的预编译产物；GitHub Release 是正式发版主流程。
-- 当前产品版本为 `v0.0.3`。
+- 当前产品版本为 `v0.0.4`。
 - 阻塞产品决策已经确认，本文可直接进入实现。
 
 ## 1. 背景与目标
@@ -55,7 +55,7 @@
 - `ra2a restart`：重启后台服务，确认运行后退出。
 - `ra2a pin [PIN]`：未给参数时交互输入，给参数时无交互设置；校验后保存并重启。
 - `ra2a name [NAME]`：未给参数时交互输入，给参数时无交互设置；保存并重启。
-- `ra2a version`：输出 `v0.0.3`。
+- `ra2a version`：输出 `v0.0.4`。
 - `ra2a update`：检查 GitHub 最新正式 Release；校验并替换当前平台可执行文件，重启服务，报告结果。
 
 ## 4. 规则与异常
@@ -82,7 +82,7 @@
 2. Given 已完成配置，when 再次执行 `ra2a`，then 原名称和 PIN 不变，服务运行并立即退出。
 3. Given 服务正在运行，when 执行 `ra2a restart`，then 服务进程被重启且 CLI 确认新服务可用后退出。
 4. Given 有效的新 PIN 或名称，when 执行对应子命令，then 配置持久化并在重启后生效。
-5. Given 用户执行 `ra2a version`，then 只输出 `v0.0.3`。
+5. Given 用户执行 `ra2a version`，then 只输出 `v0.0.4`。
 6. Given GitHub 有更高正式版本，when 执行 `ra2a update`，then 下载匹配平台的预编译资产、通过 SHA-256 校验、保留原配置并完成服务重启。
 7. Given 下载、校验或替换失败，then 旧可执行文件仍可运行，并返回明确错误。
 8. Given 推送与程序版本一致的 `v*` tag，then GitHub 自动发布六个平台架构产物及校验文件。
@@ -98,7 +98,7 @@
 |---|---|---|---|---|---|---|---|
 | PD19 | 首次执行 `ra2a` 完成一次性交互引导 | 询问名称、生成并显示 PIN、注册并启动后台服务、确认运行后退出 | 不得让 daemon 前台占用当前终端，也不得在后续运行重复生成 PIN | 降低首次部署认知和命令成本 | 首次运行后终端仍被占用，或第二次运行改变 PIN | user-confirmed-direct: 对推荐首次运行流程回复“都确认” | active |
 | PD20 | 提供独立生命周期与配置命令 | 实现 `restart`、`pin`、`name`、`version`、`update` | 不得要求用户重新运行长安装命令来完成日常管理 | 让已安装产品可以自管理 | 修改名称/PIN或重启必须回到源码目录 | user-confirmed-direct: “单独支持命令 ra2a restart…ra2a pin…ra2a name…ra2a version” | active |
-| PD21 | 当前版本为 `v0.0.3` | 程序与发布流程使用同一版本来源 | 不得发布与程序报告不一致的 tag | 版本是更新与发版的共同契约 | `ra2a version` 与 Release tag 不一致 | user-confirmed-direct: “当前版本号为 v0.0.3” | active |
+| PD21 | 当前版本为 `v0.0.4` | 程序与发布流程使用同一版本来源 | 不得发布与程序报告不一致的 tag | 版本是更新与发版的共同契约 | `ra2a version` 与 Release tag 不一致 | user-confirmed-direct: “发布为 v0.0.4 更新” | active |
 | PD22 | `ra2a update` 使用 GitHub Releases 预编译包 | 按平台下载并校验正式 Release 资产后更新 | 不得要求已安装用户保留 Go 或源码仓库才能更新 | 降低用户更新依赖和失败面 | `update` 实际执行 git pull 或本机构建 | user-confirmed-direct: 对 GitHub Releases 预编译更新建议回复“都确认” | active |
 | PD23 | GitHub Release 是正式发版主流程 | tag 触发三平台双架构构建、校验与发布 | 不得依赖手工拼装正式 Release | 保证发布可重复且与自更新契约一致 | Release 缺平台资产、校验或版本门禁 | user-confirmed-direct: “把发版流程也管理一下，目前主要通过 github 发布 release” | active |
 | PD24 | 正式首次安装不得要求克隆仓库 | 提供直接消费 latest GitHub Release 的 macOS/Linux 与 Windows 安装命令 | 不得要求普通安装用户预装 Git、Go 或进入源码目录 | 首次安装必须是完整的二进制交付体验 | README 的正式安装仍以 `git clone` 或本地构建开头 | user-confirmed-direct: “那你就做完，不要丢给我半成品” | active |

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ceasarXuu/RA2A/internal/codexhost"
+	"github.com/ceasarXuu/RA2A/internal/control"
+	"github.com/ceasarXuu/RA2A/internal/desktopipc"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 )
 
@@ -30,7 +34,7 @@ func TestRunVersionPrintsCurrentVersion(t *testing.T) {
 	if err := run(context.Background(), []string{"version"}, &output, fakeSourceFactory(nil)); err != nil {
 		t.Fatalf("version: %v", err)
 	}
-	if output.String() != "v0.0.3\n" {
+	if output.String() != "v0.0.4\n" {
 		t.Fatalf("version output = %q", output.String())
 	}
 }
@@ -207,7 +211,7 @@ func TestRunSetupSupportsNonInteractiveInstall(t *testing.T) {
 
 func TestRunUpdateInstallsChecksummedGitHubRelease(t *testing.T) {
 	configuredOperatorHome(t)
-	assetName := "ra2a-v0.0.4-" + runtime.GOOS + "-" + runtime.GOARCH
+	assetName := "ra2a-v0.0.5-" + runtime.GOOS + "-" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
 		assetName += ".exe"
 	}
@@ -217,7 +221,7 @@ func TestRunUpdateInstallsChecksummedGitHubRelease(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/latest":
-			fmt.Fprintf(writer, `{"tag_name":"v0.0.4","assets":[{"name":%q,"browser_download_url":%q},{"name":%q,"browser_download_url":%q}]}`,
+			fmt.Fprintf(writer, `{"tag_name":"v0.0.5","assets":[{"name":%q,"browser_download_url":%q},{"name":%q,"browser_download_url":%q}]}`,
 				assetName, server.URL+"/binary", assetName+".sha256", server.URL+"/checksum")
 		case "/binary":
 			_, _ = writer.Write(payload)
@@ -242,7 +246,7 @@ func TestRunUpdateInstallsChecksummedGitHubRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, payload) || !strings.Contains(output.String(), "updated: v0.0.4") {
+	if !bytes.Equal(got, payload) || !strings.Contains(output.String(), "updated: v0.0.5") {
 		t.Fatalf("binary=%q output=%q", got, output.String())
 	}
 }
@@ -404,5 +408,51 @@ func TestRunMCPExposesProductionTools(t *testing.T) {
 		if !strings.Contains(output.String(), name) {
 			t.Fatalf("output %q missing %q", output.String(), name)
 		}
+	}
+}
+
+func TestSendWithDesktopFallbackOnlyOnActiveWriter(t *testing.T) {
+	desktopCalls := 0
+	desktop := func(context.Context, string, string) error {
+		desktopCalls++
+		return nil
+	}
+	if err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		return nil
+	}, desktop); err != nil || desktopCalls != 0 {
+		t.Fatalf("managed success err=%v desktopCalls=%d", err, desktopCalls)
+	}
+	want := errors.New("managed unavailable")
+	if err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		return want
+	}, desktop); !errors.Is(err, want) || desktopCalls != 0 {
+		t.Fatalf("managed failure err=%v desktopCalls=%d", err, desktopCalls)
+	}
+	if err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		return codexhost.ErrSessionBusy
+	}, desktop); err != nil || desktopCalls != 1 {
+		t.Fatalf("writer fallback err=%v desktopCalls=%d", err, desktopCalls)
+	}
+}
+
+func TestSendWithDesktopFallbackPreservesBusyWhenIPCFails(t *testing.T) {
+	err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		return codexhost.ErrSessionBusy
+	}, func(context.Context, string, string) error {
+		return errors.New("IPC unavailable")
+	})
+	if !errors.Is(err, codexhost.ErrSessionBusy) || !strings.Contains(err.Error(), "IPC unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSendWithDesktopFallbackPreservesUnknownDelivery(t *testing.T) {
+	err := sendWithDesktopFallback(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		return codexhost.ErrSessionBusy
+	}, func(context.Context, string, string) error {
+		return &desktopipc.DeliveryUnknownError{Cause: context.DeadlineExceeded}
+	})
+	if !errors.Is(err, control.ErrDeliveryUnknown) || errors.Is(err, codexhost.ErrSessionBusy) {
+		t.Fatalf("error = %v", err)
 	}
 }

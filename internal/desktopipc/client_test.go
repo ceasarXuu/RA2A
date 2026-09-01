@@ -157,6 +157,14 @@ func TestSocketCandidatesUseNamedPipeOnWindows(t *testing.T) {
 	}
 }
 
+func TestNewMessageIDIsUnique(t *testing.T) {
+	first := NewMessageID()
+	second := NewMessageID()
+	if first == "" || second == "" || first == second {
+		t.Fatalf("message IDs = %q, %q", first, second)
+	}
+}
+
 func assertStartTurnParams(t *testing.T, params map[string]any, threadID, text, messageID string) {
 	t.Helper()
 	if params["conversationId"] != threadID {

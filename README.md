@@ -43,7 +43,7 @@ Codex App / remote client ──► managed App Server ──┘
 
 2026-09-01 的 macOS 实机验证已经跑通：正式 MCP `send_message` 经 loopback → mDNS → DTLS → CoAP `/v1/messages` 投递到受管 session，连接同一宿主的官方 Codex 客户端实时显示来源、message ID 和正文，并回复 `RA2A_MCP_COMPLETE_OK`。
 
-重要边界：普通 Desktop 本地模式使用私有 stdio App Server，不属于 V1 可写目标。`GET /v1/sessions` 可能从共享存储列出这类 thread，但这不代表它可写；尝试恢复时会明确返回 `active writer` 冲突。V1 只承诺由 RA2A 受管 App Server 创建或加载、且 Codex App 通过 Remote/SSH 连接使用的 session；不使用未公开的 Desktop 内部投递接口。
+重要边界：RA2A 默认仍通过受管 App Server 投递；当目标 thread 明确返回 `active writer` 时，macOS 会窄回退到 Codex Desktop 已有的私有 IPC，由 Desktop 自己启动回合，RA2A 不取得 writer。该接口没有 OpenAI 兼容承诺，建连失败保持 `SESSION_BUSY`，写出后超时返回 `DELIVERY_UNKNOWN`；两者都不自动重试或抢占会话。
 
 ## Agent 工具
 
@@ -108,7 +108,7 @@ go run ./cmd/ra2a selftest \
   --codex /Applications/ChatGPT.app/Contents/Resources/codex
 ```
 
-本机最近一次受管宿主自检返回 61 个未归档 thread；数量会随本地会话变化。RA2A 使用 `thread/list` 和 `useStateDbOnly=true` 枚举摘要，并已通过 `thread/resume` + `turn/start` 向受管 session 完成真实消息注入。列表中的普通 Desktop 本地 thread 仍不保证可写。
+本机最近一次受管宿主自检返回的未归档 thread 数量会随本地会话变化。RA2A 使用 `thread/list` 和 `useStateDbOnly=true` 枚举摘要；受管 session 使用 `thread/resume` + `turn/start`，Desktop 持有 writer 的 session 在 macOS 上使用窄 IPC 回退。
 
 默认 control socket 为 `$CODEX_HOME/app-server-control/app-server-control.sock`，未设置 `CODEX_HOME` 时使用 `~/.codex/app-server-control/app-server-control.sock`。可用 `--app-server-socket` 覆盖。官方客户端可使用 `codex --remote unix://` 连接；Codex App 应通过 Remote/SSH 使用同一宿主，而不是普通本地 session。
 
@@ -182,7 +182,7 @@ macOS 日志位于 `~/.config/ra2a/logs/`；Linux 可使用 `journalctl --user -
 | `ra2a restart` | 重启后台服务 |
 | `ra2a name [名称]` | 设置设备名称；省略参数时交互输入 |
 | `ra2a pin [6位PIN]` | 设置长期共享 PIN；省略参数时交互输入 |
-| `ra2a version` | 输出当前版本，当前为 `v0.0.3` |
+| `ra2a version` | 输出当前版本，当前为 `v0.0.4` |
 | `ra2a update` | 从 GitHub 最新正式 Release 下载当前平台产物，校验 SHA-256 后更新并重启 |
 
 正常升级直接执行：
@@ -216,10 +216,10 @@ GitHub Release 是正式发版主流程。程序版本由 `ra2a version` 输出�
 维护者发布当前版本的标准命令：
 
 ```bash
-git tag v0.0.3
-git push origin v0.0.3
+git tag v0.0.4
+git push origin v0.0.4
 ```
 
 不要重复使用或移动已发布 tag；下一版应先修改程序版本并通过测试，再创建对应的新 tag。`ra2a update` 只消费 GitHub 的 latest 正式 Release，不使用草稿或预发布版本。
 
-Windows 安装脚本和 Windows socket URL 已完成静态契约及交叉编译验证，但尚未在真实 Windows Codex App 环境完成端到端验收；当前已实机通过的平台仍是 macOS。
+Windows 安装脚本和 Windows socket URL 已完成静态契约及交叉编译验证，但 Desktop IPC 回退目前只在 macOS Codex App 完成端到端验收。

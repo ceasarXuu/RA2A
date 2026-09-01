@@ -73,7 +73,7 @@ go build ./cmd/...
 3. 第二个 RA2A 节点调用 `/v1/messages`，发送端返回 `delivered`。
 4. 官方客户端实时显示带 `from: ra2a://managed-sender-2` 的用户回合，并回复 `RA2A_MANAGED_HOST_OK`。
 
-因此 V1 的可写目标收敛为受管宿主 session。普通 Desktop 本地 session 只可作为共享存储中的只读发现结果，不得宣称可注入；正式代码不接入私有 `send_message_to_thread` bridge。
+该阶段曾将 V1 的可写目标收敛为受管宿主 session。后续 Desktop IPC 实验和 v0.0.4 正式链路验证推翻了“只能只读”的限制，见下文最新结论。
 
 ## 2026-09-01 正式 MCP 闭环
 
@@ -108,7 +108,7 @@ macOS 实机结果：
 5. 两次完成后 writer 始终属于 Codex Desktop；没有出现 `already has an active writer`，也不需要注入后释放或归还 writer。
 6. 实验结束后已恢复 RA2A LaunchAgent 和受管 App Server。
 
-结论：该路径在当前 Codex Desktop macOS 版本上可重复工作，并能避免第二个 App Server 抢占 writer。它不是 OpenAI 公布的稳定接口，方法名、帧格式和 socket 位置都可能随 Desktop 更新变化；官方开发者文档也未提供该 IPC 的兼容承诺。因此当前只保留为显式实验命令，不替换正式 `send_message`，也不修改上文已确认的 V1 产品决策。
+结论：该路径在当前 Codex Desktop macOS 版本上可重复工作，并能避免第二个 App Server 抢占 writer。它不是 OpenAI 公布的稳定接口，方法名、帧格式和 socket 位置都可能随 Desktop 更新变化；官方开发者文档也未提供该 IPC 的兼容承诺。
 
 当前边界：仅实机验证 macOS Unix socket；Windows named pipe 和 Linux 尚未验证。消息已写出但响应超时时，结果被标记为 unknown 且不得自动重试，避免重复注入。
 
@@ -122,3 +122,7 @@ go run ./cmd/desktop-ipc-probe \
   --timeout 20s \
   --allow-write
 ```
+
+## 2026-09-01 v0.0.4 正式链路验证
+
+正式 `send_message` 已采用窄回退：先走受管 App Server，仅在目标返回 `active writer` 时连接 Desktop IPC。真实 `/v1/send` 向 Desktop 持有的 `接收消息注入测试` 投递成功，session 回复 `RA2A_V004_DESKTOP_OK`，Desktop PID 全程保持 writer。其他受管错误不会触发私有 IPC；建连失败返回 `SESSION_BUSY`，写出后超时返回 `DELIVERY_UNKNOWN`，均不重试。

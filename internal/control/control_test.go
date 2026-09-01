@@ -146,6 +146,19 @@ func TestCoordinatorSendsWithCallerAddressAndMessageID(t *testing.T) {
 	}
 }
 
+func TestCoordinatorPreservesRemoteDeliveryUnknown(t *testing.T) {
+	lan := &fakeLAN{
+		peers:   []lannode.Peer{{ID: "remote", Name: "Remote"}},
+		sendErr: errors.New("send message: DELIVERY_UNKNOWN: timeout"),
+	}
+	err := NewCoordinator("local", lan).Send(context.Background(), SendRequest{
+		To: "ra2a://remote/thread-2", Text: "hello", SourceSessionID: "thread-1",
+	})
+	if !errors.Is(err, ErrDeliveryUnknown) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestCoordinatorRejectsUnknownTarget(t *testing.T) {
 	err := NewCoordinator("local", &fakeLAN{}).Send(context.Background(), SendRequest{
 		To: "ra2a://missing/thread-2", Text: "hello", SourceSessionID: "thread-1",

@@ -57,6 +57,10 @@ func New(conn net.Conn) *Client {
 	return &Client{conn: conn}
 }
 
+func NewMessageID() string {
+	return newRequestID()
+}
+
 func (client *Client) Initialize(ctx context.Context) error {
 	result, err := client.call(ctx, envelope{
 		Type:           "request",

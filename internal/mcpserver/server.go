@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ceasarXuu/RA2A/internal/control"
+	"github.com/ceasarXuu/RA2A/internal/operator"
 )
 
 type Backend interface {
@@ -76,7 +77,7 @@ func initializeResult() map[string]any {
 	return map[string]any{
 		"protocolVersion": "2025-06-18",
 		"capabilities":    map[string]any{"tools": map[string]bool{"listChanged": false}},
-		"serverInfo":      map[string]string{"name": "ra2a", "version": "0.1.0"},
+		"serverInfo":      map[string]string{"name": "ra2a", "version": operator.Version},
 	}
 }
 
