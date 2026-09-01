@@ -18,4 +18,4 @@ v1.1.0 的目标是加入 **Codex CLI** 支持，并将 RA2A 从“Codex App 互
 | Codex CLI | Codex App | 新增支持 |
 | Codex CLI | Codex CLI | 新增支持 |
 
-当前状态：**Ready for implementation**。产品准入规则已经确认；进入主体实现前，先完成 Codex CLI 会话所有权和活跃 TUI 投递实验。
+当前状态：**Phase 0 feasibility validation**。产品准入规则已经确认；[V1-V4 macOS 首轮实验](./experiments/codex-cli-v1-v4.md)已完成，direct resume 因活跃 writer 冲突被排除，单 App Server + remote TUI 路线首轮通过。V5/V6、三平台和 PD31 交叉矩阵完成前不进入主体架构重构。
