@@ -35,7 +35,7 @@ func TestRunVersionPrintsCurrentVersion(t *testing.T) {
 	if err := run(context.Background(), []string{"version"}, &output, fakeSourceFactory(nil)); err != nil {
 		t.Fatalf("version: %v", err)
 	}
-	if output.String() != "v0.0.5\n" {
+	if output.String() != "v0.0.6\n" {
 		t.Fatalf("version output = %q", output.String())
 	}
 }
