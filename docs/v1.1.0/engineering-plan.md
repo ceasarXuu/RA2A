@@ -1,9 +1,9 @@
 # RA2A v1.1.0 工程实施计划
 
-- 状态：blocked-on-user-decision
+- 状态：ready-for-execution
 - 计划日期：2026-09-02
 - Product Authority Source：[prd.md](./prd.md)
-- Applicable Decisions：PD25、PD26、PD27、PD28
+- Applicable Decisions：PD25、PD26、PD27、PD28、PD29、PD30、PD31
 
 ## 1. 目标
 
@@ -114,17 +114,18 @@ v1.1.0 保持文本消息，候选字段：
 - `not_found`：端点不存在
 - `unreachable`：节点或适配器不可达
 - `unsupported`：目标存在但不具备所需能力
+- `start_required`：所需本地 Agent 接入服务未运行，调用 Agent 应提示用户确认是否拉起
 - `unknown`：请求可能到达，无法确定是否创建 turn
 
 适配器保留原始诊断信息，但不得把宿主异常直接变成跨 Agent 协议。
 
 ## 5. 预投资验证
 
-在 Q1-Q3 未确认和以下实验未通过前，不进入大规模重构。
+产品决策已经确认。以下实验未通过前，不进入大规模重构；实验负责选择满足 PD29、PD31 的最小技术路线，不得降低产品准入标准。
 
 | ID | 要验证的问题 | 方法 | 通过条件 | 失败后的处理 |
 | --- | --- | --- | --- | --- |
-| V1 | Codex CLI 调用 MCP 时是否提供稳定 session/thread 身份 | 使用现有 MCP context probe 记录真实调用元数据 | 能稳定映射到当前 CLI session，或证明可接受的明确降级 | 提交 Q1/Q3 决策，不伪造来源 |
+| V1 | Codex CLI 调用 MCP 时是否提供稳定 session/thread 身份 | 使用现有 MCP context probe 记录真实调用元数据 | 能稳定映射到当前 CLI session | 若不能稳定识别，则按 PD31 暂不支持 CLI 作为发送端，不伪造来源 |
 | V2 | `codex exec resume <id> <prompt>` 能否向空闲 CLI session 精确创建一次 turn | macOS/Linux/Windows 分别执行并核对历史 | 无重复、结果可判定、session 可继续恢复 | 排除 direct-resume 路线 |
 | V3 | 外部 resume 对活跃 TUI 的 writer 和刷新有何影响 | TUI 活跃时注入，多轮观察状态和继续输入 | 不抢占 writer、不永久 thinking、TUI 可继续交互 | direct-resume 不作为正式支持路径 |
 | V4 | RA2A App Server + `codex --remote` 是否能共享所有权 | 由 RA2A 启动 App Server，TUI remote 接入，多轮交叉投递 | 单一所有者、消息实时显示、人工输入正常 | 重新评估 CLI 支持边界 |
@@ -137,16 +138,15 @@ v1.1.0 保持文本消息，候选字段：
 
 ### Phase 0：产品决策与可行性冻结
 
-依赖：Owner 回答 PRD Q1-Q3；完成 V1-V6。
+依赖：完成 V1-V6。
 
 工作：
 
-- 在 PRD 中将确认答案写入新的受保护决策行。
-- 选定 Codex CLI 所有权路线。
-- 固化端点地址兼容策略和 Agent 支持门槛。
+- 以 PD29-PD31 作为启动行为、地址兼容和 Agent 支持门槛。
+- 选定满足这些决策的 Codex CLI 所有权路线。
 - 将实验结论映射到适配器最小接口。
 
-完成标准：不存在会改变公共地址、CLI 启动方式或支持承诺的未决问题。
+完成标准：技术路线满足受保护产品决策，并证明不会破坏活跃 TUI、人工继续交互和全交叉支持门槛。
 
 ### Phase 1：提取宿主无关核心
 
@@ -266,16 +266,17 @@ v1.1.0 保持文本消息，候选字段：
 
 `Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6`
 
-Phase 1 可在地址决策前做纯内部原型，但不得合并会锁定公共模型的改动。Phase 3 依赖 CLI 所有权路线确认。
+Phase 1 可以与 V1-V4 的实验代码并行，但不得在实验结论前合并会锁定宿主所有权模型的改动。Phase 3 依赖 CLI 所有权路线验证通过。
 
 ### 停止条件
 
 出现以下任一情况时停止扩张并回到 Owner：
 
 - 官方可用入口无法在活跃 CLI 中避免 writer/UI 状态破坏。
-- 必须改变用户 CLI 启动方式，但 Q1 尚未确认。
-- 地址兼容需要破坏 v1.0 节点，但 Q2 尚未确认。
+- 无法在不静默启动的前提下为 `start_required` 提供明确恢复路径。
+- 地址兼容方案要求调用方理解或拼接地址内部结构，违反 PD30。
 - 为接入 CLI 需要在路由层加入 Agent 对特殊分支。
+- 任一交叉方向无法达到 PD31 的准入门槛。
 - 单个手写生产代码阶段预计新增超过仓库约束，且没有更小方案。
 
 ### 完成定义
@@ -287,13 +288,13 @@ Phase 1 可在地址决策前做纯内部原型，但不得合并会锁定公共
 - 安装、升级、重启和版本检查在三平台通过。
 - 文档、版本号、Git 标签和 GitHub Release 一致。
 
-## 10. Pending Product Decisions
+## 10. Product Decision References
 
-| ID | 决策 | 推荐选项 | 阻塞范围 |
-| --- | --- | --- | --- |
-| Q1 | CLI 只支持 RA2A 受管 session，还是支持任意已运行 session | 先用实验比较；若 direct-resume 无法保持 TUI 一致，则 v1.1.0 采用受管模式 | Phase 3、安装 UX |
-| Q2 | 地址保持不透明兼容，还是显式加入 Agent 类型 | 保持完整地址不透明，由 `list_targets` 返回并由内部端点 ID 路由 | Phase 2、混合版本 |
-| Q3 | 正式支持一种 Agent 的最低口径 | 采用“发现、双向、统一结果、可继续人工交互、全矩阵测试” | 发布标准、README |
+| 决策范围 | 权威决策 | 工程约束 |
+| --- | --- | --- |
+| Codex CLI 未运行 | PD29 | 返回 `start_required` 和可操作说明；不得静默自动拉起 |
+| 目标寻址 | PD30 | 地址由 `list_targets` 完整返回并视为不透明值 |
+| Agent 支持准入 | PD31 | 所有已支持 Agent 之间的双向矩阵必须全部通过，否则不发布该适配器 |
 
 ## 11. Product Decision Delta
 

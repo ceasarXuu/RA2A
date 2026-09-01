@@ -18,5 +18,4 @@ v1.1.0 的目标是加入 **Codex CLI** 支持，并将 RA2A 从“Codex App 互
 | Codex CLI | Codex App | 新增支持 |
 | Codex CLI | Codex CLI | 新增支持 |
 
-当前状态：**Draft**。在进入大规模实现前，需要先完成 Codex CLI 会话所有权实验，并确认 [三个待决策项](./prd.md#待确认产品决策)。
-
+当前状态：**Ready for implementation**。产品准入规则已经确认；进入主体实现前，先完成 Codex CLI 会话所有权和活跃 TUI 投递实验。
