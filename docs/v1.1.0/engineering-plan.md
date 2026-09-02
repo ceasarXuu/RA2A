@@ -137,7 +137,7 @@ v1.1.0 保持文本消息，候选字段：
 
 所有实验先通过 PD32 隔离门禁：使用独立的开发配置、运行目录、日志、控制地址、App Server socket、节点身份和测试会话；不得执行会安装、升级、停止、重启或重新配置本机正式版的命令。启动前检查与正式版的资源冲突，无法确认隔离时立即停止。
 
-当前进度：V1-V4 与 V7 已完成 macOS 首轮验证；V7 证明 CLI active turn 接收 follow-up 时采用同 thread 排队并在当前 turn 后执行的语义。V5 已证明 `0.152.1` 可从 `initialize.userAgent` 探测版本，且 `thread/queue/*` 需要显式 `experimentalApi` 能力，但仍缺少第二版本和跨平台对比。V6 和三平台复验仍未完成。
+当前进度：V1-V4 与 V7 已完成 macOS 首轮验证；V7 证明 CLI active turn 接收 follow-up 时采用同 thread 排队并在当前 turn 后执行的语义。V5 已完成 `0.151.0`/`0.152.1` 双版本 macOS 契约对比，两版均可从 `initialize.userAgent` 探测版本，且 `thread/queue/*` 需要显式 `experimentalApi` 能力。V6 和三平台复验仍未完成；`0.151.0` 在完成真实投递前只作为契约最低候选。
 
 ## 6. 实施阶段
 
