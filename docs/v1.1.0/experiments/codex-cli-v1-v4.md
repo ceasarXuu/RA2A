@@ -153,6 +153,8 @@ V3 对 direct-resume 路线不通过。这是路线排除结论，而不是可�
 
 V4 在 macOS 上通过。单一 App Server owner 能同时服务 remote TUI 与外部投递，消息实时显示，连续外部回合后人工输入正常。这是当前唯一同时满足本机 writer 所有权、TUI 刷新和 PD31 人工继续交互要求的候选路线。
 
+本轮 V4 的两次外部投递均在前一回合完成后进行，没有覆盖 turn 执行期间到达的 follow-up。v0.0.10 的 Codex Desktop active-turn 修复证明该时序会影响 turn 归属和 UI 状态，因此工程计划新增 V7 单独验证 CLI active-turn follow-up；V4 的既有结论保持不变。
+
 ## 决策映射与后续门槛
 
 | 产品决策 | 本轮证据 | 当前状态 |
@@ -168,6 +170,7 @@ V4 在 macOS 上通过。单一 App Server owner 能同时服务 remote TUI 与�
 1. 保留 CLI MCP 来源身份探测路线。
 2. direct resume 只可视为“空闲 session 的可用原语”，不能承担活跃 TUI 投递。
 3. 后续 Codex CLI 所有权实验以“单 App Server + remote TUI”为主线。
-4. 在完成 V5、V6、三平台与 PD31 交叉验证前，不进行主体架构重构，不把 CLI 列为正式支持。
+4. 后续实验遵守 PD32，与本机已安装的 RA2A 正式版隔离，不停止、重启、重新配置或复用其资源。
+5. 在完成 V5-V7、三平台与 PD31 交叉验证前，不进行主体架构重构，不把 CLI 列为正式支持。
 
 原始终端输出未提交；报告只保留复现命令、非敏感观察结果和结论。

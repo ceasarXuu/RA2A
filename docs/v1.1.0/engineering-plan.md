@@ -3,7 +3,7 @@
 - 状态：ready-for-execution
 - 计划日期：2026-09-02
 - Product Authority Source：[prd.md](./prd.md)
-- Applicable Decisions：PD25、PD26、PD27、PD28、PD29、PD30、PD31
+- Applicable Decisions：PD25、PD26、PD27、PD28、PD29、PD30、PD31、PD32
 
 ## 1. 目标
 
@@ -109,7 +109,7 @@ v1.1.0 保持文本消息，候选字段：
 
 至少区分：
 
-- `delivered`：宿主明确接受并创建 turn
+- `delivered`：宿主明确接受消息，并新建 turn 或追加到现有 turn
 - `busy`：目标存在但当前不能写入
 - `not_found`：端点不存在
 - `unreachable`：节点或适配器不可达
@@ -131,14 +131,17 @@ v1.1.0 保持文本消息，候选字段：
 | V4 | RA2A App Server + `codex --remote` 是否能共享所有权 | 由 RA2A 启动 App Server，TUI remote 接入，多轮交叉投递 | 单一所有者、消息实时显示、人工输入正常 | 重新评估 CLI 支持边界 |
 | V5 | App Server 版本变化能否被探测和隔离 | 对当前与最低支持 Codex CLI 做契约测试 | 不兼容时明确报错，不污染路由层 | 增加适配器版本门槛 |
 | V6 | 同一节点 App 与 CLI 端点能否无冲突汇总 | 同机同时运行两类宿主并发现 | 地址唯一、类型正确、投递到唯一目标 | 调整端点身份模型 |
+| V7 | 单 App Server + remote TUI 能否安全接收 active-turn follow-up | 首条消息触发长时间 turn，在执行期间注入第二条消息并继续人工输入 | follow-up 进入预期 turn、无重复、TUI 实时更新、人工输入正常 | 不进入 CLI 适配器实现，重新评估活跃 turn 投递入口 |
 
 实验输出写入 `docs/v1.1.0/experiments/`，记录命令、版本、平台、观察结果和结论。只有结论进入架构，原始日志不提交敏感信息。
+
+所有实验先通过 PD32 隔离门禁：使用独立的开发配置、运行目录、日志、控制地址、App Server socket、节点身份和测试会话；不得执行会安装、升级、停止、重启或重新配置本机正式版的命令。启动前检查与正式版的资源冲突，无法确认隔离时立即停止。
 
 ## 6. 实施阶段
 
 ### Phase 0：产品决策与可行性冻结
 
-依赖：完成 V1-V6。
+依赖：通过 PD32 隔离门禁并完成 V1-V7。
 
 工作：
 
@@ -160,6 +163,7 @@ v1.1.0 保持文本消息，候选字段：
 验证：
 
 - 现有 Codex App 单元测试和双设备投递全部通过。
+- 保持 v0.0.10 active-turn 语义：空闲消息只 start 一次，执行中的 follow-up 只 steer 一次且进入同一 turn；UI 实时更新、人工可继续，不确定结果不回退或重试。
 - 使用内存假适配器证明注册、冲突检测、选择和错误映射。
 - 路由层代码中不存在具体宿主类型判断。
 
@@ -210,12 +214,12 @@ v1.1.0 保持文本消息，候选字段：
 
 至少覆盖：
 
-| 发送端 | 接收端 | 基本投递 | 20+ 多轮 | 人工继续 | 断网恢复 | daemon 重启 |
-| --- | --- | --- | --- | --- | --- | --- |
-| App | App | 必测 | 必测 | 必测 | 必测 | 必测 |
-| App | CLI | 必测 | 必测 | 必测 | 必测 | 必测 |
-| CLI | App | 必测 | 必测 | 必测 | 必测 | 必测 |
-| CLI | CLI | 必测 | 必测 | 必测 | 必测 | 必测 |
+| 发送端 | 接收端 | 基本投递 | active follow-up | 20+ 多轮 | 人工继续 | 断网恢复 | daemon 重启 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| App | App | 必测 | 必测 | 必测 | 必测 | 必测 | 必测 |
+| App | CLI | 必测 | 必测 | 必测 | 必测 | 必测 | 必测 |
+| CLI | App | 必测 | 必测 | 必测 | 必测 | 必测 | 必测 |
+| CLI | CLI | 必测 | 必测 | 必测 | 必测 | 必测 | 必测 |
 
 此外覆盖同机多端点、双设备、三设备和不同 Codex CLI 版本。任何方向出现永久 thinking、writer 抢占、重复 turn 或假成功，均阻止发布。
 
@@ -230,7 +234,8 @@ v1.1.0 保持文本消息，候选字段：
 
 | 工作单元 | 可独立验收结果 | 建议原子提交 |
 | --- | --- | --- |
-| W0 | 产品决策与实验报告完成 | `docs(v1.1.0): validate Codex CLI ownership model` |
+| W0a | V1-V4 首轮所有权实验完成 | `docs(v1.1.0): validate Codex CLI ownership model` |
+| W0b | V5-V7、三平台和正式版隔离验证完成，Phase 0 结论冻结 | `docs(v1.1.0): freeze Codex CLI feasibility` |
 | W1 | Agent 核心契约与假适配器通过 | `refactor(core): introduce agent adapter boundary` |
 | W2 | 现有 Codex App 行为迁入适配器且无回归 | `refactor(codex-app): isolate host integration` |
 | W3 | 端点协议与混合版本测试通过 | `feat(protocol): add typed agent endpoints` |
@@ -260,13 +265,15 @@ v1.1.0 保持文本消息，候选字段：
 - Go 与仓库现有版本要求一致。
 - macOS、Linux、Windows 各至少一台真实设备用于宿主验证。
 - 测试固定记录 Codex CLI 版本；App Server 为 Experimental，不能只使用 mock 验收。
+- 本机正式版视为受保护的外部系统；开发实例使用独立配置、运行目录、日志、控制地址、socket、节点身份和测试会话。
+- 验证脚本必须在启动前检查资源归属和冲突，且只能清理本次开发实例创建的资源。
 - 不创建新分支，遵守仓库原子提交和推送约束。
 
 ### 执行顺序
 
 `Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6`
 
-Phase 1 可以与 V1-V4 的实验代码并行，但不得在实验结论前合并会锁定宿主所有权模型的改动。Phase 3 依赖 CLI 所有权路线验证通过。
+Phase 0 完成并冻结 V1-V7 结论前不进入 Phase 1 主体架构重构。Phase 3 依赖 CLI 所有权路线验证通过。
 
 ### 停止条件
 
@@ -277,6 +284,7 @@ Phase 1 可以与 V1-V4 的实验代码并行，但不得在实验结论前合�
 - 地址兼容方案要求调用方理解或拼接地址内部结构，违反 PD30。
 - 为接入 CLI 需要在路由层加入 Agent 对特殊分支。
 - 任一交叉方向无法达到 PD31 的准入门槛。
+- 开发实例无法与本机正式版的配置、进程、端口、socket、网络身份或宿主会话可靠隔离。
 - 单个手写生产代码阶段预计新增超过仓库约束，且没有更小方案。
 
 ### 完成定义
@@ -295,6 +303,7 @@ Phase 1 可以与 V1-V4 的实验代码并行，但不得在实验结论前合�
 | Codex CLI 未运行 | PD29 | 返回 `start_required` 和可操作说明；不得静默自动拉起 |
 | 目标寻址 | PD30 | 地址由 `list_targets` 完整返回并视为不透明值 |
 | Agent 支持准入 | PD31 | 所有已支持 Agent 之间的双向矩阵必须全部通过，否则不发布该适配器 |
+| 开发环境隔离 | PD32 | 开发与实验不得变更、重启、停止或占用本机正式版资源；冲突时停止实验 |
 
 ## 11. Product Decision Delta
 
