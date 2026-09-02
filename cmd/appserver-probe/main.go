@@ -24,6 +24,7 @@ type options struct {
 	cwd              string
 	allowWrite       bool
 	probeContext     bool
+	sourceKinds      []string
 }
 
 func run(client *appserverprobe.Client, opts options, output io.Writer) error {
@@ -69,10 +70,14 @@ func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 	} else if opts.probeContext {
 		result, err = client.CallMCPTool(opts.threadID, "ra2a_probe", "probe_context", map[string]any{})
 	} else if opts.threadID == "" {
-		result, err = client.ListThreads([]string{
-			"cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview",
-			"subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown",
-		})
+		sourceKinds := opts.sourceKinds
+		if len(sourceKinds) == 0 {
+			sourceKinds = []string{
+				"cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview",
+				"subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown",
+			}
+		}
+		result, err = client.ListThreads(sourceKinds)
 	} else {
 		result, err = client.InjectMessage(opts.threadID, opts.message)
 	}
@@ -110,6 +115,10 @@ func main() {
 	flag.BoolVar(&opts.probeContext, "probe-context", false, "call the RA2A MCP context probe on thread-id")
 	flag.StringVar(&mcpProbePath, "mcp-probe-bin", "", "absolute path to mcp-context-probe")
 	flag.StringVar(&socketPath, "socket", "", "connect to an existing App Server Unix socket")
+	flag.Func("source-kind", "limit thread listing to a source kind; repeatable", func(value string) error {
+		opts.sourceKinds = append(opts.sourceKinds, value)
+		return nil
+	})
 	flag.DurationVar(&timeout, "timeout", 20*time.Second, "probe timeout")
 	flag.Parse()
 	workingDirectory, err := os.Getwd()

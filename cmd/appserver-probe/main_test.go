@@ -30,6 +30,22 @@ func TestRunListsThreadsByDefault(t *testing.T) {
 	}
 }
 
+func TestRunListsOnlyRequestedSourceKinds(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"data":[]}}`,
+	}, "\n")
+	var requests bytes.Buffer
+	client := appserverprobe.New(strings.NewReader(responses), &requests)
+
+	if err := run(client, options{sourceKinds: []string{"cli"}}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(requests.String(), `"sourceKinds":["cli"]`) {
+		t.Fatalf("requests = %s", requests.String())
+	}
+}
+
 func TestRunRequiresExplicitWritePermission(t *testing.T) {
 	client := appserverprobe.New(strings.NewReader(""), &bytes.Buffer{})
 
