@@ -51,10 +51,29 @@ RA2A 的 [`internal/desktopipc/client.go`](../internal/desktopipc/client.go) 已
 
 发送顺序必须是：
 
-1. 有 Desktop 集成时先调用 `thread-follower-start-turn`，让当前 owner 创建 turn。
-2. 连接或 initialize 失败、Desktop 明确拒绝请求时，才允许回退 managed App Server。
-3. StartTurn 帧写出后，断连、超时、取消或成功响应缺少 turn ID 都属于 `DELIVERY_UNKNOWN`，不得回退或重试。
-4. 真实 UI 验收必须检查同一进程内出现 `IpcRouter`、目标 `turn/start` 和 renderer/完成通知，不能仅以 rollout 或后台 `read_thread` 存在 turn 代替。
+1. 有 Desktop 集成时先调用 `thread-follower-steer-turn`（version 1）。若 thread 已有 active turn，消息必须追加到该 turn，不能再调用 `start-turn`。
+2. 只有 Desktop 明确返回 `NoActiveTurn`、`SteerTurnInactiveError` 或等价的“active turn already ended”拒绝时，才调用 `thread-follower-start-turn`（version 2）。
+3. 连接或 initialize 失败、Desktop 明确确认请求未投递时，才允许回退 managed App Server。
+4. SteerTurn 或 StartTurn 帧写出后，断连、超时、取消或成功响应缺少 turn ID 都属于 `DELIVERY_UNKNOWN`，不得切换方法、回退或重试。
+5. 真实 UI 验收必须检查同一进程内出现 `IpcRouter`、目标 `turn/start` 或 `turn/steer` 和 renderer/完成通知，不能仅以 rollout 或后台 `read_thread` 存在 turn 代替。
+
+### active turn UI 卡死回归（v0.0.9）
+
+v0.0.9 的 owner-first 实现对每条消息都调用 `start-turn`。当同一 session 正在执行时，后续消息虽被后端合并进原 turn，但 Desktop renderer 已预建了另一个 in-progress turn，随后持续出现 `Item not found in turn state`，UI 会停在“思考中”直到重启 App。
+
+修复后的 Windows 实机样本：
+
+```text
+thread: 01a05d7e-b958-7df2-bd67-6eba9636fad6
+turn: 01a05f67-c2b8-72e0-b9c3-bc8b2299af18
+base marker: RA2A-STEER-FIX-BASE-20260902-0755
+follow-up marker: RA2A-STEER-FIX-FOLLOWUP-20260902-0755
+Desktop log: turn/start=1, turn/steer=1, Item not found in turn state=0
+rollout: task_started=1, user_message=2, task_complete=1
+reply: RA2A_STEER_FOLLOWUP_OK
+```
+
+该样本证明空闲消息只创建一个 turn，执行期间的后续消息进入同一 turn，并由同一 renderer 正常完成。UI 肉眼动态刷新仍需在目标 Desktop 页面现场确认，不能由日志替代。
 
 Windows 实机验证样本：
 
@@ -78,9 +97,11 @@ reply: RA2A_DESKTOP_FIRST_LAN_OK
 fake server 按现有 4 字节 framing：
 
 1. 接收 `initialize`，返回带 `clientId` 的成功响应。
-2. 接收 `thread-follower-start-turn`，校验 conversation/thread/message ID 和正文。
-3. 返回带 turn id 的成功响应。
-4. 覆盖 `client-discovery-request` 插入在响应之前的情况。
+2. 接收 `thread-follower-steer-turn`，校验 conversation/thread/message ID、正文和 restore message。
+3. active turn 成功时返回 turn id，并确认没有额外 `start-turn`。
+4. idle turn 必须先收到明确 inactive 拒绝，再接收 `thread-follower-start-turn`。
+5. steer 写出后断连或超时时必须返回 `DELIVERY_UNKNOWN`，不能尝试 `start-turn`。
+6. 覆盖 `client-discovery-request` 插入在响应之前的情况。
 
 ### 3. 真实 Codex Desktop probe
 
@@ -88,9 +109,10 @@ fake server 按现有 4 字节 framing：
 
 1. 确认 pipe 存在并可由当前用户连接：`\\.\pipe\codex-ipc`。
 2. 运行 `desktop-ipc-probe` 或等价最小 probe 完成 initialize。
-3. 向专用测试 thread 调用 StartTurn，记录 request ID、client ID、turn ID。
-4. 验证 Desktop UI 实时显示消息。
-5. 验证用户可在同一 session 继续手动输入，不出现“已在另一个应用中打开”。
+3. 向空闲的专用测试 thread 发送第一条消息，记录 request ID、client ID、turn ID，并确认只调用一次 StartTurn。
+4. 在该 turn 执行期间发送第二条消息，确认调用 SteerTurn 且两条消息属于同一个 turn。
+5. 验证 Desktop UI 实时显示两条消息、执行动态和完成状态，不需要重启 App。
+6. 验证用户可在同一 session 继续手动输入，不出现“已在另一个应用中打开”。
 
 真实 R8 在最终验证前不要反复注入，以免制造重复任务。
 

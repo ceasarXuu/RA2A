@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -51,6 +52,10 @@ type requestRejectedError struct {
 	Cause  any
 }
 
+type noActiveTurnError struct {
+	Cause error
+}
+
 func (err *DeliveryUnknownError) Error() string {
 	return fmt.Sprintf("desktop IPC delivery result is unknown: %v", err.Cause)
 }
@@ -66,6 +71,12 @@ func (err *NotDeliveredError) Unwrap() error { return err.Cause }
 func (err *requestRejectedError) Error() string {
 	return fmt.Sprintf("Desktop IPC %s error: %v", err.Method, err.Cause)
 }
+
+func (err *noActiveTurnError) Error() string {
+	return fmt.Sprintf("Desktop IPC has no active turn to steer: %v", err.Cause)
+}
+
+func (err *noActiveTurnError) Unwrap() error { return err.Cause }
 
 func IsDeliveryUnknown(err error) bool {
 	var target *DeliveryUnknownError
@@ -145,6 +156,88 @@ func (client *Client) StartTurn(
 		return TurnResult{}, &DeliveryUnknownError{Cause: errors.New("Desktop IPC accepted start turn without a turn ID")}
 	}
 	return TurnResult{TurnID: turnID}, nil
+}
+
+func (client *Client) SendMessage(
+	ctx context.Context,
+	threadID string,
+	text string,
+	messageID string,
+) (TurnResult, error) {
+	result, err := client.steerTurn(ctx, threadID, text, messageID)
+	if err == nil {
+		return result, nil
+	}
+	var inactive *noActiveTurnError
+	if !errors.As(err, &inactive) {
+		return TurnResult{}, err
+	}
+	return client.StartTurn(ctx, threadID, text, messageID)
+}
+
+func (client *Client) steerTurn(
+	ctx context.Context,
+	threadID string,
+	text string,
+	messageID string,
+) (TurnResult, error) {
+	if client.clientID == "" {
+		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop IPC client is not initialized")}
+	}
+	result, err := client.call(ctx, envelope{
+		Type:           "request",
+		SourceClientID: client.clientID,
+		Version:        1,
+		Method:         "thread-follower-steer-turn",
+		Params: map[string]any{
+			"conversationId":      threadID,
+			"input":               []map[string]string{{"type": "text", "text": text}},
+			"clientUserMessageId": messageID,
+			"serviceTier":         nil,
+			"attachments":         []any{},
+			"additionalContext":   nil,
+			"toolOutput":          nil,
+			"restoreMessage": map[string]any{
+				"id":        messageID,
+				"text":      text,
+				"createdAt": time.Now().UnixMilli(),
+				"context": map[string]any{
+					"prompt":             text,
+					"workspaceRoots":     []any{},
+					"commentAttachments": []any{},
+					"fileAttachments":    []any{},
+					"imageAttachments":   []any{},
+					"addedFiles":         []any{},
+				},
+			},
+		},
+	})
+	if err != nil {
+		var rejected *requestRejectedError
+		if errors.As(err, &rejected) {
+			wrapped := fmt.Errorf("steer Desktop-owned turn: %w", err)
+			if isInactiveSteerRejection(rejected.Cause) {
+				return TurnResult{}, &noActiveTurnError{Cause: wrapped}
+			}
+			return TurnResult{}, &NotDeliveredError{Cause: wrapped}
+		}
+		return TurnResult{}, &DeliveryUnknownError{Cause: fmt.Errorf("steer Desktop-owned turn: %w", err)}
+	}
+	if nested, ok := result["result"].(map[string]any); ok {
+		result = nested
+	}
+	turnID := stringField(result, "turnId")
+	if turnID == "" {
+		return TurnResult{}, &DeliveryUnknownError{Cause: errors.New("Desktop IPC accepted steer turn without a turn ID")}
+	}
+	return TurnResult{TurnID: turnID}, nil
+}
+
+func isInactiveSteerRejection(cause any) bool {
+	message := strings.ToLower(fmt.Sprint(cause))
+	return strings.Contains(message, "no active turn") ||
+		strings.Contains(message, "steerturninactiveerror") ||
+		strings.Contains(message, "active turn already ended")
 }
 
 func (client *Client) call(ctx context.Context, request envelope) (map[string]any, error) {

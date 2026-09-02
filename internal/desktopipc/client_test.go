@@ -110,6 +110,144 @@ func TestClientInitializesAndStartsTurnThroughDesktopOwner(t *testing.T) {
 	}
 }
 
+func TestClientSteersActiveTurnWithoutStartingAnotherTurn(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	serverDone := make(chan error, 1)
+	go func() {
+		initialize, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeFrame(serverConn, successResponse(initialize, map[string]any{"clientId": "desktop-client-1"})); err != nil {
+			serverDone <- err
+			return
+		}
+		steer, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if steer.Method != "thread-follower-steer-turn" || steer.Version != 1 {
+			t.Errorf("steer envelope = %#v", steer)
+		}
+		assertSteerTurnParams(t, steer.Params, "thread-1", "follow-up", "message-2")
+		serverDone <- writeFrame(serverConn, successResponse(steer, map[string]any{
+			"result": map[string]any{"turnId": "turn-active"},
+		}))
+	}()
+
+	client := New(clientConn)
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2")
+	if err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+	if result.TurnID != "turn-active" {
+		t.Fatalf("turn id = %q", result.TurnID)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
+
+func TestClientStartsIdleTurnOnlyAfterExplicitNoActiveTurn(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	serverDone := make(chan error, 1)
+	go func() {
+		initialize, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeFrame(serverConn, successResponse(initialize, map[string]any{"clientId": "desktop-client-1"})); err != nil {
+			serverDone <- err
+			return
+		}
+		steer, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeFrame(serverConn, envelope{
+			Type:       "response",
+			RequestID:  steer.RequestID,
+			ResultType: "error",
+			Error:      "Cannot steer conversation thread-1 because its active turn already ended",
+		}); err != nil {
+			serverDone <- err
+			return
+		}
+		start, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if start.Method != "thread-follower-start-turn" || start.Version != 2 {
+			t.Errorf("start envelope = %#v", start)
+		}
+		serverDone <- writeFrame(serverConn, successResponse(start, map[string]any{
+			"result": map[string]any{"turn": map[string]any{"id": "turn-new"}},
+		}))
+	}()
+
+	client := New(clientConn)
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result, err := client.SendMessage(context.Background(), "thread-1", "idle message", "message-3")
+	if err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+	if result.TurnID != "turn-new" {
+		t.Fatalf("turn id = %q", result.TurnID)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
+
+func TestClientDoesNotStartAfterAmbiguousSteerDisconnect(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	serverDone := make(chan error, 1)
+	go func() {
+		initialize, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeFrame(serverConn, successResponse(initialize, map[string]any{"clientId": "desktop-client-1"})); err != nil {
+			serverDone <- err
+			return
+		}
+		if _, err := readFrame(serverConn); err != nil {
+			serverDone <- err
+			return
+		}
+		serverDone <- serverConn.Close()
+	}()
+
+	client := New(clientConn)
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	_, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2")
+	if !IsDeliveryUnknown(err) {
+		t.Fatalf("error = %v, want delivery unknown", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
+
 func TestClientDoesNotRetryAmbiguousDesktopTimeout(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
@@ -285,4 +423,23 @@ func assertStartTurnParams(t *testing.T, params map[string]any, threadID, text, 
 	if contextParams["inheritThreadSettings"] != true {
 		t.Fatalf("context = %#v", contextParams)
 	}
+}
+
+func assertSteerTurnParams(t *testing.T, params map[string]any, threadID, text, messageID string) {
+	t.Helper()
+	if params["conversationId"] != threadID || params["clientUserMessageId"] != messageID {
+		t.Fatalf("steer params = %#v", params)
+	}
+	input := params["input"].([]any)[0].(map[string]any)
+	if input["type"] != "text" || input["text"] != text {
+		t.Fatalf("steer input = %#v", input)
+	}
+	restore := params["restoreMessage"].(map[string]any)
+	if _, ok := restore["context"].(map[string]any); !ok {
+		t.Fatalf("restoreMessage = %#v", restore)
+	}
+}
+
+func successResponse(request envelope, result map[string]any) envelope {
+	return envelope{Type: "response", RequestID: request.RequestID, ResultType: "success", Result: result}
 }

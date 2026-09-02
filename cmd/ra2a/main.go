@@ -306,7 +306,7 @@ func sendDesktopMessage(ctx context.Context, target, prompt string) error {
 	if err := client.Initialize(ctx); err != nil {
 		return &desktopipc.NotDeliveredError{Cause: err}
 	}
-	_, err = client.StartTurn(ctx, target, prompt, desktopipc.NewMessageID())
+	_, err = client.SendMessage(ctx, target, prompt, desktopipc.NewMessageID())
 	return err
 }
 
