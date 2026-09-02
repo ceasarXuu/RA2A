@@ -139,7 +139,7 @@ v1.1.0 保持文本消息，候选字段：
 
 所有实验先通过 PD32 隔离门禁：使用独立的开发配置、运行目录、日志、控制地址、App Server socket、节点身份和测试会话；不得执行会安装、升级、停止、重启或重新配置本机正式版的命令。启动前检查与正式版的资源冲突，无法确认隔离时立即停止。
 
-当前进度：V1-V4 与 V7 已完成 macOS 首轮验证；V7 证明 CLI active turn 接收 follow-up 时采用同 thread 排队并在当前 turn 后执行的语义。V5 已完成 `0.151.0`/`0.152.1` 双版本 macOS 契约对比，两版均可从 `initialize.userAgent` 探测版本，且 `thread/queue/*` 需要显式 `experimentalApi` 能力。V6 macOS 首轮未通过：App Server 创建的测试 thread 与 remote TUI thread 都返回 `source: vscode`，原生 thread ID 虽可精确投递，却无法仅凭共享列表可靠判断 App/CLI 所有权。下一步先复验由受管 CLI 接入边界显式登记 thread 所有权的最小方案；V6 复验和三平台验证完成前 Phase 0 不冻结。`0.151.0` 在完成真实投递前只作为契约最低候选。
+当前进度：V1-V4 与 V7 已完成 macOS 首轮验证；V7 证明 CLI active turn 接收 follow-up 时采用同 thread 排队并在当前 turn 后执行的语义。V5 已完成 `0.151.0`/`0.152.1` 双版本 macOS 契约对比，两版均可从 `initialize.userAgent` 探测版本，且 `thread/queue/*` 需要显式 `experimentalApi` 能力。V6 macOS 首轮未通过：App Server 创建的测试 thread 与 remote TUI thread 都返回 `source: vscode`，原生 thread ID 虽可精确投递，却无法仅凭共享列表可靠判断 App/CLI 所有权。V6-R1 已证明透明接入代理可以用 `clientInfo=codex-tui` 关联 start/resume/turn 的原生 thread ID，但尚未稳定排除同连接上的辅助 thread；同时 `-c ephemeral=true` 实测仍产生 `ephemeral=false` 的持久 thread，PD32 隔离门禁未通过。下一步必须先建立工作区独立 `CODEX_HOME` 与独立认证，再继续主/辅助 thread 区分和双目标投递复验。V6 复验和三平台验证完成前 Phase 0 不冻结。`0.151.0` 在完成真实投递前只作为契约最低候选。
 
 ## 6. 实施阶段
 
@@ -152,6 +152,7 @@ v1.1.0 保持文本消息，候选字段：
 - 以 PD29-PD31 作为启动行为、地址兼容和 Agent 支持门槛。
 - 选定满足这些决策的 Codex CLI 所有权路线。
 - 通过 V6 复验证明所有权来自可观测的 CLI attach/create/resume 边界，而非 `thread.source`；未知所有权端点不得标记为 ready。
+- 用独立 `CODEX_HOME`、认证、配置和 session 存储通过 PD32 门禁；命令行 `ephemeral` 覆盖不能替代存储隔离。
 - 将实验结论映射到适配器最小接口。
 
 完成标准：技术路线满足受保护产品决策，并证明不会破坏活跃 TUI、人工继续交互和全交叉支持门槛。
@@ -273,6 +274,7 @@ v1.1.0 保持文本消息，候选字段：
 - macOS、Linux、Windows 各至少一台真实设备用于宿主验证。
 - 测试固定记录 Codex CLI 版本；App Server 为 Experimental，不能只使用 mock 验收。
 - 本机正式版视为受保护的外部系统；开发实例使用独立配置、运行目录、日志、控制地址、socket、节点身份和测试会话。
+- Codex 宿主实验使用工作区内独立 `CODEX_HOME` 和独立认证；不得以未验证的 `ephemeral` 配置覆盖作为 session 隔离手段。
 - 验证脚本必须在启动前检查资源归属和冲突，且只能清理本次开发实例创建的资源。
 - 不创建新分支，遵守仓库原子提交和推送约束。
 

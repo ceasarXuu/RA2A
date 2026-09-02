@@ -18,4 +18,4 @@ v1.1.0 的目标是加入 **Codex CLI** 支持，并将 RA2A 从“Codex App 互
 | Codex CLI | Codex App | 新增支持 |
 | Codex CLI | Codex CLI | 新增支持 |
 
-当前状态：**Phase 0 feasibility validation**。产品准入规则已经确认；[V1-V4 macOS 首轮实验](./experiments/codex-cli-v1-v4.md)、[V7 macOS active-turn 实验](./experiments/codex-cli-v7.md)和 [V5 双版本 App Server 契约实验](./experiments/codex-cli-v5.md)已完成 macOS 验证。direct resume 因活跃 writer 冲突被排除，单 App Server + remote TUI 的投递路线首轮通过。[V6 同节点端点隔离实验](./experiments/codex-cli-v6.md)发现 App 与 remote CLI thread 都可能报告 `source: vscode`，端点所有权尚不能可靠判定，macOS V6 未通过。后续须先验证显式所有权登记方案，并继续与本机已安装的 RA2A 正式版隔离；V6 复验、三平台和 PD31 交叉矩阵完成前不进入主体架构重构。
+当前状态：**Phase 0 feasibility validation**。产品准入规则已经确认；[V1-V4 macOS 首轮实验](./experiments/codex-cli-v1-v4.md)、[V7 macOS active-turn 实验](./experiments/codex-cli-v7.md)和 [V5 双版本 App Server 契约实验](./experiments/codex-cli-v5.md)已完成 macOS 验证。direct resume 因活跃 writer 冲突被排除，单 App Server + remote TUI 的投递路线首轮通过。[V6 同节点端点隔离实验](./experiments/codex-cli-v6.md)发现 App 与 remote CLI thread 都可能报告 `source: vscode`，macOS V6 未通过；V6-R1 已证明连接内 `clientInfo` 关联可识别 CLI 所有权，但尚未稳定排除辅助 thread，且 `-c ephemeral=true` 未能隔离 session 存储。后续须先建立独立 `CODEX_HOME` 与独立认证，再继续 V6 复验；三平台和 PD31 交叉矩阵完成前不进入主体架构重构。
