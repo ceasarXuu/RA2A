@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const Version = "v0.0.9"
+const Version = "v0.0.10"
 
 type Config struct {
 	NodeID string `json:"nodeId"`
