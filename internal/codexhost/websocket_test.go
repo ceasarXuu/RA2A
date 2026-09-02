@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func TestConnectWebSocketCarriesJSONOverUnixSocket(t *testing.T) {
+func TestDialUnixWebSocketCarriesJSONOverUnixSocket(t *testing.T) {
 	placeholder, err := os.CreateTemp(".", ".app-server-*.sock")
 	if err != nil {
 		t.Fatalf("reserve socket path: %v", err)
@@ -42,7 +42,7 @@ func TestConnectWebSocketCarriesJSONOverUnixSocket(t *testing.T) {
 	go server.Serve(listener)
 	defer server.Close()
 
-	stream, err := connectWebSocket(context.Background(), socketPath)
+	stream, err := DialUnixWebSocket(context.Background(), socketPath)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

@@ -19,7 +19,7 @@ type websocketStream struct {
 	writeBuffer []byte
 }
 
-func connectWebSocket(ctx context.Context, socketPath string) (io.ReadWriteCloser, error) {
+func DialUnixWebSocket(ctx context.Context, socketPath string) (io.ReadWriteCloser, error) {
 	dialer := websocket.Dialer{
 		NetDialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)

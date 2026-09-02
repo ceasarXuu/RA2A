@@ -2,10 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"net"
+	"net/http"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/ceasarXuu/RA2A/internal/appserverprobe"
+	"github.com/gorilla/websocket"
 )
 
 func TestRunListsThreadsByDefault(t *testing.T) {
@@ -66,6 +71,61 @@ func TestRunStartsTurnInEphemeralThread(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	if !strings.Contains(output.String(), `"status": "inProgress"`) {
+		t.Fatalf("output = %s", output.String())
+	}
+	if !strings.Contains(output.String(), `"threadId": "ephemeral-1"`) {
+		t.Fatalf("output = %s", output.String())
+	}
+}
+
+func TestOpenRemoteClientRunsProbeOverUnixSocket(t *testing.T) {
+	placeholder, err := os.CreateTemp(".", ".app-server-probe-*.sock")
+	if err != nil {
+		t.Fatalf("reserve socket path: %v", err)
+	}
+	socketPath := placeholder.Name()
+	_ = placeholder.Close()
+	_ = os.Remove(socketPath)
+	t.Cleanup(func() { _ = os.Remove(socketPath) })
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, upgradeErr := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+		if upgradeErr != nil {
+			return
+		}
+		defer connection.Close()
+		for {
+			var incoming map[string]any
+			if readErr := connection.ReadJSON(&incoming); readErr != nil {
+				return
+			}
+			switch incoming["method"] {
+			case "initialize":
+				_ = connection.WriteJSON(map[string]any{"id": incoming["id"], "result": map[string]any{}})
+			case "thread/list":
+				_ = connection.WriteJSON(map[string]any{"id": incoming["id"], "result": map[string]any{
+					"data": []map[string]string{{"id": "remote-thread"}},
+				}})
+			}
+		}
+	})}
+	go server.Serve(listener)
+	defer server.Close()
+
+	client, closer, err := openRemoteClient(context.Background(), socketPath)
+	if err != nil {
+		t.Fatalf("open remote client: %v", err)
+	}
+	defer closer.Close()
+	var output bytes.Buffer
+	if err := run(client, options{}, &output); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(output.String(), `"remote-thread"`) {
 		t.Fatalf("output = %s", output.String())
 	}
 }

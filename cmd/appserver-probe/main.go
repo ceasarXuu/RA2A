@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/appserverprobe"
+	"github.com/ceasarXuu/RA2A/internal/codexhost"
 )
 
 type options struct {
@@ -59,6 +60,12 @@ func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 			return startErr
 		}
 		result, err = client.StartTurn(threadID, opts.ephemeralMessage)
+		if err == nil {
+			result, err = json.Marshal(map[string]any{
+				"threadId": threadID,
+				"turn":     json.RawMessage(result),
+			})
+		}
 	} else if opts.probeContext {
 		result, err = client.CallMCPTool(opts.threadID, "ra2a_probe", "probe_context", map[string]any{})
 	} else if opts.threadID == "" {
@@ -81,10 +88,19 @@ func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 	return err
 }
 
+func openRemoteClient(ctx context.Context, socketPath string) (*appserverprobe.Client, io.Closer, error) {
+	connection, err := codexhost.DialUnixWebSocket(ctx, socketPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return appserverprobe.New(connection, connection), connection, nil
+}
+
 func main() {
 	var opts options
 	var codexPath string
 	var mcpProbePath string
+	var socketPath string
 	var timeout time.Duration
 	flag.StringVar(&codexPath, "codex", "codex", "path to the Codex CLI binary")
 	flag.StringVar(&opts.threadID, "thread-id", "", "target thread ID; omit for a read-only list")
@@ -93,6 +109,7 @@ func main() {
 	flag.BoolVar(&opts.allowWrite, "allow-write", false, "allow resume and turn/start on the target thread")
 	flag.BoolVar(&opts.probeContext, "probe-context", false, "call the RA2A MCP context probe on thread-id")
 	flag.StringVar(&mcpProbePath, "mcp-probe-bin", "", "absolute path to mcp-context-probe")
+	flag.StringVar(&socketPath, "socket", "", "connect to an existing App Server Unix socket")
 	flag.DurationVar(&timeout, "timeout", 20*time.Second, "probe timeout")
 	flag.Parse()
 	workingDirectory, err := os.Getwd()
@@ -104,6 +121,19 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	if socketPath != "" {
+		client, closer, openErr := openRemoteClient(ctx, socketPath)
+		if openErr != nil {
+			fmt.Fprintln(os.Stderr, openErr)
+			os.Exit(1)
+		}
+		defer closer.Close()
+		if err := run(client, opts, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	arguments := []string{}
 	if opts.probeContext {
 		if mcpProbePath == "" {

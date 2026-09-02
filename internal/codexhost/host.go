@@ -48,7 +48,7 @@ func Start(ctx context.Context, config Config) (*Host, error) {
 	if config.CodexPath == "" || config.SocketPath == "" {
 		return nil, errors.New("Codex path and App Server socket path are required")
 	}
-	return startWith(ctx, config, startManaged, connectWebSocket, 100*time.Millisecond)
+	return startWith(ctx, config, startManaged, DialUnixWebSocket, 100*time.Millisecond)
 }
 
 func startManaged(ctx context.Context, config Config) (*managedProcess, error) {
