@@ -59,6 +59,7 @@ flowchart LR
 3. 注册表汇总多个适配器的端点，并维护端点到适配器的确定性映射。
 4. 路由器只负责本地/远端路由、超时和统一结果，不解释宿主错误。
 5. 宿主所有权、writer、UI/TUI 同步和恢复逻辑封装在对应适配器内。
+6. 适配器所有权必须由已验证的接入边界显式建立；不得根据 App Server 的 `thread.source` 猜测 Codex App/CLI 类型。
 
 ## 4. 建议内部契约
 
@@ -86,6 +87,7 @@ type AgentAdapter interface {
 - `endpointID`：节点内唯一标识
 - `agentType`：如 `codex-app`、`codex-cli`
 - `nativeSessionID`：仅适配器解释
+- `ownerRef`：适配器内部登记的接入所有权，不对 LAN 或 MCP 暴露
 - `title`、`status`
 - `capabilities`：例如 `receiveText`、`replyAddress`、`interactiveSafe`
 - `address`：由 daemon 生成的完整、不透明目标地址
@@ -130,14 +132,14 @@ v1.1.0 保持文本消息，候选字段：
 | V3 | 外部 resume 对活跃 TUI 的 writer 和刷新有何影响 | TUI 活跃时注入，多轮观察状态和继续输入 | 不抢占 writer、不永久 thinking、TUI 可继续交互 | direct-resume 不作为正式支持路径 |
 | V4 | RA2A App Server + `codex --remote` 是否能共享所有权 | 由 RA2A 启动 App Server，TUI remote 接入，多轮交叉投递 | 单一所有者、消息实时显示、人工输入正常 | 重新评估 CLI 支持边界 |
 | V5 | App Server 版本变化能否被探测和隔离 | 对当前与最低支持 Codex CLI 做契约测试 | 不兼容时明确报错，不污染路由层 | 增加适配器版本门槛 |
-| V6 | 同一节点 App 与 CLI 端点能否无冲突汇总 | 同机同时运行两类宿主并发现 | 地址唯一、类型正确、投递到唯一目标 | 调整端点身份模型 |
+| V6 | 同一节点 App 与 CLI 端点能否无冲突汇总 | 同机同时运行两类宿主并发现 | 地址唯一、类型正确、投递到唯一目标 | 调整端点身份模型并复验；不得从 `thread.source` 猜测类型 |
 | V7 | 单 App Server + remote TUI 能否安全接收 active-turn follow-up | 首条消息触发长时间 turn，在执行期间注入第二条消息并继续人工输入 | follow-up 在同一 thread 中精确执行一次、无重复、TUI 实时更新、人工输入正常 | 不进入 CLI 适配器实现，重新评估活跃 turn 投递入口 |
 
 实验输出写入 `docs/v1.1.0/experiments/`，记录命令、版本、平台、观察结果和结论。只有结论进入架构，原始日志不提交敏感信息。
 
 所有实验先通过 PD32 隔离门禁：使用独立的开发配置、运行目录、日志、控制地址、App Server socket、节点身份和测试会话；不得执行会安装、升级、停止、重启或重新配置本机正式版的命令。启动前检查与正式版的资源冲突，无法确认隔离时立即停止。
 
-当前进度：V1-V4 与 V7 已完成 macOS 首轮验证；V7 证明 CLI active turn 接收 follow-up 时采用同 thread 排队并在当前 turn 后执行的语义。V5 已完成 `0.151.0`/`0.152.1` 双版本 macOS 契约对比，两版均可从 `initialize.userAgent` 探测版本，且 `thread/queue/*` 需要显式 `experimentalApi` 能力。V6 和三平台复验仍未完成；`0.151.0` 在完成真实投递前只作为契约最低候选。
+当前进度：V1-V4 与 V7 已完成 macOS 首轮验证；V7 证明 CLI active turn 接收 follow-up 时采用同 thread 排队并在当前 turn 后执行的语义。V5 已完成 `0.151.0`/`0.152.1` 双版本 macOS 契约对比，两版均可从 `initialize.userAgent` 探测版本，且 `thread/queue/*` 需要显式 `experimentalApi` 能力。V6 macOS 首轮未通过：App Server 创建的测试 thread 与 remote TUI thread 都返回 `source: vscode`，原生 thread ID 虽可精确投递，却无法仅凭共享列表可靠判断 App/CLI 所有权。下一步先复验由受管 CLI 接入边界显式登记 thread 所有权的最小方案；V6 复验和三平台验证完成前 Phase 0 不冻结。`0.151.0` 在完成真实投递前只作为契约最低候选。
 
 ## 6. 实施阶段
 
@@ -149,6 +151,7 @@ v1.1.0 保持文本消息，候选字段：
 
 - 以 PD29-PD31 作为启动行为、地址兼容和 Agent 支持门槛。
 - 选定满足这些决策的 Codex CLI 所有权路线。
+- 通过 V6 复验证明所有权来自可观测的 CLI attach/create/resume 边界，而非 `thread.source`；未知所有权端点不得标记为 ready。
 - 将实验结论映射到适配器最小接口。
 
 完成标准：技术路线满足受保护产品决策，并证明不会破坏活跃 TUI、人工继续交互和全交叉支持门槛。
@@ -195,7 +198,8 @@ v1.1.0 保持文本消息，候选字段：
 
 - 探测 Codex CLI 版本和支持能力。
 - 从实际 App Server 的 `initialize.userAgent` 读取版本，并显式协商、探测 `experimentalApi` queue 能力；不能只检查本机命令版本。
-- 发现或管理 CLI session。
+- 在已验证的 CLI 接入边界登记 attach/create/resume 的 thread 所有权；不得用共享 `thread/list` 的 `source` 推断类型。
+- 发现或管理已明确归属的 CLI session；未知归属不得作为 ready 端点发布。
 - 将统一消息精确投递为一个 turn。
 - 处理活跃 writer、busy、超时和不确定结果。
 - 确保投递后 TUI 可继续人工使用。
