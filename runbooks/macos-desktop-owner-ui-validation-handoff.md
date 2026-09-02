@@ -1,62 +1,65 @@
-# macOS Codex Desktop owner-first UI 验证交接
+# macOS Codex Desktop active-turn UI 回归交接
 
 ## 目标
 
-在 Mac 官方 Codex Desktop 上验证 RA2A 的 Desktop-owner-first 修复：从 rog306 通过正式 LAN/MCP 路径只发送一条唯一消息后，目标 task 应在 **不重启 Codex Desktop** 的情况下立即显示新用户消息、创建并完成 turn，且用户仍可在同一 task 手动继续对话。
+在 Mac 官方 Codex Desktop 上验证 `main` 中的 active-turn 修复：目标 task 空闲时，第一条远端消息由 Desktop owner 创建一个新 turn；该 turn 执行期间的第二条消息必须通过 `turn/steer` 进入同一个 turn，Desktop UI 全程实时更新且不需要重启 App。
 
-本次只做 `main` 上的回归验证，不创建分支、不发布版本。
+本次只安装并验证 `main` 源码，不创建分支、不改代码、不发布版本。测试完成后回传证据，由 Windows 端汇总结果。
 
 ## 固定基线
 
 ```text
 repository: https://github.com/ceasarXuu/RA2A.git
 branch: main
-required commit: 11f44361f8db8e7ccad1346df24fc56171b83f95
-change: fix(desktopipc): prefer Desktop owner for turns
+required commit: d93442633d8df19bdb0cfd1824e44ef3a2d479bb
+change: fix(desktopipc): steer active turns
 ```
 
-该提交尚未发布新 tag，二进制仍可能显示 `v0.0.8`。不能用 `ra2a update` 或 latest Release 代替本次源码安装；必须确认安装的源码包含上述提交。
+该修复尚未发布新 tag。`ra2a version` 仍可能显示 `v0.0.9`，不能用 `ra2a update` 或 latest Release 代替本次源码安装；必须用 Git 祖先关系证明安装源码包含上述提交。
 
-## 问题与修复边界
+## 回归背景与正确行为
 
-旧路由先调用受管 Codex App Server。目标 task 空闲时，该调用可能成功创建并持久化完整 turn，却绕过当前 Codex Desktop renderer 的事件链；因此切换 tab 仍看不到消息，只有重启 App 重新水合后才出现。
+v0.0.9 已改为 Desktop-owner-first，但每条消息仍调用 `thread-follower-start-turn`。当目标已有 active turn 时，后端可能把后续消息并入原 turn，而 Desktop renderer 预建了另一个 in-progress turn，随后出现 `Item not found in turn state`，UI 长期停在“思考中”，通常只有重启 App 才能恢复。
 
 修复后的规则：
 
-1. 只要 Desktop IPC 可用，始终先通过 `thread-follower-start-turn` 交给当前 Desktop owner 创建 turn。
-2. 仅在连接、initialize 或 Desktop 明确拒绝等“确认未投递”结果下回退受管 App Server。
-3. StartTurn 写出后的超时、断连、取消或成功响应缺少 turn ID 均为 `DELIVERY_UNKNOWN`，不得回退或重试。
-4. rollout 中存在 turn 只证明已持久化，不能替代当前 Desktop UI 的实时可见性验收。
+1. Desktop IPC 初始化成功后，先调用 `thread-follower-steer-turn`（version 1）。
+2. active turn 存在时，消息必须进入该 turn，不能再调用 `start-turn`。
+3. 只有 Desktop 明确报告 `NoActiveTurn`、`SteerTurnInactiveError` 或“active turn already ended”时，才调用 `thread-follower-start-turn`（version 2）。
+4. steer 或 start 写出后的超时、断连、取消或缺少 turn ID 均属于 `DELIVERY_UNKNOWN`，不得换路径、回退或重试。
+5. rollout 或后台 API 中存在完整 turn 不能替代 UI 实时刷新验收。
 
-Windows 已完成真实 LAN 验证；本交接负责补齐同一共用路由在 macOS 上的真实 UI 回归。
+Windows 官方 Codex Desktop 已验证一条空闲消息和一条 active follow-up 形成 `start=1`、`steer=1`、单一 turn，且同一窗口 `Item not found in turn state=0`。本交接负责验证 macOS 使用同一协议时没有平台回归。
 
-## 1. 拉取并验证源码
+## 1. 拉取并确认源码
 
-保留开始前已有或来源不明的本地修改，不要 reset、覆盖或擅自提交它们。如果工作区不干净且会与本次安装冲突，停止并报告。
+保留开始前已有或来源不明的本地修改，不要 reset、覆盖或擅自提交。如果工作区不干净且会影响安装或验证，停止并回传 `git status --short`。
 
 ```bash
 cd /path/to/RA2A
 git status --short
 git branch --show-current
 git pull --ff-only
-git merge-base --is-ancestor 11f44361f8db8e7ccad1346df24fc56171b83f95 HEAD
+git merge-base --is-ancestor d93442633d8df19bdb0cfd1824e44ef3a2d479bb HEAD
 git log -1 --oneline
 ```
 
 必须满足：
 
-- 当前分支为 `main`；
+- 当前分支是 `main`；
 - `git pull --ff-only` 成功；
 - `git merge-base --is-ancestor ...` 退出码为 0；
-- 不创建新分支，不改代码。
+- 没有创建新分支，也没有修改源码。
 
-## 2. 安装源码版本并重启 LaunchAgent
+## 2. 本地验证、安装并重启服务
 
-需要 Go 1.24+。无参数源码安装只替换命令，不改现有 node ID、名称、PIN 或 Codex 路径：
+需要 Go 1.24+。源码安装只替换可执行文件，不应改变现有 node ID、名称、PIN 或 Codex 路径。
 
 ```bash
 go version
 go test ./...
+go vet ./...
+go test -race ./internal/desktopipc ./cmd/ra2a
 ./install.sh
 ~/.local/bin/ra2a restart
 ~/.local/bin/ra2a version
@@ -65,69 +68,124 @@ launchctl print "gui/$(id -u)/com.ra2a.daemon"
 
 检查：
 
-- LaunchAgent 状态正常且进程使用 `~/.local/bin/ra2a`；
-- 关闭执行安装的终端不会停止服务；
+- LaunchAgent 正常运行，程序路径是 `~/.local/bin/ra2a`；
+- 关闭安装终端后 daemon 仍在运行；
+- 原 node ID、名称和 PIN 未变化；
 - `~/.config/ra2a/logs/ra2a.err.log` 没有持续启动失败；
-- 若 `ra2a version` 仍显示 `v0.0.8`，以 Git 祖先校验和本次源码构建为准，不要因此改 tag 或发版。
+- 即使版本字符串仍是 `v0.0.9`，也以本节的 Git 祖先校验和源码安装时间为准，不改 tag、不发版。
 
-## 3. 准备目标 task
+## 3. 准备专用测试 task
 
-1. 在 Mac 官方 Codex Desktop 中创建或选择一个专用测试 task，保持该 task 打开。
-2. 记录准确的 task ID、标题、Mac RA2A node ID 和验证开始时间。
-3. 开始前确认 task 空闲、可手动发送消息，且没有同名测试消息。
-4. 验证期间不要退出或重启 Codex Desktop，也不要先切换 tab 触发重新加载。
+1. 在 Mac 官方 Codex Desktop 中创建或选择一个不承载生产工作的专用 task，并保持它在当前窗口打开。
+2. 记录 task ID、标题、Mac RA2A node ID/name、Codex Desktop 版本、进程 PID 和测试开始时间。
+3. 手动发送一条普通消息，确认该 task 当前可交互；等它完成后再开始远端测试。
+4. 测试开始时 task 必须为 idle，且历史中不存在本次 marker。
+5. 验证期间不要重启 Codex Desktop、切换 task、编辑 rollout/session 文件或启动第二个 App Server。
 
-不要使用重要生产 task。不要编辑 rollout/session 文件，也不要使用独立 App Server 或第二 writer 模拟成功。
+如当前页面已经因 v0.0.9 的旧故障卡在“思考中”，先重启一次 Codex Desktop 清除旧 renderer 状态，再选择新的专用 task。该重启只能发生在正式计时和 marker 发送之前。
 
-## 4. 通过正式 LAN 路径只发送一条消息
+## 4. 从 rog306 发送两条唯一消息
 
-先在 rog306 的 RA2A MCP 中调用 `list_targets`，确认 Mac 节点和上述 task ID 可见。随后调用一次且仅一次 `send_message`：
+先在 rog306 的 RA2A MCP 中调用 `list_targets`，确认 Mac node 和目标 task ID 唯一可见。随后执行一次计划内的两消息序列，不发送第三条消息。
+
+### 4.1 空闲首条消息
+
+调用一次 `send_message`：
 
 ```text
 to: ra2a://<mac-node-id>/<mac-task-id>
-text: [RA2A-MAC-DESKTOP-FIRST-<UTC时间>] 请只回复 RA2A_MAC_DESKTOP_FIRST_OK
+text: [RA2A-MAC-STEER-BASE-<UTC时间>] 请立即运行 sleep 30；等待结束后回复 RA2A_MAC_STEER_BASE_OK。
+```
+
+记录 sender 原始结果和发送时间。返回 `accepted` 后，应在 Mac UI 立即看到该用户消息和执行动态，task 进入 active 状态。
+
+### 4.2 active follow-up
+
+确认 Mac UI 已显示首条消息且 Agent 仍在执行 `sleep 30` 后，立即调用一次 `send_message`：
+
+```text
+to: ra2a://<mac-node-id>/<mac-task-id>
+text: [RA2A-MAC-STEER-FOLLOWUP-<同一UTC时间>] 这是 active-turn follow-up；当前等待结束后请只回复 RA2A_MAC_STEER_FOLLOWUP_OK。
 ```
 
 要求：
 
-- `<UTC时间>` 使用本次验证生成的唯一值，并完整记录；
-- 只允许这一条跨设备测试消息；
-- 若返回超时、`DELIVERY_UNKNOWN` 或其他错误，不得重试，先收集证据；
-- 不要额外运行 `desktop-ipc-probe --allow-write`，否则无法证明正式 LAN/MCP 路径。
+- 两条 marker 使用同一个 UTC 时间后缀，并完整记录；
+- 第二条必须在第一条 turn 完成前发送；
+- 每条消息只调用一次 `send_message`；
+- 任一请求返回超时、`DELIVERY_UNKNOWN` 或其他错误时不得重试，立即保留现场并收集证据；
+- 不运行 `desktop-ipc-probe --allow-write`，否则不能证明正式 LAN/MCP 接收链。
 
-## 5. UI 与可继续沟通验收
+若第一条 turn 在第二条发送前意外完成，本次样本无效但不代表修复失败。停止发送，记录时序并回传，不要在同一 task 临时追加消息补测。
 
-发送后保持 Codex Desktop 原进程不变，按顺序确认：
+## 5. UI 与 turn 验收
 
-1. 当前打开的 Mac task 无需重启 App 即出现唯一 marker 对应的用户消息。
-2. 同一 task 创建一个且仅一个新 turn，并回复 `RA2A_MAC_DESKTOP_FIRST_OK`。
-3. 不切换 task、不重启 App，在输入框手动发送：
+保持同一个 Codex Desktop 进程和同一个打开页面，依次确认：
+
+1. 第一条用户消息无需重启或切换 task 即实时出现。
+2. sleep 执行期间可以看到正常的思考、工具调用或状态变化，不是静止的假“思考中”。
+3. 第二条 follow-up 无需重启或切换 task 即出现在同一 active turn。
+4. 全程只创建一个 turn，最终回复为 `RA2A_MAC_STEER_FOLLOWUP_OK`。
+5. turn 完成后 UI 从执行态收敛到完成态，没有持续“思考中”。
+6. 不重启 App，在输入框手动发送：
 
    ```text
-   本机手动继续验证，请只回复 RA2A_MAC_MANUAL_OK
+   本机手动续聊验证，请只回复 RA2A_MAC_MANUAL_OK
    ```
 
-4. 同一 task 正常回复 `RA2A_MAC_MANUAL_OK`，且没有“已在另一个应用中打开”或 writer 冲突。
+7. 同一 task 正常回复 `RA2A_MAC_MANUAL_OK`，没有“已在另一个应用中打开”、writer 冲突或输入框失效。
 
-必须由操作者明确记录“无需重启即可看到”或“必须重启才能看到”。仅凭后台 API、rollout 或 turn ID 不算 UI 验收通过。
+必须由 Mac 操作者明确记录动态过程和完成状态。只看到最终消息、rollout 中存在 turn，或后台 API 返回 completed，都不能单独判定 UI 验收通过。
 
-## 6. 证据包
+## 6. 协议与日志证据
 
-回传以下最小证据，敏感内容可遮盖，但不要省略 ID、时间顺序和错误类型：
+在测试时间窗内收集 RA2A daemon 日志和 Codex Desktop 日志。日志位置随 Codex Desktop 版本可能变化，不要移动或修改原文件；按测试时间和 marker 定位当前进程的日志即可。
+
+期望同一目标 task 出现：
+
+```text
+IpcRouter count: 2
+turn/start count: 1
+turn/steer count: 1
+task_started count: 1
+user_message count: 2
+task_complete count: 1
+Item not found in turn state count: 0
+```
+
+关键约束：
+
+- 首条空闲消息对应 `turn/start`；
+- 第二条 active follow-up 对应 `turn/steer`；
+- 两条 user message 和最终回复使用同一个 turn ID；
+- 不存在第二个 `turn/start`、第二个 task、重复 marker 或 `DELIVERY_UNKNOWN` 后重试；
+- 如 Codex Desktop 日志格式变化，保留原始相关行，不要为了满足上述名称改写证据。
+
+## 7. 回传证据包
+
+按以下模板回传：
 
 ```text
 Mac model / macOS version:
-Codex Desktop version:
+Codex Desktop version / PID:
 RA2A node ID / name:
 git HEAD:
+required commit is ancestor: yes/no
 target task ID / title:
-unique marker:
-sender result:
-created turn ID:
-message visible without restart: yes/no
-single turn only: yes/no
+base marker / sent at:
+follow-up marker / sent at:
+base sender result:
+follow-up sender result:
+single turn ID:
+base visible live without restart/tab switch: yes/no
+follow-up visible live without restart/tab switch: yes/no
+dynamic execution visible: yes/no
+UI returned to completed state: yes/no
 manual continuation succeeded: yes/no
 Codex Desktop remained same process: yes/no
+turn/start count:
+turn/steer count:
+Item not found in turn state count:
 ```
 
 同时附上：
@@ -139,17 +197,20 @@ tail -n 200 ~/.config/ra2a/logs/ra2a.log
 tail -n 200 ~/.config/ra2a/logs/ra2a.err.log
 ```
 
-如能定位当前 Codex Desktop 日志，再截取 marker 前后同一时间窗，证明存在 Desktop IPC 路由、目标 `turn/start` 和完成/renderer 通知。不要用“rollout 中有完整 turn”单独宣告通过。
+再附 marker 前后同一时间窗的 Codex Desktop 日志原始片段，以及能够证明两条消息同属一个 turn 的 rollout 摘要。敏感正文可以遮盖，但不要遮盖 task ID、turn ID、marker、时间、方法名和错误类型。
 
 ## 通过标准
 
 以下条件必须全部满足：
 
-- Mac 安装源码包含 `11f44361f8db8e7ccad1346df24fc56171b83f95`；
-- rog306 只发送了一条唯一远端测试消息；
-- 消息在未重启 Codex Desktop 的情况下实时出现在原 task；
-- 只创建一个 turn 且回复正确；
-- 用户可在原 task 手动继续对话；
-- 没有 writer 冲突、重复 turn 或 `DELIVERY_UNKNOWN` 后重试。
+- Mac 安装源码包含 `d93442633d8df19bdb0cfd1824e44ef3a2d479bb`；
+- rog306 严格发送两条计划内的唯一消息，无重试、无第三条测试消息；
+- 第一条空闲消息只触发一次 `turn/start`；
+- 第二条 active follow-up 只触发一次 `turn/steer`；
+- 两条消息进入同一个 turn，且只有一次 task start/complete；
+- Desktop UI 无需重启或切换 task 即显示两条消息、动态执行和最终完成状态；
+- `Item not found in turn state` 为 0；
+- 用户能在原 task 手动继续对话；
+- 没有 writer 冲突、重复 turn 或不确定投递后的重试。
 
-任一条件失败即不能判定修复完成。保留现场，不重启 App、不重发消息，回传证据包供后续定位。
+任一条件失败都不能判定 macOS 回归通过。保留现场，不重启 App、不重发消息、不编辑 session 文件，直接回传完整证据包。
