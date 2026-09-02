@@ -56,7 +56,7 @@ func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 		err    error
 	)
 	if opts.ephemeralMessage != "" {
-		threadID, startErr := client.StartEphemeralThread(opts.cwd)
+		threadID, threadResult, startErr := client.StartEphemeralThreadDetails(opts.cwd)
 		if startErr != nil {
 			return startErr
 		}
@@ -64,6 +64,7 @@ func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 		if err == nil {
 			result, err = json.Marshal(map[string]any{
 				"threadId": threadID,
+				"thread":   json.RawMessage(threadResult),
 				"turn":     json.RawMessage(result),
 			})
 		}

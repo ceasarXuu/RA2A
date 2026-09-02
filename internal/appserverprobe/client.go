@@ -149,9 +149,14 @@ func (client *Client) InjectMessage(threadID, text string) (json.RawMessage, err
 }
 
 func (client *Client) StartEphemeralThread(cwd string) (string, error) {
+	threadID, _, err := client.StartEphemeralThreadDetails(cwd)
+	return threadID, err
+}
+
+func (client *Client) StartEphemeralThreadDetails(cwd string) (string, json.RawMessage, error) {
 	result, err := client.call("thread/start", map[string]any{"cwd": cwd, "ephemeral": true})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var decoded struct {
 		Thread struct {
@@ -159,12 +164,12 @@ func (client *Client) StartEphemeralThread(cwd string) (string, error) {
 		} `json:"thread"`
 	}
 	if err := json.Unmarshal(result, &decoded); err != nil {
-		return "", fmt.Errorf("decode thread/start response: %w", err)
+		return "", nil, fmt.Errorf("decode thread/start response: %w", err)
 	}
 	if decoded.Thread.ID == "" {
-		return "", errors.New("thread/start response did not include a thread ID")
+		return "", nil, errors.New("thread/start response did not include a thread ID")
 	}
-	return decoded.Thread.ID, nil
+	return decoded.Thread.ID, result, nil
 }
 
 func (client *Client) CallMCPTool(threadID, server, tool string, arguments any) (json.RawMessage, error) {

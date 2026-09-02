@@ -76,7 +76,7 @@ func TestRunCallsContextProbeWithoutTurnWrite(t *testing.T) {
 func TestRunStartsTurnInEphemeralThread(t *testing.T) {
 	responses := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"result":{}}`,
-		`{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"ephemeral-1"}}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"ephemeral-1","source":"appServer"}}}`,
 		`{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-1","status":"inProgress"}}}`,
 	}, "\n")
 	var requests, output bytes.Buffer
@@ -90,6 +90,9 @@ func TestRunStartsTurnInEphemeralThread(t *testing.T) {
 		t.Fatalf("output = %s", output.String())
 	}
 	if !strings.Contains(output.String(), `"threadId": "ephemeral-1"`) {
+		t.Fatalf("output = %s", output.String())
+	}
+	if !strings.Contains(output.String(), `"source": "appServer"`) {
 		t.Fatalf("output = %s", output.String())
 	}
 }
