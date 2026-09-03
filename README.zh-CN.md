@@ -107,10 +107,14 @@ Mac / Planner
 |---|---|
 | `ra2a` | 首次引导；后续确认服务正在运行 |
 | `ra2a restart` | 重启后台服务 |
+| `ra2a stop` | 暂停 daemon，保留配置和 MCP 注册 |
+| `ra2a exit` | 停止并移除后台服务和 MCP 注册，保留配置 |
 | `ra2a name [名称]` | 设置设备名称 |
 | `ra2a pin [6位PIN]` | 设置共享 PIN |
 | `ra2a version` | 查看版本 |
 | `ra2a update` | 校验并更新到最新正式 Release |
+
+`ra2a stop` 可恢复：执行 `ra2a` 或 `ra2a restart` 即可重新启动。`ra2a exit` 还会移除平台服务定义和 Codex MCP 注册，但不会删除二进制或配置。Codex 负责管理 stdio MCP 子进程，已打开的 MCP 进程会在 Codex 关闭连接后退出。
 
 ## 工作原理与边界
 

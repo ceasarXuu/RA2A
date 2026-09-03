@@ -107,10 +107,14 @@ Mac / Planner
 |---|---|
 | `ra2a` | Run first-time setup; later, confirm the service is running |
 | `ra2a restart` | Restart the background service |
+| `ra2a stop` | Pause the daemon and keep the configuration and MCP registration |
+| `ra2a exit` | Stop and remove the background service and MCP registration; keep configuration |
 | `ra2a name [name]` | Set the device name |
 | `ra2a pin [6-character PIN]` | Set the shared PIN |
 | `ra2a version` | Show the installed version |
 | `ra2a update` | Verify and update to the latest stable release |
+
+`ra2a stop` is reversible: run `ra2a` or `ra2a restart` to resume. `ra2a exit` also removes the platform service definition and Codex MCP registration; it does not delete the binary or configuration. Codex owns its stdio MCP child process, so an already-open MCP process exits when Codex closes that connection.
 
 ## How It Works and Current Boundaries
 

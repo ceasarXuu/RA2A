@@ -157,6 +157,91 @@ func TestRunRestartReportsRunning(t *testing.T) {
 	}
 }
 
+func TestRunStopPausesBackgroundService(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix service fixture")
+	}
+	home := configuredOperatorHome(t)
+	serviceCommand := "launchctl"
+	if runtime.GOOS == "linux" {
+		serviceCommand = "systemctl"
+	}
+	writeTestExecutable(t, filepath.Join(home, "bin", serviceCommand), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/service-calls.log\"\nexit 0\n")
+	var output bytes.Buffer
+	if err := run(context.Background(), []string{"stop"}, &output, fakeSourceFactory(nil)); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if !strings.Contains(output.String(), "status: paused") {
+		t.Fatalf("output = %q", output.String())
+	}
+	calls, err := os.ReadFile(filepath.Join(home, "service-calls.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "bootout"
+	if runtime.GOOS == "linux" {
+		want = "--user stop ra2a.service"
+	}
+	if !strings.Contains(string(calls), want) {
+		t.Fatalf("service calls = %q, want %q", calls, want)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "ra2a", "config.json")); err != nil {
+		t.Fatalf("stop removed config: %v", err)
+	}
+}
+
+func TestRunExitTerminatesServiceAndUnregistersMCP(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix service fixture")
+	}
+	home := configuredOperatorHome(t)
+	serviceCommand := "launchctl"
+	servicePath := filepath.Join(home, "Library", "LaunchAgents", "com.ra2a.daemon.plist")
+	if runtime.GOOS == "linux" {
+		serviceCommand = "systemctl"
+		servicePath = filepath.Join(home, ".config", "systemd", "user", "ra2a.service")
+	}
+	if err := os.MkdirAll(filepath.Dir(servicePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(servicePath, []byte("service"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeTestExecutable(t, filepath.Join(home, "bin", serviceCommand), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/service-calls.log\"\nexit 0\n")
+	writeTestExecutable(t, filepath.Join(home, "bin", "codex"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$HOME/codex-calls.log\"\nexit 0\n")
+	var output bytes.Buffer
+	if err := run(context.Background(), []string{"exit"}, &output, fakeSourceFactory(nil)); err != nil {
+		t.Fatalf("exit: %v", err)
+	}
+	if !strings.Contains(output.String(), "status: exited") {
+		t.Fatalf("output = %q", output.String())
+	}
+	serviceCalls, err := os.ReadFile(filepath.Join(home, "service-calls.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "bootout"
+	if runtime.GOOS == "linux" {
+		want = "--user disable --now ra2a.service"
+	}
+	if !strings.Contains(string(serviceCalls), want) {
+		t.Fatalf("service calls = %q, want %q", serviceCalls, want)
+	}
+	codexCalls, err := os.ReadFile(filepath.Join(home, "codex-calls.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(codexCalls), "mcp remove ra2a") {
+		t.Fatalf("Codex calls = %q", codexCalls)
+	}
+	if _, err := os.Stat(servicePath); !os.IsNotExist(err) {
+		t.Fatalf("service definition still exists, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "ra2a", "config.json")); err != nil {
+		t.Fatalf("exit removed config: %v", err)
+	}
+}
+
 func TestConfiguredRunOnlyChecksRunningService(t *testing.T) {
 	home := configuredOperatorHome(t)
 	serviceCommand := "launchctl"

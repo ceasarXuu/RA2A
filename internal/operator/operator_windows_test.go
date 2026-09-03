@@ -34,6 +34,32 @@ func TestWindowsScheduledTaskScriptEscapesExecutable(t *testing.T) {
 	}
 }
 
+func TestWindowsStopScheduledTaskScriptDisablesAndStopsTask(t *testing.T) {
+	script := windowsStopScheduledTaskScript()
+	for _, want := range []string{
+		`Get-ScheduledTask -TaskName RA2A`,
+		`Disable-ScheduledTask -TaskName RA2A`,
+		`Stop-ScheduledTask -TaskName RA2A`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("stop script missing %q:\n%s", want, script)
+		}
+	}
+}
+
+func TestWindowsExitScheduledTaskScriptUnregistersTask(t *testing.T) {
+	script := windowsExitScheduledTaskScript()
+	for _, want := range []string{
+		`Get-ScheduledTask -TaskName RA2A`,
+		`Stop-ScheduledTask -TaskName RA2A`,
+		`Unregister-ScheduledTask -TaskName RA2A`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("exit script missing %q:\n%s", want, script)
+		}
+	}
+}
+
 func TestWindowsConfigPathUsesUserHome(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows path contract")

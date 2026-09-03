@@ -194,6 +194,31 @@ func Restart() (Config, error) {
 	return config, err
 }
 
+func Stop() (Config, error) {
+	config, err := Load()
+	if err != nil {
+		return config, err
+	}
+	if err := stopService(); err != nil {
+		return config, fmt.Errorf("stop RA2A service: %w", err)
+	}
+	return config, nil
+}
+
+func Exit() (Config, error) {
+	config, err := Load()
+	if err != nil {
+		return config, err
+	}
+	if err := exitService(); err != nil {
+		return config, fmt.Errorf("exit RA2A service: %w", err)
+	}
+	// The MCP process is owned by Codex and exits with its stdio connection. Removing
+	// the registration prevents Codex from starting another RA2A MCP process.
+	_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
+	return config, nil
+}
+
 func serviceRunning() error {
 	switch runtime.GOOS {
 	case "darwin":
@@ -204,6 +229,67 @@ func serviceRunning() error {
 		return exec.Command("powershell.exe", "-NoProfile", "-Command", `if((Get-ScheduledTask -TaskName RA2A).State -ne 'Running'){exit 1}`).Run()
 	}
 	return errors.New("unsupported operating system")
+}
+
+func stopService() error {
+	switch runtime.GOOS {
+	case "darwin":
+		if err := serviceRunning(); err != nil {
+			return nil
+		}
+		return exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/com.ra2a.daemon", os.Getuid())).Run()
+	case "linux":
+		if err := serviceRunning(); err != nil {
+			return nil
+		}
+		return exec.Command("systemctl", "--user", "stop", "ra2a.service").Run()
+	case "windows":
+		return runPowerShell(windowsStopScheduledTaskScript())
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+func exitService() error {
+	switch runtime.GOOS {
+	case "darwin":
+		if err := stopService(); err != nil {
+			return err
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return removeIfExists(filepath.Join(home, "Library", "LaunchAgents", "com.ra2a.daemon.plist"))
+	case "linux":
+		if err := exec.Command("systemctl", "--user", "disable", "--now", "ra2a.service").Run(); err != nil {
+			return err
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(home, ".config", "systemd", "user", "ra2a.service")
+		if err := removeIfExists(path); err != nil {
+			return err
+		}
+		return exec.Command("systemctl", "--user", "daemon-reload").Run()
+	case "windows":
+		return runPowerShell(windowsExitScheduledTaskScript())
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+func removeIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func runPowerShell(script string) error {
+	return exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Run()
 }
 
 func generatePIN() (string, error) {
@@ -315,6 +401,14 @@ func installWindows(executable string) error {
 		return fmt.Errorf("register/start Windows scheduled task: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func windowsStopScheduledTaskScript() string {
+	return `$ErrorActionPreference='Stop';$t=Get-ScheduledTask -TaskName RA2A -ErrorAction SilentlyContinue;if($null -ne $t){Disable-ScheduledTask -TaskName RA2A|Out-Null;Stop-ScheduledTask -TaskName RA2A -ErrorAction SilentlyContinue}`
+}
+
+func windowsExitScheduledTaskScript() string {
+	return `$ErrorActionPreference='Stop';$t=Get-ScheduledTask -TaskName RA2A -ErrorAction SilentlyContinue;if($null -ne $t){Stop-ScheduledTask -TaskName RA2A -ErrorAction SilentlyContinue;Unregister-ScheduledTask -TaskName RA2A -Confirm:$false}`
 }
 
 func windowsScheduledTaskScript(executable string) string {

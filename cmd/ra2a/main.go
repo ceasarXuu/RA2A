@@ -89,6 +89,20 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		}
 		fmt.Fprintf(output, "name: %s\nstatus: running\n", config.Name)
 		return nil
+	case "stop":
+		config, err := operator.Stop()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "name: %s\nstatus: paused\n", config.Name)
+		return nil
+	case "exit":
+		config, err := operator.Exit()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "name: %s\nstatus: exited\n", config.Name)
+		return nil
 	case "setup":
 		flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 		flags.SetOutput(io.Discard)
@@ -133,7 +147,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return run(ctx, []string{"serve", "--pin", config.PIN, "--id", config.NodeID, "--name", config.Name, "--codex", config.Codex, "--control-address", controlAddress}, output, startSource)
 	}
 	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
-		return errors.New("usage: ra2a <selftest|serve|send> --pin <6-character-pin> [--id <node-id>] [--name <node-name>] [--codex <path>]")
+		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|selftest|serve|send> [options]")
 	}
 
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
