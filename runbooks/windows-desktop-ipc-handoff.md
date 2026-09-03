@@ -75,7 +75,15 @@ Codex Desktop release 26.901.20858 的 `LocalConversationTurn` 会直接读取 `
 invalid_request_error: The '' model is not supported when using Codex with a ChatGPT account.
 ```
 
-RA2A 对这个明确的“空 model”拒绝执行一次有界恢复：先调用官方已有的 `thread-follower-update-thread-settings`（空设置，仅作为等待 barrier），待其成功后用同一个 `clientUserMessageId` 重试一次 `thread-follower-start-turn`。只有请求被明确拒绝时允许该重试；首帧写出后的超时、断连、取消、缺少 turn ID 仍属于 `DELIVERY_UNKNOWN`，绝不重试。其他模型错误也不重试，避免重复 turn 或掩盖真实配置问题。
+Windows R8 实机证明，空设置 barrier 只能等待已有设置操作结束，不能把历史 thread 的空 model 补成合法值。`thread-follower-start-turn` 还会先同步返回 turn ID，模型校验随后异步失败，因此等待同步拒绝再重试无法覆盖该故障。
+
+idle start 的现行流程是：
+
+1. `thread-follower-steer-turn` 明确返回 inactive 后，向 RA2A 管理的 App Server 调用 `thread/read(includeTurns=false)`。
+2. 优先使用 thread 已保存的非空 model；若为空，调用 `model/list` 并选择 `isDefault=true` 的当前默认模型。不得硬编码模型名。
+3. 解析失败时在发送 start 帧前返回 `NotDelivered`；不得创建一个注定异步失败的 turn。
+4. 设置 barrier 完成后，在 `thread-follower-start-turn` 的 `turnStart.request.model` 中显式携带解析结果。
+5. active turn 的 steer 路径不解析、不覆盖模型。start 帧写出后的超时、断连、取消或缺少 turn ID仍属于 `DELIVERY_UNKNOWN`，不得重试。
 
 Mac 发送端的单消息验收步骤和返回模板见 [`macos-desktop-empty-model-race-validation-handoff.md`](macos-desktop-empty-model-race-validation-handoff.md)。
 
@@ -122,8 +130,10 @@ fake server 按现有 4 字节 framing：
 2. 接收 `thread-follower-steer-turn`，校验 conversation/thread/message ID、正文和 restore message。
 3. active turn 成功时返回 turn id，并确认没有额外 `start-turn`。
 4. idle turn 必须先收到明确 inactive 拒绝，再接收 `thread-follower-start-turn`。
-5. steer 写出后断连或超时时必须返回 `DELIVERY_UNKNOWN`，不能尝试 `start-turn`。
-6. 覆盖 `client-discovery-request` 插入在响应之前的情况。
+5. idle turn 的 start request 必须含非空显式 `model`；模型解析失败时不能发送 start 帧。
+6. active steer 成功时不得调用模型解析器。
+7. steer 写出后断连或超时时必须返回 `DELIVERY_UNKNOWN`，不能尝试 `start-turn`。
+8. 覆盖 `client-discovery-request` 插入在响应之前的情况。
 
 ### 3. 真实 Codex Desktop probe
 

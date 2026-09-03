@@ -19,38 +19,37 @@ Codex Desktop owner `start-turn` 设置竞态。Mac 只负责发起一次唯一�
 ```text
 repository: https://github.com/ceasarXuu/RA2A.git
 branch: main
-required commit: 7ddb557 fix(desktopipc): recover from empty model race
-parent baseline: 1c0cee7
+required commit: d3a0947 fix(desktopipc): resolve model before owner start
+recommended HEAD: 299890f fix(installer): replace locked Windows binary
+superseded attempt: 7ddb557 / bbc91b5（仅 settings barrier，不足以修复历史空 model）
 target node: ra2a://rog306
 known R8 thread: 019f43ef-d5a0-7910-bd34-c5c825d1e94a
 ```
 
-验收以 `7ddb557` 是否为当前 `HEAD` 的祖先为准，不以版本标签为准。若工作树
+验收以 `d3a0947` 是否为当前 `HEAD` 的祖先为准，不以版本标签为准。若工作树
 有本地修改，先记录并停止，不要覆盖、reset 或清理这些修改。
 
 ## 根因与修复行为
 
-Desktop 的 follower handler 会直接进入 `startTurn`；正常 UI owner 路径会先等待
-pending thread-settings 更新。RA2A 后台请求若在设置尚未可用时读取到空 model，
-Desktop 会拒绝：
+R8 历史 thread 的持久化 model 是空字符串，Desktop owner 当前也可能没有可继承的
+latest thread settings。旧实现只等待空设置 barrier；该 barrier 不会生成 model。
+Desktop 先接受 `start-turn` 并返回 turn ID，随后异步失败：
 
 ```text
 invalid_request_error: The '' model is not supported when using Codex with a ChatGPT account.
 ```
 
-“设置已收敛”表示 Desktop owner 已完成该 thread 的合法、非空模型和线程设置同步，
-因此接下来创建 turn 时不会再读取空 model；它不表示 turn 已完成，也不要求等待
-模型输出结束。
+所以本文不再使用“设置已收敛”作为通过条件。当前实现的有界流程如下：
 
-当前实现的有界流程如下：
-
-1. 每次 `thread-follower-start-turn` 前，RA2A 先调用官方已有的
-   `thread-follower-update-thread-settings`（空设置，仅作同步屏障）。
-2. 屏障成功后发送原始 `thread-follower-start-turn`，保持原
-   `conversationId`、正文和 `clientUserMessageId`。
-3. 若 Desktop 仍明确返回空 model 拒绝，再执行一次同样的设置屏障，并用相同
-   `clientUserMessageId` 重试一次 `start-turn`。
-4. 超时、断连、取消、响应缺少 turn ID、named-model/config 错误和其他拒绝均不
+1. active turn 仍只走 steer，不读取或改变模型。
+2. steer 明确 inactive 后，RA2A 通过受管 App Server 执行
+   `thread/read(includeTurns=false)`；若 thread model 非空则使用它。
+3. thread model 为空时执行 `model/list`，选择 `isDefault=true` 的当前默认模型；不得
+   硬编码 `gpt-5.6-sol` 或其他名称。
+4. 解析不到非空模型时，在 start 帧写出前明确失败。
+5. 完成设置 barrier 后，`thread-follower-start-turn` 的
+   `turnStart.request.model` 必须显式携带解析出的非空模型。
+6. 超时、断连、取消、响应缺少 turn ID、named-model/config 错误和其他拒绝均不
    重试，也不切换到第二个 writer；结果未知时不得重发。
 
 ## Mac 发送端预检
@@ -62,7 +61,7 @@ cd /path/to/RA2A
 git status --short
 git branch --show-current
 git pull --ff-only
-git merge-base --is-ancestor 7ddb557 HEAD
+git merge-base --is-ancestor d3a0947 HEAD
 git log -1 --oneline
 go test ./...
 go vet ./...
@@ -80,7 +79,7 @@ launchctl print "gui/$(id -u)/com.ra2a.daemon"
 
 由 rog306 操作员在正式 marker 前完成：
 
-1. 安装并运行包含 `7ddb557` 的 RA2A；确认计划任务/服务指向该版本。
+1. 安装并运行包含 `d3a0947` 的 RA2A；推荐同时包含 `299890f`，确认计划任务/服务指向该版本。
 2. 官方 Codex Desktop 已打开，`\\.\pipe\codex-ipc` 可连接，Desktop owner
    IPC `initialize` 成功。
 3. 只存在一个受管 App Server，不启动第二个 App Server 抢占 thread writer。
@@ -124,6 +123,7 @@ thread-follower-steer-turn（若已有 active turn）
 NoActiveTurn / active turn already ended（若 idle）
 thread-follower-update-thread-settings
 thread-follower-start-turn
+turnStart.request.model（只记录模型名是否非空）
 turn/start
 task_started
 task_complete
@@ -133,19 +133,13 @@ renderer/error-boundary 或 IPC reset
 正常 idle 路径应为：
 
 ```text
-receive → steer 明确 inactive 拒绝 → settings barrier → 一次 start-turn
+receive → steer 明确 inactive 拒绝 → thread/read → 必要时 model/list
+→ settings barrier → 一次携带非空 model 的 start-turn
 → turn/start → task_started → task_complete
 ```
 
-若恰好复现空 model 竞态，应为：
-
-```text
-settings barrier → start-turn 明确空 model 拒绝 → settings barrier
-→ 同一 message-id 的一次 start-turn 重试 → turn/start → task_complete
-```
-
-注意“start 请求数”不等于“成功 turn 数”：即使出现一次明确拒绝，最终也只能
-有一个成功 turn，不能出现第二个成功 turn 或第二个 writer。
+正式验收不应再观察到空 model turn。最终只能有一个 start 请求、一个成功 turn，
+不能出现异步 systemError、第二个成功 turn或第二个 writer。
 
 ### UI 门禁
 
@@ -173,8 +167,8 @@ $logs | Select-String -Pattern `
   Select-Object Path,LineNumber,Line
 ```
 
-如果观察到空 model 拒绝，必须能对齐“拒绝 → 屏障 → 同 message-id 单次重试”；
-如果未观察到拒绝，记录正常路径成功，空 model 分支由自动化单元测试覆盖。
+如果仍观察到空 model 错误，立即判定 FAIL；记录 start request 是否携带非空 model，
+不要重试。thread model 为空和默认模型回退分支由自动化单元测试覆盖。
 
 ### Rollout 统计
 
@@ -214,6 +208,8 @@ UI returned to completed state: yes/no
 single successful turn ID:
 empty-model rejection observed: yes/no
 settings barrier observed: yes/no
+resolved model non-empty: yes/no
+model source: thread/read or model/list default
 retry count:
 manual continuation succeeded: yes/no
 Desktop restart during formal test: yes/no
@@ -235,4 +231,3 @@ writer/OOM/native crash，rollout 可解析且未被编辑。
 
 任一门禁失败时，状态记为 `FAIL`：停止发送，保留日志和 rollout，不重启 Desktop，
 不清理 session，不修改配置；把完整模板和原始路径/行号交回 Windows 修复方。
-
