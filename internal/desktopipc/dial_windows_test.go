@@ -242,6 +242,10 @@ func TestClientProtocolThroughWindowsNamedPipe(t *testing.T) {
 			serverDone <- err
 			return
 		}
+		if err := respondToSettingsBarrier(connection, "thread-windows"); err != nil {
+			serverDone <- err
+			return
+		}
 		start, err := readFrame(connection)
 		if err != nil {
 			serverDone <- err

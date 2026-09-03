@@ -77,6 +77,8 @@ invalid_request_error: The '' model is not supported when using Codex with a Cha
 
 RA2A 对这个明确的“空 model”拒绝执行一次有界恢复：先调用官方已有的 `thread-follower-update-thread-settings`（空设置，仅作为等待 barrier），待其成功后用同一个 `clientUserMessageId` 重试一次 `thread-follower-start-turn`。只有请求被明确拒绝时允许该重试；首帧写出后的超时、断连、取消、缺少 turn ID 仍属于 `DELIVERY_UNKNOWN`，绝不重试。其他模型错误也不重试，避免重复 turn 或掩盖真实配置问题。
 
+Mac 发送端的单消息验收步骤和返回模板见 [`macos-desktop-empty-model-race-validation-handoff.md`](macos-desktop-empty-model-race-validation-handoff.md)。
+
 ### active turn UI 卡死回归（v0.0.9）
 
 v0.0.9 的 owner-first 实现对每条消息都调用 `start-turn`。当同一 session 正在执行时，后续消息虽被后端合并进原 turn，但 Desktop renderer 已预建了另一个 in-progress turn，随后持续出现 `Item not found in turn state`，UI 会停在“思考中”直到重启 App。

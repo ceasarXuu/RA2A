@@ -129,6 +129,9 @@ func (client *Client) StartTurn(
 	if client.clientID == "" {
 		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop IPC client is not initialized")}
 	}
+	if err := client.synchronizeThreadSettings(ctx, threadID); err != nil {
+		return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("synchronize Desktop thread settings: %w", err)}
+	}
 	request := envelope{
 		Type:           "request",
 		SourceClientID: client.clientID,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -66,6 +67,10 @@ func TestClientInitializesAndStartsTurnThroughDesktopOwner(t *testing.T) {
 			ResultType: "success",
 			Result:     map[string]any{"clientId": "desktop-client-1"},
 		}); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
 			serverDone <- err
 			return
 		}
@@ -184,6 +189,10 @@ func TestClientStartsIdleTurnOnlyAfterExplicitNoActiveTurn(t *testing.T) {
 			serverDone <- err
 			return
 		}
+		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
+			serverDone <- err
+			return
+		}
 		start, err := readFrame(serverConn)
 		if err != nil {
 			serverDone <- err
@@ -228,6 +237,10 @@ func TestClientRetriesStartAfterEmptyModelRejectionAndSettingsBarrier(t *testing
 			serverDone <- err
 			return
 		}
+		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
+			serverDone <- err
+			return
+		}
 
 		firstStart, err := readFrame(serverConn)
 		if err != nil {
@@ -247,22 +260,7 @@ func TestClientRetriesStartAfterEmptyModelRejectionAndSettingsBarrier(t *testing
 			return
 		}
 
-		barrier, err := readFrame(serverConn)
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		if barrier.Method != "thread-follower-update-thread-settings" || barrier.Version != 1 {
-			t.Errorf("settings barrier = %#v", barrier)
-		}
-		if barrier.Params["conversationId"] != "thread-1" {
-			t.Errorf("barrier conversationId = %#v", barrier.Params["conversationId"])
-		}
-		settings, ok := barrier.Params["threadSettings"].(map[string]any)
-		if !ok || len(settings) != 0 {
-			t.Errorf("barrier threadSettings = %#v", barrier.Params["threadSettings"])
-		}
-		if err := writeFrame(serverConn, successResponse(barrier, map[string]any{"ok": true})); err != nil {
+		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
 			serverDone <- err
 			return
 		}
@@ -367,6 +365,7 @@ func TestClientDoesNotRetryAmbiguousDesktopTimeout(t *testing.T) {
 			ResultType: "success",
 			Result:     map[string]any{"clientId": "desktop-client-1"},
 		})
+		_ = respondToSettingsBarrier(serverConn, "thread-1")
 		_, _ = readFrame(serverConn)
 	}()
 
@@ -404,6 +403,10 @@ func TestClientTreatsDisconnectAfterStartWriteAsDeliveryUnknown(t *testing.T) {
 			serverDone <- err
 			return
 		}
+		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
+			serverDone <- err
+			return
+		}
 		if _, err := readFrame(serverConn); err != nil {
 			serverDone <- err
 			return
@@ -436,6 +439,7 @@ func TestClientTreatsRejectedStartAsDefinitelyNotDelivered(t *testing.T) {
 			ResultType: "success",
 			Result:     map[string]any{"clientId": "desktop-client-1"},
 		})
+		_ = respondToSettingsBarrier(serverConn, "thread-1")
 		start, _ := readFrame(serverConn)
 		_ = writeFrame(serverConn, envelope{
 			Type:       "response",
@@ -467,6 +471,7 @@ func TestClientTreatsSuccessfulStartWithoutTurnIDAsDeliveryUnknown(t *testing.T)
 			ResultType: "success",
 			Result:     map[string]any{"clientId": "desktop-client-1"},
 		})
+		_ = respondToSettingsBarrier(serverConn, "thread-1")
 		start, _ := readFrame(serverConn)
 		_ = writeFrame(serverConn, envelope{
 			Type:       "response",
@@ -555,6 +560,24 @@ func assertEmptyTextElements(t *testing.T, input map[string]any) {
 	if !ok || len(textElements) != 0 {
 		t.Fatalf("text_elements = %#v, want an empty array", input["text_elements"])
 	}
+}
+
+func respondToSettingsBarrier(conn net.Conn, threadID string) error {
+	barrier, err := readFrame(conn)
+	if err != nil {
+		return err
+	}
+	if barrier.Method != "thread-follower-update-thread-settings" || barrier.Version != 1 {
+		return fmt.Errorf("settings barrier = %#v", barrier)
+	}
+	if barrier.Params["conversationId"] != threadID {
+		return fmt.Errorf("barrier conversationId = %#v", barrier.Params["conversationId"])
+	}
+	settings, ok := barrier.Params["threadSettings"].(map[string]any)
+	if !ok || len(settings) != 0 {
+		return fmt.Errorf("barrier threadSettings = %#v", barrier.Params["threadSettings"])
+	}
+	return writeFrame(conn, successResponse(barrier, map[string]any{"ok": true}))
 }
 
 func successResponse(request envelope, result map[string]any) envelope {
