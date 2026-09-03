@@ -419,6 +419,7 @@ func assertStartTurnParams(t *testing.T, params map[string]any, threadID, text, 
 	if input["type"] != "text" || input["text"] != text {
 		t.Fatalf("input = %#v", input)
 	}
+	assertEmptyTextElements(t, input)
 	contextParams := turnStart["context"].(map[string]any)
 	if contextParams["inheritThreadSettings"] != true {
 		t.Fatalf("context = %#v", contextParams)
@@ -434,9 +435,18 @@ func assertSteerTurnParams(t *testing.T, params map[string]any, threadID, text, 
 	if input["type"] != "text" || input["text"] != text {
 		t.Fatalf("steer input = %#v", input)
 	}
+	assertEmptyTextElements(t, input)
 	restore := params["restoreMessage"].(map[string]any)
 	if _, ok := restore["context"].(map[string]any); !ok {
 		t.Fatalf("restoreMessage = %#v", restore)
+	}
+}
+
+func assertEmptyTextElements(t *testing.T, input map[string]any) {
+	t.Helper()
+	textElements, ok := input["text_elements"].([]any)
+	if !ok || len(textElements) != 0 {
+		t.Fatalf("text_elements = %#v, want an empty array", input["text_elements"])
 	}
 }
 

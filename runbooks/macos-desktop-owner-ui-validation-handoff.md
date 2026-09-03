@@ -28,6 +28,7 @@ v0.0.9 已改为 Desktop-owner-first，但每条消息仍调用 `thread-follower
 3. 只有 Desktop 明确报告 `NoActiveTurn`、`SteerTurnInactiveError` 或“active turn already ended”时，才调用 `thread-follower-start-turn`（version 2）。
 4. steer 或 start 写出后的超时、断连、取消或缺少 turn ID 均属于 `DELIVERY_UNKNOWN`，不得换路径、回退或重试。
 5. rollout 或后台 API 中存在完整 turn 不能替代 UI 实时刷新验收。
+6. start 和 steer 的文本 input 必须显式带 `text_elements: []`，不能省略或传 `null`；否则新版 Desktop 可在 `LocalConversationTurn` 读取 `text_elements.length` 时进入 error boundary。
 
 Windows 官方 Codex Desktop 已验证一条空闲消息和一条 active follow-up 形成 `start=1`、`steer=1`、单一 turn，且同一窗口 `Item not found in turn state=0`。本交接负责验证 macOS 使用同一协议时没有平台回归。
 
@@ -151,6 +152,7 @@ task_started count: 1
 user_message count: 2
 task_complete count: 1
 Item not found in turn state count: 0
+Cannot read properties of undefined (reading 'length') count: 0
 ```
 
 关键约束：

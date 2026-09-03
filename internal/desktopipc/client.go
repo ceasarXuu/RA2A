@@ -39,6 +39,12 @@ type TurnResult struct {
 	TurnID string
 }
 
+type textInput struct {
+	Type         string `json:"type"`
+	Text         string `json:"text"`
+	TextElements []any  `json:"text_elements"`
+}
+
 type DeliveryUnknownError struct {
 	Cause error
 }
@@ -133,7 +139,7 @@ func (client *Client) StartTurn(
 			"turnStart": map[string]any{
 				"request": map[string]any{
 					"threadId":            threadID,
-					"input":               []map[string]string{{"type": "text", "text": text}},
+					"input":               []textInput{newTextInput(text)},
 					"clientUserMessageId": messageID,
 				},
 				"context": map[string]any{"inheritThreadSettings": true},
@@ -191,7 +197,7 @@ func (client *Client) steerTurn(
 		Method:         "thread-follower-steer-turn",
 		Params: map[string]any{
 			"conversationId":      threadID,
-			"input":               []map[string]string{{"type": "text", "text": text}},
+			"input":               []textInput{newTextInput(text)},
 			"clientUserMessageId": messageID,
 			"serviceTier":         nil,
 			"attachments":         []any{},
@@ -231,6 +237,10 @@ func (client *Client) steerTurn(
 		return TurnResult{}, &DeliveryUnknownError{Cause: errors.New("Desktop IPC accepted steer turn without a turn ID")}
 	}
 	return TurnResult{TurnID: turnID}, nil
+}
+
+func newTextInput(text string) textInput {
+	return textInput{Type: "text", Text: text, TextElements: []any{}}
 }
 
 func isInactiveSteerRejection(cause any) bool {

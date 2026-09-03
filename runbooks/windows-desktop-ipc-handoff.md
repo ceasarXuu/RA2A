@@ -57,6 +57,16 @@ RA2A 的 [`internal/desktopipc/client.go`](../internal/desktopipc/client.go) 已
 4. SteerTurn 或 StartTurn 帧写出后，断连、超时、取消或成功响应缺少 turn ID 都属于 `DELIVERY_UNKNOWN`，不得切换方法、回退或重试。
 5. 真实 UI 验收必须检查同一进程内出现 `IpcRouter`、目标 `turn/start` 或 `turn/steer` 和 renderer/完成通知，不能仅以 rollout 或后台 `read_thread` 存在 turn 代替。
 
+### Desktop 文本输入契约
+
+`thread-follower-start-turn` 和 `thread-follower-steer-turn` 的每个文本 input 必须显式包含非 `null` 的 `text_elements` 数组：
+
+```json
+{"type":"text","text":"...","text_elements":[]}
+```
+
+Codex Desktop release 26.901.20858 的 `LocalConversationTurn` 会直接读取 `text_elements.length`。省略该字段会使后台 turn 正常执行，但 UI 报 `Cannot read properties of undefined (reading 'length')`，随后可上浮到 `ThreadSummaryPanel` 和 `AppRoutes`。单元测试必须同时校验 start 与 steer 序列化为空数组，不能只校验 `type` 和 `text`。
+
 ### active turn UI 卡死回归（v0.0.9）
 
 v0.0.9 的 owner-first 实现对每条消息都调用 `start-turn`。当同一 session 正在执行时，后续消息虽被后端合并进原 turn，但 Desktop renderer 已预建了另一个 in-progress turn，随后持续出现 `Item not found in turn state`，UI 会停在“思考中”直到重启 App。
