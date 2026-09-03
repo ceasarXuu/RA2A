@@ -176,7 +176,7 @@ func TestPowerShellInstallerDelegatesLifecycleToRA2A(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"go build", "setup", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "Uninstall", "Run ra2a to finish setup", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'", "$Mcp = $Codex"} {
+	for _, marker := range []string{"go build", "setup", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "Uninstall", "Run ra2a to finish setup", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'", "$Mcp = $Codex", "ra2a.exe.retired-", "Move-Item -LiteralPath $RetiredPath -Destination $BinaryPath"} {
 		if !strings.Contains(string(content), marker) {
 			t.Errorf("install.ps1 missing %q", marker)
 		}

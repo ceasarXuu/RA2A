@@ -41,7 +41,24 @@ try {
 }
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-Move-Item -LiteralPath $BuildPath -Destination $BinaryPath -Force
+$RetiredPath = $null
+Get-ChildItem -LiteralPath $BinDir -Filter 'ra2a.exe.retired-*' -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath $BinaryPath) {
+    # Desktop-owned MCP processes may still map the old executable after the
+    # daemon task stops. Windows permits renaming that image, but not replacing
+    # it in place, so retire it before publishing the new command path.
+    $RetiredPath = "$BinaryPath.retired-$([Guid]::NewGuid().ToString('N'))"
+    Move-Item -LiteralPath $BinaryPath -Destination $RetiredPath
+}
+try {
+    Move-Item -LiteralPath $BuildPath -Destination $BinaryPath
+} catch {
+    if ($RetiredPath -and -not (Test-Path -LiteralPath $BinaryPath)) {
+        Move-Item -LiteralPath $RetiredPath -Destination $BinaryPath -ErrorAction SilentlyContinue
+    }
+    throw
+}
 Write-Output 'RA2A command installed'
 Write-Output "binary: $BinaryPath"
 
