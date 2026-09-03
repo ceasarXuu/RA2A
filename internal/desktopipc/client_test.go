@@ -632,7 +632,7 @@ func respondToSettingsBarrier(conn net.Conn, threadID string) error {
 		return fmt.Errorf("barrier conversationId = %#v", barrier.Params["conversationId"])
 	}
 	settings, ok := barrier.Params["threadSettings"].(map[string]any)
-	if !ok || len(settings) != 0 {
+	if !ok || settings["model"] != "gpt-test" {
 		return fmt.Errorf("barrier threadSettings = %#v", barrier.Params["threadSettings"])
 	}
 	return writeFrame(conn, successResponse(barrier, map[string]any{"ok": true}))

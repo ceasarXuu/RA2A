@@ -136,7 +136,7 @@ func (client *Client) StartTurn(
 	if model == "" {
 		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop-owned turn requires a non-empty model")}
 	}
-	if err := client.synchronizeThreadSettings(ctx, threadID); err != nil {
+	if err := client.synchronizeThreadSettings(ctx, threadID, model); err != nil {
 		return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("synchronize Desktop thread settings: %w", err)}
 	}
 	request := envelope{
@@ -162,7 +162,7 @@ func (client *Client) StartTurn(
 		// The follower handler enters startTurn directly, while the normal UI
 		// path waits for pending thread-settings updates first. An explicit
 		// empty-model rejection is safe to retry after that private barrier.
-		if barrierErr := client.synchronizeThreadSettings(ctx, threadID); barrierErr != nil {
+		if barrierErr := client.synchronizeThreadSettings(ctx, threadID, model); barrierErr != nil {
 			return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("wait for Desktop thread settings before retry: %w", barrierErr)}
 		}
 		result, err = client.call(ctx, request)
@@ -185,7 +185,7 @@ func (client *Client) StartTurn(
 	return TurnResult{TurnID: turnID}, nil
 }
 
-func (client *Client) synchronizeThreadSettings(ctx context.Context, threadID string) error {
+func (client *Client) synchronizeThreadSettings(ctx context.Context, threadID, model string) error {
 	_, err := client.call(ctx, envelope{
 		Type:           "request",
 		SourceClientID: client.clientID,
@@ -193,7 +193,7 @@ func (client *Client) synchronizeThreadSettings(ctx context.Context, threadID st
 		Method:         "thread-follower-update-thread-settings",
 		Params: map[string]any{
 			"conversationId": threadID,
-			"threadSettings": map[string]any{},
+			"threadSettings": map[string]any{"model": model},
 		},
 	})
 	return err
