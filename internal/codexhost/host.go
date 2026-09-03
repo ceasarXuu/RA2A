@@ -142,6 +142,19 @@ func (host *Host) SendMessage(ctx context.Context, threadID, prompt string) erro
 	return err
 }
 
+func (host *Host) ResolveThreadModel(ctx context.Context, threadID string) (string, error) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	if err := host.ensureConnected(ctx); err != nil {
+		return "", err
+	}
+	model, err := host.client.ResolveThreadModel(threadID)
+	if err != nil {
+		host.disconnect()
+	}
+	return model, err
+}
+
 func (host *Host) ensureConnected(ctx context.Context) error {
 	if host.closed {
 		return errors.New("Codex host is closed")

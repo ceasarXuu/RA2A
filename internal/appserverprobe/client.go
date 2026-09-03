@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type Client struct {
@@ -139,6 +140,48 @@ func (client *Client) StartTurn(threadID, text string) (json.RawMessage, error) 
 		"threadId": threadID,
 		"input":    []map[string]string{{"type": "text", "text": text}},
 	})
+}
+
+func (client *Client) ResolveThreadModel(threadID string) (string, error) {
+	result, err := client.call("thread/read", map[string]any{
+		"threadId": threadID, "includeTurns": false,
+	})
+	if err != nil {
+		return "", fmt.Errorf("read thread model: %w", err)
+	}
+	var threadResult struct {
+		Thread struct {
+			Model string `json:"model"`
+		} `json:"thread"`
+	}
+	if err := json.Unmarshal(result, &threadResult); err != nil {
+		return "", fmt.Errorf("decode thread/read response: %w", err)
+	}
+	if model := strings.TrimSpace(threadResult.Thread.Model); model != "" {
+		return model, nil
+	}
+
+	result, err = client.call("model/list", map[string]any{
+		"cursor": nil, "includeHidden": true, "limit": 100,
+	})
+	if err != nil {
+		return "", fmt.Errorf("list models: %w", err)
+	}
+	var modelResult struct {
+		Data []struct {
+			Model     string `json:"model"`
+			IsDefault bool   `json:"isDefault"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(result, &modelResult); err != nil {
+		return "", fmt.Errorf("decode model/list response: %w", err)
+	}
+	for _, candidate := range modelResult.Data {
+		if model := strings.TrimSpace(candidate.Model); candidate.IsDefault && model != "" {
+			return model, nil
+		}
+	}
+	return "", errors.New("model/list response did not include a default model")
 }
 
 func (client *Client) InjectMessage(threadID, text string) (json.RawMessage, error) {

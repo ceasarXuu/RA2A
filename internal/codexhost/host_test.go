@@ -192,6 +192,34 @@ func TestSendMessageMapsActiveWriterToSessionBusy(t *testing.T) {
 	}
 }
 
+func TestResolveThreadModelFallsBackToManagedHostDefault(t *testing.T) {
+	clientSide, serverSide := net.Pipe()
+	defer serverSide.Close()
+	connect := func(context.Context, string) (io.ReadWriteCloser, error) { return clientSide, nil }
+	start := func(context.Context, Config) (*managedProcess, error) {
+		return &managedProcess{done: make(chan struct{})}, nil
+	}
+	serveHostProtocol(t, serverSide, []rpcExchange{
+		{method: "initialize", result: map[string]any{}},
+		{method: "thread/read", result: map[string]any{"thread": map[string]any{"id": "thread-1", "model": ""}}},
+		{method: "model/list", result: map[string]any{
+			"data": []any{map[string]any{"model": "gpt-test", "isDefault": true}},
+		}},
+	})
+	host, err := startWith(context.Background(), Config{}, start, connect, time.Millisecond)
+	if err != nil {
+		t.Fatalf("start host: %v", err)
+	}
+	defer host.Close()
+	model, err := host.ResolveThreadModel(context.Background(), "thread-1")
+	if err != nil {
+		t.Fatalf("resolve model: %v", err)
+	}
+	if model != "gpt-test" {
+		t.Fatalf("model = %q", model)
+	}
+}
+
 type rpcExchange struct {
 	method   string
 	result   any

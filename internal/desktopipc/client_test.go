@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,7 +87,7 @@ func TestClientInitializesAndStartsTurnThroughDesktopOwner(t *testing.T) {
 		if start.SourceClientID != "desktop-client-1" {
 			t.Errorf("start source = %q", start.SourceClientID)
 		}
-		assertStartTurnParams(t, start.Params, "thread-1", "hello from LAN", "message-1")
+		assertStartTurnParams(t, start.Params, "thread-1", "hello from LAN", "message-1", "gpt-test")
 		serverDone <- writeFrame(serverConn, envelope{
 			Type:       "response",
 			RequestID:  start.RequestID,
@@ -103,7 +104,7 @@ func TestClientInitializesAndStartsTurnThroughDesktopOwner(t *testing.T) {
 	if err := client.Initialize(ctx); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	result, err := client.StartTurn(ctx, "thread-1", "hello from LAN", "message-1")
+	result, err := client.StartTurn(ctx, "thread-1", "hello from LAN", "message-1", "gpt-test")
 	if err != nil {
 		t.Fatalf("start turn: %v", err)
 	}
@@ -148,12 +149,19 @@ func TestClientSteersActiveTurnWithoutStartingAnotherTurn(t *testing.T) {
 	if err := client.Initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	result, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2")
+	resolverCalled := false
+	result, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2", func(context.Context, string) (string, error) {
+		resolverCalled = true
+		return "", fmt.Errorf("must not resolve a model for steer")
+	})
 	if err != nil {
 		t.Fatalf("send message: %v", err)
 	}
 	if result.TurnID != "turn-active" {
 		t.Fatalf("turn id = %q", result.TurnID)
+	}
+	if resolverCalled {
+		t.Fatal("model resolver was called for an active turn")
 	}
 	if err := <-serverDone; err != nil {
 		t.Fatalf("server: %v", err)
@@ -210,12 +218,60 @@ func TestClientStartsIdleTurnOnlyAfterExplicitNoActiveTurn(t *testing.T) {
 	if err := client.Initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	result, err := client.SendMessage(context.Background(), "thread-1", "idle message", "message-3")
+	result, err := client.SendMessage(context.Background(), "thread-1", "idle message", "message-3", func(_ context.Context, threadID string) (string, error) {
+		if threadID != "thread-1" {
+			t.Fatalf("resolver thread = %q", threadID)
+		}
+		return "gpt-test", nil
+	})
 	if err != nil {
 		t.Fatalf("send message: %v", err)
 	}
 	if result.TurnID != "turn-new" {
 		t.Fatalf("turn id = %q", result.TurnID)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
+
+func TestClientDoesNotStartIdleTurnWhenModelResolutionFails(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	serverDone := make(chan error, 1)
+	go func() {
+		initialize, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeFrame(serverConn, successResponse(initialize, map[string]any{"clientId": "desktop-client-1"})); err != nil {
+			serverDone <- err
+			return
+		}
+		steer, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		serverDone <- writeFrame(serverConn, envelope{
+			Type:       "response",
+			RequestID:  steer.RequestID,
+			ResultType: "error",
+			Error:      "no active turn",
+		})
+	}()
+
+	client := New(clientConn)
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	_, err := client.SendMessage(context.Background(), "thread-1", "idle message", "message-3", func(context.Context, string) (string, error) {
+		return "", fmt.Errorf("default model unavailable")
+	})
+	if !IsNotDelivered(err) || !strings.Contains(err.Error(), "default model unavailable") {
+		t.Fatalf("error = %v", err)
 	}
 	if err := <-serverDone; err != nil {
 		t.Fatalf("server: %v", err)
@@ -273,7 +329,7 @@ func TestClientRetriesStartAfterEmptyModelRejectionAndSettingsBarrier(t *testing
 		if secondStart.Method != "thread-follower-start-turn" {
 			t.Errorf("second start method = %q", secondStart.Method)
 		}
-		assertStartTurnParams(t, secondStart.Params, "thread-1", "hello", "message-1")
+		assertStartTurnParams(t, secondStart.Params, "thread-1", "hello", "message-1", "gpt-test")
 		serverDone <- writeFrame(serverConn, successResponse(secondStart, map[string]any{
 			"result": map[string]any{"turn": map[string]any{"id": "turn-1"}},
 		}))
@@ -285,7 +341,7 @@ func TestClientRetriesStartAfterEmptyModelRejectionAndSettingsBarrier(t *testing
 	if err := client.Initialize(ctx); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	result, err := client.StartTurn(ctx, "thread-1", "hello", "message-1")
+	result, err := client.StartTurn(ctx, "thread-1", "hello", "message-1", "gpt-test")
 	if err != nil {
 		t.Fatalf("start turn: %v", err)
 	}
@@ -344,7 +400,9 @@ func TestClientDoesNotStartAfterAmbiguousSteerDisconnect(t *testing.T) {
 	if err := client.Initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	_, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2")
+	_, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2", func(context.Context, string) (string, error) {
+		return "gpt-test", nil
+	})
 	if !IsDeliveryUnknown(err) {
 		t.Fatalf("error = %v, want delivery unknown", err)
 	}
@@ -377,7 +435,7 @@ func TestClientDoesNotRetryAmbiguousDesktopTimeout(t *testing.T) {
 	}
 	turnCtx, turnCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer turnCancel()
-	_, err := client.StartTurn(turnCtx, "thread-1", "hello", "message-1")
+	_, err := client.StartTurn(turnCtx, "thread-1", "hello", "message-1", "gpt-test")
 	if err == nil || !IsDeliveryUnknown(err) {
 		t.Fatalf("error = %v, want delivery unknown", err)
 	}
@@ -418,7 +476,7 @@ func TestClientTreatsDisconnectAfterStartWriteAsDeliveryUnknown(t *testing.T) {
 	if err := client.Initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1")
+	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1", "gpt-test")
 	if !IsDeliveryUnknown(err) {
 		t.Fatalf("error = %v, want delivery unknown", err)
 	}
@@ -453,7 +511,7 @@ func TestClientTreatsRejectedStartAsDefinitelyNotDelivered(t *testing.T) {
 	if err := client.Initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1")
+	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1", "gpt-test")
 	if !IsNotDelivered(err) || IsDeliveryUnknown(err) {
 		t.Fatalf("error = %v, want definitely not delivered", err)
 	}
@@ -485,7 +543,7 @@ func TestClientTreatsSuccessfulStartWithoutTurnIDAsDeliveryUnknown(t *testing.T)
 	if err := client.Initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1")
+	_, err := client.StartTurn(context.Background(), "thread-1", "hello", "message-1", "gpt-test")
 	if !IsDeliveryUnknown(err) {
 		t.Fatalf("error = %v, want delivery unknown", err)
 	}
@@ -517,14 +575,14 @@ func TestNewMessageIDIsUnique(t *testing.T) {
 	}
 }
 
-func assertStartTurnParams(t *testing.T, params map[string]any, threadID, text, messageID string) {
+func assertStartTurnParams(t *testing.T, params map[string]any, threadID, text, messageID, model string) {
 	t.Helper()
 	if params["conversationId"] != threadID {
 		t.Fatalf("conversationId = %#v", params["conversationId"])
 	}
 	turnStart := params["turnStart"].(map[string]any)
 	request := turnStart["request"].(map[string]any)
-	if request["threadId"] != threadID || request["clientUserMessageId"] != messageID {
+	if request["threadId"] != threadID || request["clientUserMessageId"] != messageID || request["model"] != model {
 		t.Fatalf("request = %#v", request)
 	}
 	input := request["input"].([]any)[0].(map[string]any)

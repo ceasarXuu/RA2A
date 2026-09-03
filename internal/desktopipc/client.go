@@ -39,6 +39,8 @@ type TurnResult struct {
 	TurnID string
 }
 
+type StartModelResolver func(context.Context, string) (string, error)
+
 type textInput struct {
 	Type         string `json:"type"`
 	Text         string `json:"text"`
@@ -125,9 +127,14 @@ func (client *Client) StartTurn(
 	threadID string,
 	text string,
 	messageID string,
+	model string,
 ) (TurnResult, error) {
 	if client.clientID == "" {
 		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop IPC client is not initialized")}
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop-owned turn requires a non-empty model")}
 	}
 	if err := client.synchronizeThreadSettings(ctx, threadID); err != nil {
 		return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("synchronize Desktop thread settings: %w", err)}
@@ -144,6 +151,7 @@ func (client *Client) StartTurn(
 					"threadId":            threadID,
 					"input":               []textInput{newTextInput(text)},
 					"clientUserMessageId": messageID,
+					"model":               model,
 				},
 				"context": map[string]any{"inheritThreadSettings": true},
 			},
@@ -196,6 +204,7 @@ func (client *Client) SendMessage(
 	threadID string,
 	text string,
 	messageID string,
+	resolveModel StartModelResolver,
 ) (TurnResult, error) {
 	result, err := client.steerTurn(ctx, threadID, text, messageID)
 	if err == nil {
@@ -205,7 +214,14 @@ func (client *Client) SendMessage(
 	if !errors.As(err, &inactive) {
 		return TurnResult{}, err
 	}
-	return client.StartTurn(ctx, threadID, text, messageID)
+	if resolveModel == nil {
+		return TurnResult{}, &NotDeliveredError{Cause: errors.New("resolve Desktop-owned turn model: model resolver is unavailable")}
+	}
+	model, err := resolveModel(ctx, threadID)
+	if err != nil {
+		return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("resolve Desktop-owned turn model: %w", err)}
+	}
+	return client.StartTurn(ctx, threadID, text, messageID, model)
 }
 
 func (client *Client) steerTurn(

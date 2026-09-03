@@ -17,24 +17,25 @@ type options struct {
 	threadID   string
 	message    string
 	messageID  string
+	model      string
 	allowWrite bool
 }
 
 type turnStarter interface {
-	StartTurn(context.Context, string, string, string) (desktopipc.TurnResult, error)
+	StartTurn(context.Context, string, string, string, string) (desktopipc.TurnResult, error)
 }
 
 func run(ctx context.Context, starter turnStarter, opts options, output io.Writer) error {
 	if !opts.allowWrite {
 		return errors.New("refusing to inject through Desktop IPC without --allow-write")
 	}
-	if opts.threadID == "" || opts.message == "" {
-		return errors.New("--thread-id and --message are required")
+	if opts.threadID == "" || opts.message == "" || opts.model == "" {
+		return errors.New("--thread-id, --message, and --model are required")
 	}
 	if opts.messageID == "" {
 		opts.messageID = fmt.Sprintf("ra2a-probe-%d", time.Now().UnixNano())
 	}
-	result, err := starter.StartTurn(ctx, opts.threadID, opts.message, opts.messageID)
+	result, err := starter.StartTurn(ctx, opts.threadID, opts.message, opts.messageID, opts.model)
 	if err != nil {
 		return err
 	}
@@ -55,6 +56,7 @@ func main() {
 	flag.StringVar(&opts.threadID, "thread-id", "", "Desktop-owned target thread ID")
 	flag.StringVar(&opts.message, "message", "", "text to inject")
 	flag.StringVar(&opts.messageID, "message-id", "", "stable message ID")
+	flag.StringVar(&opts.model, "model", "", "model for the Desktop-owned turn")
 	flag.StringVar(&socketPath, "socket", "", "override Codex Desktop IPC socket path")
 	flag.DurationVar(&timeout, "timeout", 15*time.Second, "connection and request timeout")
 	flag.BoolVar(&opts.allowWrite, "allow-write", false, "allow the probe to start a Desktop turn")

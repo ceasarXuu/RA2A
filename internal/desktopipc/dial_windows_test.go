@@ -255,7 +255,7 @@ func TestClientProtocolThroughWindowsNamedPipe(t *testing.T) {
 			serverDone <- fmt.Errorf("start turn = %#v", start)
 			return
 		}
-		assertStartTurnParams(t, start.Params, "thread-windows", "hello through pipe", "message-windows")
+		assertStartTurnParams(t, start.Params, "thread-windows", "hello through pipe", "message-windows", "gpt-test")
 		serverDone <- writeFrame(connection, envelope{
 			Type:       "response",
 			RequestID:  start.RequestID,
@@ -277,7 +277,7 @@ func TestClientProtocolThroughWindowsNamedPipe(t *testing.T) {
 	if err := client.Initialize(ctx); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	result, err := client.StartTurn(ctx, "thread-windows", "hello through pipe", "message-windows")
+	result, err := client.StartTurn(ctx, "thread-windows", "hello through pipe", "message-windows", "gpt-test")
 	if err != nil {
 		t.Fatalf("start turn: %v", err)
 	}

@@ -149,6 +149,62 @@ func TestListThreadSummariesBoundsPreviewTitleSize(t *testing.T) {
 	}
 }
 
+func TestResolveThreadModelUsesStoredThreadModel(t *testing.T) {
+	response := `{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":"gpt-5.5"}}}`
+	var requests bytes.Buffer
+	client := New(strings.NewReader(response), &requests)
+
+	model, err := client.ResolveThreadModel("thread-1")
+	if err != nil {
+		t.Fatalf("resolve thread model: %v", err)
+	}
+	if model != "gpt-5.5" {
+		t.Fatalf("model = %q", model)
+	}
+	requestList := decodeRequests(t, requests.Bytes())
+	if len(requestList) != 1 || requestList[0]["method"] != "thread/read" {
+		t.Fatalf("requests = %#v", requestList)
+	}
+	params := requestList[0]["params"].(map[string]any)
+	if params["threadId"] != "thread-1" || params["includeTurns"] != false {
+		t.Fatalf("thread/read params = %#v", params)
+	}
+}
+
+func TestResolveThreadModelFallsBackToCurrentDefault(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":""}}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"data":[{"model":"gpt-5.5","isDefault":false},{"model":"gpt-5.6-sol","isDefault":true}],"nextCursor":null}}`,
+	}, "\n")
+	var requests bytes.Buffer
+	client := New(strings.NewReader(responses), &requests)
+
+	model, err := client.ResolveThreadModel("thread-1")
+	if err != nil {
+		t.Fatalf("resolve thread model: %v", err)
+	}
+	if model != "gpt-5.6-sol" {
+		t.Fatalf("model = %q", model)
+	}
+	requestList := decodeRequests(t, requests.Bytes())
+	if len(requestList) != 2 || requestList[0]["method"] != "thread/read" || requestList[1]["method"] != "model/list" {
+		t.Fatalf("requests = %#v", requestList)
+	}
+}
+
+func TestResolveThreadModelRejectsMissingDefault(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":" "}}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"data":[{"model":"gpt-5.5","isDefault":false}],"nextCursor":null}}`,
+	}, "\n")
+	client := New(strings.NewReader(responses), &bytes.Buffer{})
+
+	_, err := client.ResolveThreadModel("thread-1")
+	if err == nil || !strings.Contains(err.Error(), "default model") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestCallMCPToolCarriesTargetThreadAndTool(t *testing.T) {
 	responses := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1"}}}`,

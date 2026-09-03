@@ -13,6 +13,7 @@ type fakeStarter struct {
 	threadID string
 	text     string
 	message  string
+	model    string
 }
 
 func (fake *fakeStarter) StartTurn(
@@ -20,10 +21,12 @@ func (fake *fakeStarter) StartTurn(
 	threadID string,
 	text string,
 	messageID string,
+	model string,
 ) (desktopipc.TurnResult, error) {
 	fake.threadID = threadID
 	fake.text = text
 	fake.message = messageID
+	fake.model = model
 	return desktopipc.TurnResult{TurnID: "turn-1"}, nil
 }
 
@@ -44,12 +47,13 @@ func TestRunStartsDesktopOwnedTurn(t *testing.T) {
 		threadID:   "thread-1",
 		message:    "hello",
 		messageID:  "message-1",
+		model:      "gpt-test",
 		allowWrite: true,
 	}, &output)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if starter.threadID != "thread-1" || starter.text != "hello" || starter.message != "message-1" {
+	if starter.threadID != "thread-1" || starter.text != "hello" || starter.message != "message-1" || starter.model != "gpt-test" {
 		t.Fatalf("starter = %#v", starter)
 	}
 	if !strings.Contains(output.String(), `"turnId": "turn-1"`) {

@@ -31,10 +31,11 @@ type sessionSourceFactory func(context.Context, string, string, io.Writer) (sess
 
 type codexSessionSource struct {
 	host        *codexhost.Host
-	desktopSend messageSender
+	desktopSend desktopMessageSender
 }
 
 type messageSender func(context.Context, string, string) error
+type desktopMessageSender func(context.Context, string, string, desktopipc.StartModelResolver) error
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -277,7 +278,13 @@ func startCodexSessionSource(ctx context.Context, codexPath, appServerSocket str
 }
 
 func (source *codexSessionSource) SendMessage(ctx context.Context, target, prompt string) error {
-	return sendWithDesktopPreference(ctx, target, prompt, source.host.SendMessage, source.desktopSend)
+	var desktop messageSender
+	if source.desktopSend != nil {
+		desktop = func(ctx context.Context, target, prompt string) error {
+			return source.desktopSend(ctx, target, prompt, source.host.ResolveThreadModel)
+		}
+	}
+	return sendWithDesktopPreference(ctx, target, prompt, source.host.SendMessage, desktop)
 }
 
 func sendWithDesktopPreference(ctx context.Context, target, prompt string, managed, desktop messageSender) error {
@@ -297,7 +304,7 @@ func sendWithDesktopPreference(ctx context.Context, target, prompt string, manag
 	return fmt.Errorf("%w: start Codex Desktop and retry: %v", control.ErrDesktopOwnerUnavailable, desktopErr)
 }
 
-func sendDesktopMessage(ctx context.Context, target, prompt string) error {
+func sendDesktopMessage(ctx context.Context, target, prompt string, resolveModel desktopipc.StartModelResolver) error {
 	connection, _, err := desktopipc.DialContext(ctx, "")
 	if err != nil {
 		return &desktopipc.NotDeliveredError{Cause: err}
@@ -307,7 +314,7 @@ func sendDesktopMessage(ctx context.Context, target, prompt string) error {
 	if err := client.Initialize(ctx); err != nil {
 		return &desktopipc.NotDeliveredError{Cause: err}
 	}
-	_, err = client.SendMessage(ctx, target, prompt, desktopipc.NewMessageID())
+	_, err = client.SendMessage(ctx, target, prompt, desktopipc.NewMessageID(), resolveModel)
 	return err
 }
 
