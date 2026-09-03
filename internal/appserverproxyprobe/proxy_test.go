@@ -13,7 +13,7 @@ import (
 )
 
 func TestServeObservesThreadOwnershipWhileRelaying(t *testing.T) {
-	tempDir, err := os.MkdirTemp(filepath.Join("..", "..", ".cache"), "proxy-test-")
+	tempDir, err := os.MkdirTemp(".", "p")
 	if err != nil {
 		t.Fatal(err)
 	}
