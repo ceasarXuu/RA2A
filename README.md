@@ -122,10 +122,12 @@ RA2A registers the same binary as a Codex stdio MCP server and forwards tool cal
 
 Peer discovery is lifecycle-aware: goodbye or expired mDNS records remove stale endpoints, and the daemon periodically reloads network interfaces after Wi-Fi changes or system wake. If DTLS fails before delivery, RA2A refreshes discovery and safely retries once against the recovered endpoint, including when a node returns on the same address.
 
-RA2A prefers the current Codex Desktop owner when sending a message so that the open Desktop UI stays synchronized. It uses `turn/steer` when the target already has an active turn and creates a new turn with `turn/start` only after Desktop explicitly reports that no active turn exists. It falls back to its managed Codex App Server only when Desktop confirms that the request was not delivered; an unknown delivery result is never retried through another path.
+RA2A sends through the current Codex Desktop owner so that the open Desktop UI stays synchronized. It uses `turn/steer` when the target already has an active turn and creates a new turn with `turn/start` only after Desktop explicitly reports that no active turn exists. RA2A never falls back to a second writer: if Desktop is unavailable, it returns `DESKTOP_OWNER_UNAVAILABLE` and asks the agent to start Codex Desktop.
+
+The managed App Server used for session discovery is isolated per daemon launch. RA2A records its PID and socket in a small owner lease, removes stale leases on startup, and terminates the whole managed process group on shutdown. It never adopts an arbitrary existing App Server socket, preventing orphaned writers from taking over a later session.
 
 - Codex App is the only supported host today. Offline delivery, persistent queues, and workflow orchestration are out of scope.
-- Desktop IPC has no OpenAI compatibility guarantee. RA2A may use the managed App Server after a confirmed pre-delivery failure, but never retries after an uncertain delivery.
+- Desktop IPC has no OpenAI compatibility guarantee. A missing Desktop owner is reported explicitly; RA2A does not create a competing managed writer.
 - The six-character PIN is used directly as the DTLS-PSK. It does not protect against guessing, credential theft, or a hostile local network.
 
 <details>

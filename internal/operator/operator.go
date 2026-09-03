@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/ceasarXuu/RA2A/internal/codexhost"
 )
 
 const Version = "v0.0.11"
@@ -202,6 +204,9 @@ func Stop() (Config, error) {
 	if err := stopService(); err != nil {
 		return config, fmt.Errorf("stop RA2A service: %w", err)
 	}
+	if err := codexhost.CleanupManaged(codexhost.DefaultSocketPath()); err != nil {
+		return config, fmt.Errorf("cleanup managed Codex host: %w", err)
+	}
 	return config, nil
 }
 
@@ -212,6 +217,9 @@ func Exit() (Config, error) {
 	}
 	if err := exitService(); err != nil {
 		return config, fmt.Errorf("exit RA2A service: %w", err)
+	}
+	if err := codexhost.CleanupManaged(codexhost.DefaultSocketPath()); err != nil {
+		return config, fmt.Errorf("cleanup managed Codex host: %w", err)
 	}
 	// The MCP process is owned by Codex and exits with its stdio connection. Removing
 	// the registration prevents Codex from starting another RA2A MCP process.

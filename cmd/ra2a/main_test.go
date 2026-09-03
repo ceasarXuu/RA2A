@@ -512,7 +512,7 @@ func TestSendWithDesktopPreferenceUsesDesktopOwnerFirst(t *testing.T) {
 	}
 }
 
-func TestSendWithDesktopPreferenceFallsBackOnlyWhenDefinitelyNotDelivered(t *testing.T) {
+func TestSendWithDesktopPreferenceDoesNotUseManagedWriterWhenDesktopIsUnavailable(t *testing.T) {
 	managedCalls := 0
 	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
 		managedCalls++
@@ -520,7 +520,7 @@ func TestSendWithDesktopPreferenceFallsBackOnlyWhenDefinitelyNotDelivered(t *tes
 	}, func(context.Context, string, string) error {
 		return &desktopipc.NotDeliveredError{Cause: errors.New("no Desktop owner")}
 	})
-	if err != nil || managedCalls != 1 {
+	if err == nil || managedCalls != 0 || !strings.Contains(err.Error(), "start Codex Desktop") {
 		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
 	}
 }
@@ -552,13 +552,13 @@ func TestSendWithDesktopPreferenceDoesNotFallbackOnUnclassifiedError(t *testing.
 	}
 }
 
-func TestSendWithDesktopPreferencePreservesManagedFailure(t *testing.T) {
+func TestSendWithDesktopPreferenceDoesNotExposeManagedWriterFailure(t *testing.T) {
 	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
 		return codexhost.ErrSessionBusy
 	}, func(context.Context, string, string) error {
 		return &desktopipc.NotDeliveredError{Cause: errors.New("Desktop unavailable")}
 	})
-	if !errors.Is(err, codexhost.ErrSessionBusy) || !strings.Contains(err.Error(), "Desktop unavailable") {
+	if !errors.Is(err, control.ErrDesktopOwnerUnavailable) || !strings.Contains(err.Error(), "Desktop unavailable") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -569,7 +569,7 @@ func TestSendWithDesktopPreferenceUsesManagedWhenDesktopIntegrationIsDisabled(t 
 		managedCalls++
 		return nil
 	}, nil)
-	if err != nil || managedCalls != 1 {
+	if err == nil || managedCalls != 0 || !strings.Contains(err.Error(), "start Codex Desktop") {
 		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
 	}
 }

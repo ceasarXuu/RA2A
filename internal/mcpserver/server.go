@@ -92,7 +92,7 @@ func productionTools() []any {
 		},
 		map[string]any{
 			"name":        "send_message",
-			"description": "Send a text message to a target ra2a://node/session address. Accepted means a remote turn was created, not completed.",
+			"description": "Send a text message to a target ra2a://node/session address through its Codex Desktop owner. If Desktop is not running, start it and retry.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -158,7 +158,7 @@ func toolError(code string, err error) map[string]any {
 
 func errorCode(err error) string {
 	for _, code := range []string{
-		"SESSION_BUSY", "DELIVERY_UNKNOWN", "TARGET_NOT_FOUND", "INVALID_REQUEST", "DAEMON_UNAVAILABLE",
+		"SESSION_BUSY", "DELIVERY_UNKNOWN", "DESKTOP_OWNER_UNAVAILABLE", "TARGET_NOT_FOUND", "INVALID_REQUEST", "DAEMON_UNAVAILABLE",
 	} {
 		if strings.Contains(err.Error(), code) {
 			return code

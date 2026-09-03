@@ -19,6 +19,7 @@ type Config struct {
 	CodexPath  string
 	SocketPath string
 	Stderr     io.Writer
+	OwnerPath  string
 }
 
 var ErrSessionBusy = errors.New("SESSION_BUSY")
@@ -27,8 +28,10 @@ type startFunc func(context.Context, Config) (*managedProcess, error)
 type connectFunc func(context.Context, string) (io.ReadWriteCloser, error)
 
 type managedProcess struct {
-	command *exec.Cmd
-	done    chan struct{}
+	command    *exec.Cmd
+	done       chan struct{}
+	ownerPath  string
+	socketPath string
 }
 
 type Host struct {
@@ -48,28 +51,46 @@ func Start(ctx context.Context, config Config) (*Host, error) {
 	if config.CodexPath == "" || config.SocketPath == "" {
 		return nil, errors.New("Codex path and App Server socket path are required")
 	}
-	return startWith(ctx, config, startManaged, DialUnixWebSocket, 100*time.Millisecond)
+	prepared, err := prepareConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return startWith(ctx, prepared, startManaged, DialUnixWebSocket, 100*time.Millisecond)
 }
 
 func startManaged(ctx context.Context, config Config) (*managedProcess, error) {
 	if err := os.MkdirAll(filepath.Dir(config.SocketPath), 0o700); err != nil {
 		return nil, fmt.Errorf("create App Server control directory: %w", err)
 	}
-	command := managedCommand(context.WithoutCancel(ctx), config)
+	command := managedCommand(ctx, config)
 	command.Stderr = config.Stderr
 	if err := command.Start(); err != nil {
 		return nil, err
 	}
-	process := &managedProcess{command: command, done: make(chan struct{})}
+	process := &managedProcess{
+		command: command, done: make(chan struct{}), ownerPath: config.OwnerPath, socketPath: config.SocketPath,
+	}
+	if config.OwnerPath != "" {
+		if err := writeOwnerRecord(config.OwnerPath, ownerRecord{
+			PID: command.Process.Pid, SocketPath: config.SocketPath, CodexPath: config.CodexPath,
+		}); err != nil {
+			_ = terminateManagedProcess(command)
+			_ = command.Wait()
+			return nil, fmt.Errorf("record managed Codex host: %w", err)
+		}
+	}
 	go func() {
 		_ = command.Wait()
+		_ = clearOwnerRecord(process.ownerPath, command.Process.Pid, process.socketPath)
 		close(process.done)
 	}()
 	return process, nil
 }
 
 func managedCommand(ctx context.Context, config Config) *exec.Cmd {
-	return exec.CommandContext(ctx, config.CodexPath, "app-server", "--listen", unixListenURL(config.SocketPath))
+	command := exec.CommandContext(ctx, config.CodexPath, "app-server", "--listen", unixListenURL(config.SocketPath))
+	configureManagedCommand(command)
+	return command
 }
 
 func unixListenURL(socketPath string) string {
@@ -130,9 +151,6 @@ func (host *Host) ensureConnected(ctx context.Context) error {
 	}
 	if host.client != nil {
 		return nil
-	}
-	if connection, err := host.connect(ctx, host.config.SocketPath); err == nil {
-		return host.initialize(connection)
 	}
 	if host.process == nil || processDone(host.process) {
 		if host.start == nil {
@@ -197,8 +215,18 @@ func (host *Host) Close() error {
 	host.closed = true
 	host.disconnect()
 	if host.process != nil && host.process.command != nil && host.process.command.Process != nil {
-		_ = host.process.command.Process.Kill()
+		_ = terminateManagedProcess(host.process.command)
 		<-host.process.done
 	}
+	if host.process != nil {
+		_ = clearOwnerRecord(host.process.ownerPath, host.process.commandPid(), host.process.socketPath)
+	}
 	return nil
+}
+
+func (process *managedProcess) commandPid() int {
+	if process == nil || process.command == nil || process.command.Process == nil {
+		return 0
+	}
+	return process.command.Process.Pid
 }

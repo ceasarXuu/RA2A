@@ -122,10 +122,12 @@ RA2A 将同一个二进制注册为 Codex stdio MCP，并通过 loopback 访问�
 
 节点发现会跟踪完整生命周期：收到 goodbye 或 mDNS 记录过期时删除陈旧端点，并定期重新加载网络接口以覆盖 Wi-Fi 切换和系统唤醒。若 DTLS 在消息投递前失败，RA2A 会刷新发现结果，并针对恢复后的端点安全重试一次，包括节点在相同地址恢复的情况。
 
-RA2A 发送消息时优先交给当前 Codex Desktop owner，从而保持已打开的 Desktop UI 实时同步。目标已有 active turn 时使用 `turn/steer` 追加消息；Desktop 明确报告没有 active turn 时才使用 `turn/start` 创建新 turn。只有 Desktop 明确确认请求未投递时，才回退到受管 Codex App Server；投递结果未知时不会切换路径或重试。
+RA2A 将消息交给当前 Codex Desktop owner，从而保持已打开的 Desktop UI 实时同步。目标已有 active turn 时使用 `turn/steer` 追加消息；Desktop 明确报告没有 active turn 时才使用 `turn/start` 创建新 turn。RA2A 不再回退到第二个 writer：Desktop 不可用时返回 `DESKTOP_OWNER_UNAVAILABLE`，提示 Agent 让用户先启动 Codex Desktop。
+
+用于 session 发现的受管 App Server 按 daemon 启动实例隔离。RA2A 持久记录 PID 和 socket owner lease，启动时回收残留 lease，退出时终止完整的受管进程组；不会接管任意已有的 App Server socket，避免孤儿 writer 抢占后续 session。
 
 - 当前正式支持 Codex App，不包含离线消息、持久队列和工作流编排。
-- Desktop IPC 没有 OpenAI 兼容承诺；明确的投递前失败可以回退受管 App Server，投递状态未知时绝不重试。
+- Desktop IPC 没有 OpenAI 兼容承诺；Desktop owner 缺失时明确报错，RA2A 不创建竞争性的受管 writer。
 - 6 位 PIN 直接作为 DTLS-PSK，不抵抗猜测、窃取或恶意局域网攻击。
 
 <details>

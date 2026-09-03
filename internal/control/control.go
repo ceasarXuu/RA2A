@@ -28,6 +28,7 @@ var ErrInvalidRequest = errors.New("INVALID_REQUEST")
 var ErrTargetNotFound = errors.New("TARGET_NOT_FOUND")
 var ErrTargetUnreachable = errors.New("TARGET_UNREACHABLE")
 var ErrDeliveryUnknown = errors.New("DELIVERY_UNKNOWN")
+var ErrDesktopOwnerUnavailable = errors.New("DESKTOP_OWNER_UNAVAILABLE")
 
 type Target struct {
 	ID            string            `json:"id"`

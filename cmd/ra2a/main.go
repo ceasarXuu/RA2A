@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -264,15 +263,7 @@ func formatIncomingMessage(message lannode.Message) string {
 }
 
 func defaultAppServerSocket() string {
-	codexHome := os.Getenv("CODEX_HOME")
-	if codexHome == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return filepath.Join(".codex", "app-server-control", "app-server-control.sock")
-		}
-		codexHome = filepath.Join(userHome, ".codex")
-	}
-	return filepath.Join(codexHome, "app-server-control", "app-server-control.sock")
+	return codexhost.DefaultSocketPath()
 }
 
 func startCodexSessionSource(ctx context.Context, codexPath, appServerSocket string, stderr io.Writer) (sessionSource, error) {
@@ -291,7 +282,7 @@ func (source *codexSessionSource) SendMessage(ctx context.Context, target, promp
 
 func sendWithDesktopPreference(ctx context.Context, target, prompt string, managed, desktop messageSender) error {
 	if desktop == nil {
-		return managed(ctx, target, prompt)
+		return fmt.Errorf("%w: start Codex Desktop and retry", control.ErrDesktopOwnerUnavailable)
 	}
 	desktopErr := desktop(ctx, target, prompt)
 	if desktopErr == nil {
@@ -303,11 +294,7 @@ func sendWithDesktopPreference(ctx context.Context, target, prompt string, manag
 	if !desktopipc.IsNotDelivered(desktopErr) {
 		return desktopErr
 	}
-	managedErr := managed(ctx, target, prompt)
-	if managedErr != nil {
-		return fmt.Errorf("%w; Desktop owner route unavailable: %v", managedErr, desktopErr)
-	}
-	return nil
+	return fmt.Errorf("%w: start Codex Desktop and retry: %v", control.ErrDesktopOwnerUnavailable, desktopErr)
 }
 
 func sendDesktopMessage(ctx context.Context, target, prompt string) error {
