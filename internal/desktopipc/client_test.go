@@ -213,6 +213,113 @@ func TestClientStartsIdleTurnOnlyAfterExplicitNoActiveTurn(t *testing.T) {
 	}
 }
 
+func TestClientRetriesStartAfterEmptyModelRejectionAndSettingsBarrier(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	serverDone := make(chan error, 1)
+	go func() {
+		initialize, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeFrame(serverConn, successResponse(initialize, map[string]any{"clientId": "desktop-client-1"})); err != nil {
+			serverDone <- err
+			return
+		}
+
+		firstStart, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if firstStart.Method != "thread-follower-start-turn" {
+			t.Errorf("first start method = %q", firstStart.Method)
+		}
+		if err := writeFrame(serverConn, envelope{
+			Type:       "response",
+			RequestID:  firstStart.RequestID,
+			ResultType: "error",
+			Error:      "invalid_request_error: The '' model is not supported when using Codex with a ChatGPT account.",
+		}); err != nil {
+			serverDone <- err
+			return
+		}
+
+		barrier, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if barrier.Method != "thread-follower-update-thread-settings" || barrier.Version != 1 {
+			t.Errorf("settings barrier = %#v", barrier)
+		}
+		if barrier.Params["conversationId"] != "thread-1" {
+			t.Errorf("barrier conversationId = %#v", barrier.Params["conversationId"])
+		}
+		settings, ok := barrier.Params["threadSettings"].(map[string]any)
+		if !ok || len(settings) != 0 {
+			t.Errorf("barrier threadSettings = %#v", barrier.Params["threadSettings"])
+		}
+		if err := writeFrame(serverConn, successResponse(barrier, map[string]any{"ok": true})); err != nil {
+			serverDone <- err
+			return
+		}
+
+		secondStart, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if secondStart.Method != "thread-follower-start-turn" {
+			t.Errorf("second start method = %q", secondStart.Method)
+		}
+		assertStartTurnParams(t, secondStart.Params, "thread-1", "hello", "message-1")
+		serverDone <- writeFrame(serverConn, successResponse(secondStart, map[string]any{
+			"result": map[string]any{"turn": map[string]any{"id": "turn-1"}},
+		}))
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	client := New(clientConn)
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result, err := client.StartTurn(ctx, "thread-1", "hello", "message-1")
+	if err != nil {
+		t.Fatalf("start turn: %v", err)
+	}
+	if result.TurnID != "turn-1" {
+		t.Fatalf("turn id = %q", result.TurnID)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
+
+func TestIsEmptyModelRejectionOnlyMatchesEmptyModel(t *testing.T) {
+	tests := []struct {
+		name  string
+		cause any
+		want  bool
+	}{
+		{name: "single quote empty model", cause: "invalid_request_error: The '' model is not supported", want: true},
+		{name: "double quote empty model", cause: `The "" model is not supported`, want: true},
+		{name: "named model", cause: "The 'gpt-5.6-sol' model is not supported", want: false},
+		{name: "other error", cause: "no-client-found", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := &requestRejectedError{Cause: test.cause}
+			if got := isEmptyModelRejection(err); got != test.want {
+				t.Fatalf("isEmptyModelRejection(%q) = %v, want %v", test.cause, got, test.want)
+			}
+		})
+	}
+}
+
 func TestClientDoesNotStartAfterAmbiguousSteerDisconnect(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })

@@ -67,6 +67,16 @@ RA2A 的 [`internal/desktopipc/client.go`](../internal/desktopipc/client.go) 已
 
 Codex Desktop release 26.901.20858 的 `LocalConversationTurn` 会直接读取 `text_elements.length`。省略该字段会使后台 turn 正常执行，但 UI 报 `Cannot read properties of undefined (reading 'length')`，随后可上浮到 `ThreadSummaryPanel` 和 `AppRoutes`。单元测试必须同时校验 start 与 steer 序列化为空数组，不能只校验 `type` 和 `text`。
 
+### Desktop settings/turn-start 竞态
+
+官方 Desktop 的 follower handler 会直接进入 `startTurn`；正常 UI owner 路径在准备 `turn/start` 前还会等待 pending thread-settings 更新。若后台 follower 请求恰好读到空模型，Desktop 会明确拒绝：
+
+```text
+invalid_request_error: The '' model is not supported when using Codex with a ChatGPT account.
+```
+
+RA2A 对这个明确的“空 model”拒绝执行一次有界恢复：先调用官方已有的 `thread-follower-update-thread-settings`（空设置，仅作为等待 barrier），待其成功后用同一个 `clientUserMessageId` 重试一次 `thread-follower-start-turn`。只有请求被明确拒绝时允许该重试；首帧写出后的超时、断连、取消、缺少 turn ID 仍属于 `DELIVERY_UNKNOWN`，绝不重试。其他模型错误也不重试，避免重复 turn 或掩盖真实配置问题。
+
 ### active turn UI 卡死回归（v0.0.9）
 
 v0.0.9 的 owner-first 实现对每条消息都调用 `start-turn`。当同一 session 正在执行时，后续消息虽被后端合并进原 turn，但 Desktop renderer 已预建了另一个 in-progress turn，随后持续出现 `Item not found in turn state`，UI 会停在“思考中”直到重启 App。

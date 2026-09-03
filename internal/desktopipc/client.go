@@ -129,7 +129,7 @@ func (client *Client) StartTurn(
 	if client.clientID == "" {
 		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop IPC client is not initialized")}
 	}
-	result, err := client.call(ctx, envelope{
+	request := envelope{
 		Type:           "request",
 		SourceClientID: client.clientID,
 		Version:        2,
@@ -145,7 +145,17 @@ func (client *Client) StartTurn(
 				"context": map[string]any{"inheritThreadSettings": true},
 			},
 		},
-	})
+	}
+	result, err := client.call(ctx, request)
+	if err != nil && isEmptyModelRejection(err) {
+		// The follower handler enters startTurn directly, while the normal UI
+		// path waits for pending thread-settings updates first. An explicit
+		// empty-model rejection is safe to retry after that private barrier.
+		if barrierErr := client.synchronizeThreadSettings(ctx, threadID); barrierErr != nil {
+			return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("wait for Desktop thread settings before retry: %w", barrierErr)}
+		}
+		result, err = client.call(ctx, request)
+	}
 	if err != nil {
 		var rejected *requestRejectedError
 		if errors.As(err, &rejected) {
@@ -162,6 +172,20 @@ func (client *Client) StartTurn(
 		return TurnResult{}, &DeliveryUnknownError{Cause: errors.New("Desktop IPC accepted start turn without a turn ID")}
 	}
 	return TurnResult{TurnID: turnID}, nil
+}
+
+func (client *Client) synchronizeThreadSettings(ctx context.Context, threadID string) error {
+	_, err := client.call(ctx, envelope{
+		Type:           "request",
+		SourceClientID: client.clientID,
+		Version:        1,
+		Method:         "thread-follower-update-thread-settings",
+		Params: map[string]any{
+			"conversationId": threadID,
+			"threadSettings": map[string]any{},
+		},
+	})
+	return err
 }
 
 func (client *Client) SendMessage(
@@ -248,6 +272,16 @@ func isInactiveSteerRejection(cause any) bool {
 	return strings.Contains(message, "no active turn") ||
 		strings.Contains(message, "steerturninactiveerror") ||
 		strings.Contains(message, "active turn already ended")
+}
+
+func isEmptyModelRejection(err error) bool {
+	var rejected *requestRejectedError
+	if !errors.As(err, &rejected) {
+		return false
+	}
+	message := strings.ToLower(fmt.Sprint(rejected.Cause))
+	return strings.Contains(message, "the '' model is not supported") ||
+		strings.Contains(message, `the "" model is not supported`)
 }
 
 func (client *Client) call(ctx context.Context, request envelope) (map[string]any, error) {
