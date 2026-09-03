@@ -1,8 +1,8 @@
-# macOS Codex Desktop active-turn UI 回归交接
+# macOS Codex Desktop `text_elements` UI 回归交接
 
 ## 目标
 
-在 Mac 官方 Codex Desktop 上验证 `main` 中的 active-turn 修复：目标 task 空闲时，第一条远端消息由 Desktop owner 创建一个新 turn；该 turn 执行期间的第二条消息必须通过 `turn/steer` 进入同一个 turn，Desktop UI 全程实时更新且不需要重启 App。
+在 Mac 官方 Codex Desktop 上验证 `main` 中的 Desktop IPC 文本输入修复：空闲目标的第一条远端消息通过 `turn/start` 创建 turn，活跃期第二条消息通过 `turn/steer` 进入同一 turn；两条 input 均必须携带 `text_elements: []`，Desktop UI 全程可见、可恢复、可手动续聊，不需要重启 App。
 
 本次只安装并验证 `main` 源码，不创建分支、不改代码、不发布版本。测试完成后回传证据，由 Windows 端汇总结果。
 
@@ -11,15 +11,15 @@
 ```text
 repository: https://github.com/ceasarXuu/RA2A.git
 branch: main
-required commit: d93442633d8df19bdb0cfd1824e44ef3a2d479bb
-change: fix(desktopipc): steer active turns
+required commit: 78b29827568541c2a8f3c60b150b041cc09fb5ab
+change: fix(desktopipc): include text elements in messages
 ```
 
-该修复尚未发布新 tag。`ra2a version` 仍可能显示 `v0.0.9`，不能用 `ra2a update` 或 latest Release 代替本次源码安装；必须用 Git 祖先关系证明安装源码包含上述提交。
+该修复尚未发布新 tag。`ra2a version` 仍显示 `v0.0.10`，不能用 `ra2a update` 或 latest Release 代替本次源码安装；必须用 Git 祖先关系证明安装源码包含上述提交。
 
 ## 回归背景与正确行为
 
-v0.0.9 已改为 Desktop-owner-first，但每条消息仍调用 `thread-follower-start-turn`。当目标已有 active turn 时，后端可能把后续消息并入原 turn，而 Desktop renderer 预建了另一个 in-progress turn，随后出现 `Item not found in turn state`，UI 长期停在“思考中”，通常只有重启 App 才能恢复。
+上一次 active-turn 修复已解决重复 start 造成的 `Item not found in turn state`。本次新回归针对另一个已证实问题：RA2A v0.0.10 的 start/steer 文本 input 省略 `text_elements`，Codex Desktop release 26.901.20858 在 `LocalConversationTurn` 中直接读取 `text_elements.length`，导致 `Cannot read properties of undefined (reading 'length')`，并可上浮至 `ThreadSummaryPanel` 和 `AppRoutes`。后端 turn 仍可完成，所以不能只用 rollout 或 `read_thread` 判定通过。
 
 修复后的规则：
 
@@ -30,7 +30,7 @@ v0.0.9 已改为 Desktop-owner-first，但每条消息仍调用 `thread-follower
 5. rollout 或后台 API 中存在完整 turn 不能替代 UI 实时刷新验收。
 6. start 和 steer 的文本 input 必须显式带 `text_elements: []`，不能省略或传 `null`；否则新版 Desktop 可在 `LocalConversationTurn` 读取 `text_elements.length` 时进入 error boundary。
 
-Windows 官方 Codex Desktop 已验证一条空闲消息和一条 active follow-up 形成 `start=1`、`steer=1`、单一 turn，且同一窗口 `Item not found in turn state=0`。本交接负责验证 macOS 使用同一协议时没有平台回归。
+Windows 官方 Codex Desktop 已在提交 `78b2982` 上验证 idle start、active steer、活跃期打开长历史 R8、切离再切回，同一时间窗内上述三个 error boundary 均为 0。本交接负责验证 macOS 使用同一协议时没有平台回归。
 
 ## 1. 拉取并确认源码
 
@@ -41,7 +41,7 @@ cd /path/to/RA2A
 git status --short
 git branch --show-current
 git pull --ff-only
-git merge-base --is-ancestor d93442633d8df19bdb0cfd1824e44ef3a2d479bb HEAD
+git merge-base --is-ancestor 78b29827568541c2a8f3c60b150b041cc09fb5ab HEAD
 git log -1 --oneline
 ```
 
@@ -73,7 +73,7 @@ launchctl print "gui/$(id -u)/com.ra2a.daemon"
 - 关闭安装终端后 daemon 仍在运行；
 - 原 node ID、名称和 PIN 未变化；
 - `~/.config/ra2a/logs/ra2a.err.log` 没有持续启动失败；
-- 即使版本字符串仍是 `v0.0.9`，也以本节的 Git 祖先校验和源码安装时间为准，不改 tag、不发版。
+- 即使版本字符串仍是 `v0.0.10`，也以本节的 Git 祖先校验和源码安装时间为准，不改 tag、不发版。
 
 ## 3. 准备专用测试 task
 
@@ -83,7 +83,18 @@ launchctl print "gui/$(id -u)/com.ra2a.daemon"
 4. 测试开始时 task 必须为 idle，且历史中不存在本次 marker。
 5. 验证期间不要重启 Codex Desktop、切换 task、编辑 rollout/session 文件或启动第二个 App Server。
 
-如当前页面已经因 v0.0.9 的旧故障卡在“思考中”，先重启一次 Codex Desktop 清除旧 renderer 状态，再选择新的专用 task。该重启只能发生在正式计时和 marker 发送之前。
+如当前页面已经因旧版本卡在“思考中”或“此轮内容无法显示”，先保留当前 Desktop 日志、故障时间和目标 thread/turn ID，然后才重启一次 Codex Desktop 清除旧 renderer 状态，再选择新的专用 task。该重启只能发生在正式计时和 marker 发送之前。
+
+### 3.1 向 rog306 报告 READY
+
+Mac 完成安装、选定专用 task 并确认它已 idle 后，通过 RA2A 向 Windows 协调 task 发送一条 READY：
+
+```text
+to: ra2a://rog306/01a05964-0476-7ed2-a2d3-3b4ec5727b3f
+text: [RA2A-MAC-TEXT-ELEMENTS-READY-<UTC时间>] HEAD=78b29827568541c2a8f3c60b150b041cc09fb5ab; target=ra2a://<mac-node-id>/<mac-task-id>; Desktop=<version>; PID=<pid>; task=idle; UI=visible
+```
+
+发送 READY 后立即停止操作，保持目标 task 在前台，等待 rog306 发送两条受控消息。不得自行向测试 task 注入 marker，不得为了加速而重启 Desktop。
 
 ## 4. 从 rog306 发送两条唯一消息
 
@@ -95,7 +106,7 @@ launchctl print "gui/$(id -u)/com.ra2a.daemon"
 
 ```text
 to: ra2a://<mac-node-id>/<mac-task-id>
-text: [RA2A-MAC-STEER-BASE-<UTC时间>] 请立即运行 sleep 30；等待结束后回复 RA2A_MAC_STEER_BASE_OK。
+text: [RA2A-MAC-TEXT-ELEMENTS-BASE-<UTC时间>] 请立即运行 sleep 30；等待结束后回复 RA2A_MAC_TEXT_ELEMENTS_BASE_OK。
 ```
 
 记录 sender 原始结果和发送时间。返回 `accepted` 后，应在 Mac UI 立即看到该用户消息和执行动态，task 进入 active 状态。
@@ -106,7 +117,7 @@ text: [RA2A-MAC-STEER-BASE-<UTC时间>] 请立即运行 sleep 30；等待结束�
 
 ```text
 to: ra2a://<mac-node-id>/<mac-task-id>
-text: [RA2A-MAC-STEER-FOLLOWUP-<同一UTC时间>] 这是 active-turn follow-up；当前等待结束后请只回复 RA2A_MAC_STEER_FOLLOWUP_OK。
+text: [RA2A-MAC-TEXT-ELEMENTS-FOLLOWUP-<同一UTC时间>] 这是 active-turn follow-up；当前等待结束后请只回复 RA2A_MAC_TEXT_ELEMENTS_FOLLOWUP_OK。
 ```
 
 要求：
@@ -126,7 +137,7 @@ text: [RA2A-MAC-STEER-FOLLOWUP-<同一UTC时间>] 这是 active-turn follow-up�
 1. 第一条用户消息无需重启或切换 task 即实时出现。
 2. sleep 执行期间可以看到正常的思考、工具调用或状态变化，不是静止的假“思考中”。
 3. 第二条 follow-up 无需重启或切换 task 即出现在同一 active turn。
-4. 全程只创建一个 turn，最终回复为 `RA2A_MAC_STEER_FOLLOWUP_OK`。
+4. 全程只创建一个 turn，最终回复为 `RA2A_MAC_TEXT_ELEMENTS_FOLLOWUP_OK`。
 5. turn 完成后 UI 从执行态收敛到完成态，没有持续“思考中”。
 6. 不重启 App，在输入框手动发送：
 
@@ -153,6 +164,9 @@ user_message count: 2
 task_complete count: 1
 Item not found in turn state count: 0
 Cannot read properties of undefined (reading 'length') count: 0
+LocalConversationTurn error-boundary count: 0
+ThreadSummaryPanel error-boundary count: 0
+AppRoutes error-boundary count: 0
 ```
 
 关键约束：
@@ -188,6 +202,11 @@ Codex Desktop remained same process: yes/no
 turn/start count:
 turn/steer count:
 Item not found in turn state count:
+Cannot read properties of undefined (reading 'length') count:
+LocalConversationTurn error-boundary count:
+ThreadSummaryPanel error-boundary count:
+AppRoutes error-boundary count:
+Desktop restarted during test: yes/no
 ```
 
 同时附上：
@@ -205,13 +224,14 @@ tail -n 200 ~/.config/ra2a/logs/ra2a.err.log
 
 以下条件必须全部满足：
 
-- Mac 安装源码包含 `d93442633d8df19bdb0cfd1824e44ef3a2d479bb`；
+- Mac 安装源码包含 `78b29827568541c2a8f3c60b150b041cc09fb5ab`；
 - rog306 严格发送两条计划内的唯一消息，无重试、无第三条测试消息；
 - 第一条空闲消息只触发一次 `turn/start`；
 - 第二条 active follow-up 只触发一次 `turn/steer`；
 - 两条消息进入同一个 turn，且只有一次 task start/complete；
 - Desktop UI 无需重启或切换 task 即显示两条消息、动态执行和最终完成状态；
 - `Item not found in turn state` 为 0；
+- `Cannot read properties of undefined (reading 'length')` 为 0，且 `LocalConversationTurn`、`ThreadSummaryPanel`、`AppRoutes` 均无新 error boundary；
 - 用户能在原 task 手动继续对话；
 - 没有 writer 冲突、重复 turn 或不确定投递后的重试。
 
