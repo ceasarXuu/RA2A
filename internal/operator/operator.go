@@ -17,7 +17,7 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
 )
 
-const Version = "v0.0.12"
+const Version = "v0.0.13"
 
 type Config struct {
 	NodeID string `json:"nodeId"`

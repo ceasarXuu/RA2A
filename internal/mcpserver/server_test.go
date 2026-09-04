@@ -33,7 +33,7 @@ func TestServeListsOnlyProductionTools(t *testing.T) {
 	)
 	result := responses[1]["result"].(map[string]any)
 	initialize := responses[0]["result"].(map[string]any)
-	if initialize["serverInfo"].(map[string]any)["version"] != "v0.0.12" {
+	if initialize["serverInfo"].(map[string]any)["version"] != "v0.0.13" {
 		t.Fatalf("serverInfo = %#v", initialize["serverInfo"])
 	}
 	tools := result["tools"].([]any)
