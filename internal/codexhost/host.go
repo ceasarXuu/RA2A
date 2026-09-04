@@ -35,16 +35,18 @@ type managedProcess struct {
 }
 
 type Host struct {
-	config     Config
-	start      startFunc
-	connect    connectFunc
-	retryDelay time.Duration
+	config       Config
+	start        startFunc
+	connect      connectFunc
+	retryDelay   time.Duration
+	restartDelay time.Duration
 
 	mu         sync.Mutex
 	process    *managedProcess
 	connection io.ReadWriteCloser
 	client     *appserverprobe.Client
 	closed     bool
+	supervise  bool
 }
 
 func Start(ctx context.Context, config Config) (*Host, error) {
@@ -110,9 +112,15 @@ func unixListenURL(socketPath string) string {
 }
 
 func startWith(ctx context.Context, config Config, start startFunc, connect connectFunc, retryDelay time.Duration) (*Host, error) {
-	host := &Host{config: config, start: start, connect: connect, retryDelay: retryDelay}
+	host := &Host{
+		config: config, start: start, connect: connect,
+		retryDelay: retryDelay, restartDelay: time.Second,
+	}
 	host.mu.Lock()
 	err := host.ensureConnected(ctx)
+	if err == nil {
+		host.supervise = true
+	}
 	host.mu.Unlock()
 	if err != nil {
 		host.Close()
@@ -190,6 +198,7 @@ func (host *Host) ensureConnected(ctx context.Context) error {
 			return fmt.Errorf("start managed Codex host: %w", err)
 		}
 		host.process = process
+		go host.watchProcess(ctx, process)
 	}
 
 	for {
@@ -205,6 +214,30 @@ func (host *Host) ensureConnected(ctx context.Context) error {
 		case <-time.After(host.retryDelay):
 		}
 	}
+}
+
+func (host *Host) watchProcess(ctx context.Context, process *managedProcess) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-process.done:
+	}
+	timer := time.NewTimer(host.restartDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+	}
+
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	if host.closed || !host.supervise || host.process != process {
+		return
+	}
+	host.disconnect()
+	host.process = nil
+	_ = host.ensureConnected(ctx)
 }
 
 func (host *Host) initialize(connection io.ReadWriteCloser) error {
@@ -242,6 +275,7 @@ func (host *Host) Close() error {
 		return nil
 	}
 	host.closed = true
+	host.supervise = false
 	host.disconnect()
 	if host.process != nil && host.process.command != nil && host.process.command.Process != nil {
 		_ = terminateManagedProcess(host.process.command)

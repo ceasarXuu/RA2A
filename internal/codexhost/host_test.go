@@ -156,6 +156,50 @@ func TestListThreadSummariesRestartsExitedManagedProcessBeforeFirstRequest(t *te
 	}
 }
 
+func TestHostRestartsManagedProcessWithoutWaitingForRequest(t *testing.T) {
+	firstClient, firstServer := net.Pipe()
+	secondClient, secondServer := net.Pipe()
+	defer secondServer.Close()
+
+	firstProcess := &managedProcess{done: make(chan struct{})}
+	secondProcess := &managedProcess{done: make(chan struct{})}
+	restarted := make(chan struct{})
+	startCalls := 0
+	start := func(context.Context, Config) (*managedProcess, error) {
+		startCalls++
+		if startCalls == 1 {
+			return firstProcess, nil
+		}
+		close(restarted)
+		return secondProcess, nil
+	}
+	connectCalls := 0
+	connect := func(context.Context, string) (io.ReadWriteCloser, error) {
+		connectCalls++
+		if connectCalls == 1 {
+			return firstClient, nil
+		}
+		return secondClient, nil
+	}
+	serveHostProtocol(t, firstServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
+	serveHostProtocol(t, secondServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
+
+	host, err := startWith(context.Background(), Config{SocketPath: "/managed.sock"}, start, connect, time.Millisecond)
+	if err != nil {
+		t.Fatalf("start host: %v", err)
+	}
+	defer host.Close()
+	host.restartDelay = time.Millisecond
+	close(firstProcess.done)
+	_ = firstServer.Close()
+
+	select {
+	case <-restarted:
+	case <-time.After(time.Second):
+		t.Fatal("managed process was not restarted proactively")
+	}
+}
+
 func TestReportManagedExitRecordsUnexpectedExit(t *testing.T) {
 	var output bytes.Buffer
 	reportManagedExit(&output, 4312, errors.New("exit status 7"), nil)
