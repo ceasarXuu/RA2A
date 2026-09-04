@@ -19,14 +19,14 @@ Codex Desktop owner `start-turn` 设置竞态。Mac 只负责发起一次唯一�
 ```text
 repository: https://github.com/ceasarXuu/RA2A.git
 branch: main
-required commit: d3a0947 fix(desktopipc): resolve model before owner start
-recommended HEAD: 299890f fix(installer): replace locked Windows binary
-superseded attempt: 7ddb557 / bbc91b5（仅 settings barrier，不足以修复历史空 model）
+required commit: 6df73fe fix(desktopipc): apply resolved model to owner settings
+supporting commits: d3a0947（解析 model）/ 299890f（替换被 MCP 锁定的 Windows 二进制）
+superseded attempts: 7ddb557 / bbc91b5（空 barrier）；d3a0947 单独使用（仅 start request.model）
 target node: ra2a://rog306
 known R8 thread: 019f43ef-d5a0-7910-bd34-c5c825d1e94a
 ```
 
-验收以 `d3a0947` 是否为当前 `HEAD` 的祖先为准，不以版本标签为准。若工作树
+验收以 `6df73fe` 是否为当前 `HEAD` 的祖先为准，不以版本标签为准。若工作树
 有本地修改，先记录并停止，不要覆盖、reset 或清理这些修改。
 
 ## 根因与修复行为
@@ -47,8 +47,9 @@ invalid_request_error: The '' model is not supported when using Codex with a Cha
 3. thread model 为空时执行 `model/list`，选择 `isDefault=true` 的当前默认模型；不得
    硬编码 `gpt-5.6-sol` 或其他名称。
 4. 解析不到非空模型时，在 start 帧写出前明确失败。
-5. 完成设置 barrier 后，`thread-follower-start-turn` 的
-   `turnStart.request.model` 必须显式携带解析出的非空模型。
+5. `thread-follower-update-thread-settings` 的 `threadSettings.model` 必须携带解析结果，
+   随后的 `thread-follower-start-turn` 在 `turnStart.request.model` 中携带同一值。
+   只设置后一处已被 Windows R8 实机证明仍会产生空 `turn_context.model`。
 6. 超时、断连、取消、响应缺少 turn ID、named-model/config 错误和其他拒绝均不
    重试，也不切换到第二个 writer；结果未知时不得重发。
 
@@ -61,7 +62,7 @@ cd /path/to/RA2A
 git status --short
 git branch --show-current
 git pull --ff-only
-git merge-base --is-ancestor d3a0947 HEAD
+git merge-base --is-ancestor 6df73fe HEAD
 git log -1 --oneline
 go test ./...
 go vet ./...
@@ -79,7 +80,7 @@ launchctl print "gui/$(id -u)/com.ra2a.daemon"
 
 由 rog306 操作员在正式 marker 前完成：
 
-1. 安装并运行包含 `d3a0947` 的 RA2A；推荐同时包含 `299890f`，确认计划任务/服务指向该版本。
+1. 安装并运行包含 `6df73fe` 的 RA2A；确认计划任务/服务指向该版本。
 2. 官方 Codex Desktop 已打开，`\\.\pipe\codex-ipc` 可连接，Desktop owner
    IPC `initialize` 成功。
 3. 只存在一个受管 App Server，不启动第二个 App Server 抢占 thread writer。
@@ -121,7 +122,7 @@ request/turn 标识，不输出正文或 tool output：
 RA2A receive / message-id
 thread-follower-steer-turn（若已有 active turn）
 NoActiveTurn / active turn already ended（若 idle）
-thread-follower-update-thread-settings
+thread-follower-update-thread-settings（threadSettings.model 非空）
 thread-follower-start-turn
 turnStart.request.model（只记录模型名是否非空）
 turn/start
@@ -134,7 +135,7 @@ renderer/error-boundary 或 IPC reset
 
 ```text
 receive → steer 明确 inactive 拒绝 → thread/read → 必要时 model/list
-→ settings barrier → 一次携带非空 model 的 start-turn
+→ 携带非空 model 的 settings update → 一次携带同一 model 的 start-turn
 → turn/start → task_started → task_complete
 ```
 

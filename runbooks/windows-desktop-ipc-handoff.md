@@ -82,7 +82,7 @@ idle start 的现行流程是：
 1. `thread-follower-steer-turn` 明确返回 inactive 后，向 RA2A 管理的 App Server 调用 `thread/read(includeTurns=false)`。
 2. 优先使用 thread 已保存的非空 model；若为空，调用 `model/list` 并选择 `isDefault=true` 的当前默认模型。不得硬编码模型名。
 3. 解析失败时在发送 start 帧前返回 `NotDelivered`；不得创建一个注定异步失败的 turn。
-4. 设置 barrier 完成后，在 `thread-follower-start-turn` 的 `turnStart.request.model` 中显式携带解析结果。
+4. `thread-follower-update-thread-settings` 必须携带 `threadSettings.model=<解析结果>`，让 owner 的 next-turn settings 变为非空；随后 `thread-follower-start-turn` 的 `turnStart.request.model` 也显式携带同一值。只在 start request 中带 model 已被 R8 实机证明不足。
 5. active turn 的 steer 路径不解析、不覆盖模型。start 帧写出后的超时、断连、取消或缺少 turn ID仍属于 `DELIVERY_UNKNOWN`，不得重试。
 
 Mac 发送端的单消息验收步骤和返回模板见 [`macos-desktop-empty-model-race-validation-handoff.md`](macos-desktop-empty-model-race-validation-handoff.md)。
@@ -130,7 +130,7 @@ fake server 按现有 4 字节 framing：
 2. 接收 `thread-follower-steer-turn`，校验 conversation/thread/message ID、正文和 restore message。
 3. active turn 成功时返回 turn id，并确认没有额外 `start-turn`。
 4. idle turn 必须先收到明确 inactive 拒绝，再接收 `thread-follower-start-turn`。
-5. idle turn 的 start request 必须含非空显式 `model`；模型解析失败时不能发送 start 帧。
+5. idle turn 的 settings update 与 start request 必须携带同一个非空 `model`；模型解析失败时不能发送任一帧。
 6. active steer 成功时不得调用模型解析器。
 7. steer 写出后断连或超时时必须返回 `DELIVERY_UNKNOWN`，不能尝试 `start-turn`。
 8. 覆盖 `client-discovery-request` 插入在响应之前的情况。
