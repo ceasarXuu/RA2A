@@ -2,6 +2,7 @@ package codexhost
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -100,6 +102,68 @@ func TestStartDoesNotAttachToExistingSocket(t *testing.T) {
 	defer host.Close()
 	if startCalls != 1 || connectCalls != 1 {
 		t.Fatalf("start calls = %d, connect calls = %d", startCalls, connectCalls)
+	}
+}
+
+func TestListThreadSummariesRestartsExitedManagedProcessBeforeFirstRequest(t *testing.T) {
+	firstClient, firstServer := net.Pipe()
+	secondClient, secondServer := net.Pipe()
+	defer secondServer.Close()
+
+	firstProcess := &managedProcess{done: make(chan struct{})}
+	secondProcess := &managedProcess{done: make(chan struct{})}
+	startCalls := 0
+	start := func(context.Context, Config) (*managedProcess, error) {
+		startCalls++
+		if startCalls == 1 {
+			return firstProcess, nil
+		}
+		return secondProcess, nil
+	}
+	connectCalls := 0
+	connect := func(context.Context, string) (io.ReadWriteCloser, error) {
+		connectCalls++
+		if connectCalls == 1 {
+			return firstClient, nil
+		}
+		return secondClient, nil
+	}
+	serveHostProtocol(t, firstServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
+	serveHostProtocol(t, secondServer, []rpcExchange{
+		{method: "initialize", result: map[string]any{}},
+		{method: "thread/list", result: map[string]any{
+			"data": []any{map[string]any{"id": "thread-recovered", "name": "Recovered"}},
+		}},
+	})
+
+	host, err := startWith(context.Background(), Config{SocketPath: "/managed.sock"}, start, connect, time.Millisecond)
+	if err != nil {
+		t.Fatalf("start host: %v", err)
+	}
+	defer host.Close()
+	close(firstProcess.done)
+	_ = firstServer.Close()
+
+	threads, err := host.ListThreadSummaries(context.Background())
+	if err != nil {
+		t.Fatalf("first request after managed exit: %v", err)
+	}
+	if startCalls != 2 || connectCalls != 2 {
+		t.Fatalf("start calls = %d, connect calls = %d, want 2 each", startCalls, connectCalls)
+	}
+	if len(threads) != 1 || threads[0].ID != "thread-recovered" {
+		t.Fatalf("threads = %#v", threads)
+	}
+}
+
+func TestReportManagedExitRecordsUnexpectedExit(t *testing.T) {
+	var output bytes.Buffer
+	reportManagedExit(&output, 4312, errors.New("exit status 7"), nil)
+	logLine := output.String()
+	if !strings.Contains(logLine, "event=managed_codex_host_exited") ||
+		!strings.Contains(logLine, "pid=4312") ||
+		!strings.Contains(logLine, "exit status 7") {
+		t.Fatalf("exit log = %q", logLine)
 	}
 }
 

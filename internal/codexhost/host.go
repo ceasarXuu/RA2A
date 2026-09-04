@@ -80,11 +80,23 @@ func startManaged(ctx context.Context, config Config) (*managedProcess, error) {
 		}
 	}
 	go func() {
-		_ = command.Wait()
+		waitErr := command.Wait()
+		reportManagedExit(config.Stderr, command.Process.Pid, waitErr, ctx.Err())
 		_ = clearOwnerRecord(process.ownerPath, command.Process.Pid, process.socketPath)
 		close(process.done)
 	}()
 	return process, nil
+}
+
+func reportManagedExit(writer io.Writer, pid int, waitErr, parentErr error) {
+	if writer == nil || parentErr != nil {
+		return
+	}
+	if waitErr == nil {
+		fmt.Fprintf(writer, "event=managed_codex_host_exited pid=%d status=clean\n", pid)
+		return
+	}
+	fmt.Fprintf(writer, "event=managed_codex_host_exited pid=%d error=%q\n", pid, waitErr)
 }
 
 func managedCommand(ctx context.Context, config Config) *exec.Cmd {
@@ -161,6 +173,10 @@ func (host *Host) ensureConnected(ctx context.Context) error {
 	}
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if host.process != nil && processDone(host.process) {
+		host.disconnect()
+		host.process = nil
 	}
 	if host.client != nil {
 		return nil
