@@ -138,6 +138,7 @@ v0.0.15 保持文本消息，候选字段：
 | V6 | 同一节点 App 与 CLI 端点能否无冲突汇总 | 在独立 `CODEX_HOME` 下，通过登记式接入边界（连接级 `clientInfo` 关联 start/resume/turn）同时发现两类宿主，记录主/辅助 thread 的稳定区分规则 | 地址唯一、类型正确、投递到唯一目标；未知归属不展示为 ready；CLI 断开、重连与 resume 后登记关系不迁移 | 调整端点身份模型并复验；禁止用 `thread.source` 猜测类型；所有权路线未稳定前不进入 Phase 1 |
 | V7 | 单 App Server + remote TUI 能否安全接收 active-turn follow-up | 首条消息触发长时间 turn，在执行期间注入第二条消息并继续人工输入 | follow-up 在同一 thread 中精确执行一次、无重复、TUI 实时更新、人工输入正常 | 不进入 CLI 适配器实现，重新评估活跃 turn 投递入口 |
 | V8 | CLI 写入路径是否存在隐藏前置条件（等效 Desktop `text_elements` 缺失与空 model 竞态教训） | 在独立 `CODEX_HOME` 上，对 `thread/queue/add`、`thread/queue/start` 与 `thread/resume` 做真实投递，逐字段核对 TUI renderer 敏感项与 thread model/sessionId 前置 | 确认 queue/start 的前置字段集合与 renderer 契约；字段缺失时能探测并先置前置否则拒绝，不得先写后异步失败 | 把确认的前置字段固定进契约测试；若存在不可满足前置则重估 queue 投递入口 |
+| V9 | 「用户正常启动 codex 零动作接入」能否靠官方 daemon 自动挂接 | 安装 standalone codex 并启动官方 daemon，验证普通 `codex` 自动连上 daemon 且外部客户端可用 | TUI 自动挂接 daemon，RA2A 作为其客户端投递 | macOS 0.153.4 实测普通 TUI 未挂接（源码含该机制但未触发）；按 Owner 决策改用 wrapper 代传 `--remote` 路线，不再依赖自动挂接 |
 
 实验输出写入 `docs/v0.0.15/experiments/`，记录命令、版本、平台、观察结果和结论。只有结论进入架构，原始日志不提交敏感信息。
 
@@ -152,6 +153,12 @@ v0.0.15 保持文本消息，候选字段：
 - **所有权沿用登记式接入边界**：V6-R1 的「连接级 `clientInfo` 关联」升级为 Phase 3 架构硬约束；跨连接扫描 `thread.source` 不可靠这一结论，被 Desktop 的 per-process owner/writer 经验再次印证。
 - **PD32 独立环境是唯一硬前置**：独立 `CODEX_HOME` 与独立认证需用户参与完成；`ephemeral` 覆盖不能替代。V6/V7/V8 与三平台验证都在独立环境真机执行。
 - **TUI 真机验证不可替代**：后台 write/read、rollout 或 schema 契约均不能证明投递成功；三平台验证聚焦 TUI 实时显示与人工继续交互。
+
+2026-09-06 追加（路线决策，V9 记录见 `experiments/codex-cli-v9.md`）：
+
+- **V9 daemon 自动挂接未生效**：standalone codex 0.153.4 + 官方 daemon 在本机实测，普通 `codex` TUI 未自动连到 daemon（源码含 `maybe_probe_default_daemon_socket` 机制但发布版未触发）；且 `thread-follower-*` 仅存在于 Desktop 私有侧，开源 CLI 无等价的「正常运行即暴露注入通道」。
+- **Owner 确认采用「包装器代传 `--remote`」路线**：`cmd/codex-wrapper` 在 RA2A 托管 app-server 可用（owner lease + socket 可连）时向用户普通 TUI 启动注入 `--remote unix://<managed socket>`；RA2A 不可用、已卸载或用户显式指定 `--remote` 时完整透传原生 codex，不影响原生体验。server 始终是官方 `codex app-server` 二进制，RA2A 保持纯客户端。
+- **原型已端到端验证**（commit `6774ad1`）：注入 / 无 lease 降级透传 / 显式 `--remote` 透传三种行为均通过；单测覆盖参数分类、lease 门禁、socket 活性判定与自引用防护。安装器集成（改名 `codex.bin` + 卸载还原）待 Phase 4 完成。
 
 ## 6. 实施阶段
 
