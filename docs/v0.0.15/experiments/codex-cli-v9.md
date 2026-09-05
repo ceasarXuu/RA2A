@@ -84,9 +84,10 @@ Queue 投递链（`thread/queue/add` 客户端，commit `1a5d83e`）：wrapper-a
 
 实验旁证与限制：
 
-- **账号限流横幅是 plan 级 `codex` 周桶（10080min）≥90% 触发**（源码 `RATE_LIMIT_SWITCH_PROMPT_THRESHOLD=90`），与模型/remote 无关；模型独立桶（如 codex_bengalfox=63%）不参与触发。横幅不阻断真实用户（Esc/选项 3 可关），但会挡 pty 自动化按键；实验连跑会把 plan 周桶推满（100%），随后后端拦截 `chatgpt.com/backend-api/codex/responses`（cf-ray 拦截页）。**实验前须查 `account/rateLimits/read`**（见 `runbooks/codex-account-usage-check.md`，probe `--account-rates`）。
-- 实验线程会按用户全局 config 加载 MCP 服务器（状态栏可见 `Starting MCP RA2A`）——实验/适配器与生产 RA2A MCP 存在共享配置接触面，需在适配器设计中留意。
-- 「人工续聊」自动验证被限流横幅与后端拦截打断（TUI 级行为，V7 已覆盖同一栈），待 plan 周桶重置后补自动收尾证据。
+- **账号限流横幅机制（最终闭环）**：TUI 弹窗「Approaching rate limits / switch to…」由 **plan 级 `codex` 周桶（10080min）≥90%** 触发（`RATE_LIMIT_SWITCH_PROMPT_THRESHOLD=90`），**与模型桶无关**（实测同刻 5.3/3.5 两桶均 <90% 时新进程仍弹）。展示在回合完成时刻；抑制条件：`[notice].hide_rate_limit_model_nudge`（用户选「never show again」持久化）、已呈现的 backend banner、常驻进程旧会话状态。**新进程必弹、长驻进程（02:43 起的 codex --yolo）被内态抑制**——这解释了「用户从未见过 vs 我的实验必弹」的表观矛盾；用户手动选择 never show again 后全机不再弹。实验前仍建议用 `--account-rates` 自查 plan 桶（runbooks/codex-account-usage-check.md）。
+- **plan 桶 100% 期间账号限制非默认模型**：`-m codex-3.5-spark` 的回合在 100% 状态收到 `The 'codex-3.5-spark' model is not supported when using Codex with a ChatGPT account`（400），默认 gpt-5.3-codex-spark 正常完成——属账号侧限制，与 RA2A 模型继承策略无关。
+- **实验线程会按用户全局 config 加载 MCP 服务器**（状态栏可见 `Starting MCP RA2A`）——实验/适配器与生产 RA2A MCP 存在共享配置接触面，需在适配器设计中留意。
+- 「人工续聊」自动验证：queue 链（active 期入队→TUI 显示→执行→唯一回复）已在 live5 完成；人工续聊为 TUI 原生行为（V7 同栈已验证、wrapper 仅透传 stdin），自动化收尾在账号状态恢复后补。
 
 ## 环境改动与清理
 
