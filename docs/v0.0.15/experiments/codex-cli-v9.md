@@ -70,6 +70,24 @@ let default_daemon = if explicit_remote_endpoint.is_none() && reuse_implicit_loc
 - `--remote` 路线（V4/V7 已验证）技术上成立，但用户已否决此机型 UX；如需保留，只能由 RA2A 安装链路提供启动包装/后台 app-server 代传 `--remote`（用户无感），这是「零动作体验」的工程折中。
 - 来源身份（V1）、queue active-turn 语义（V7）、cross-store 写锁（V3）等既有结论不随本实验改变。
 
+## 追加：wrapper 路线原型与 queue 投递链（2026-09-06 晚）
+
+Wrapper 原型（`cmd/codex-wrapper`，commit `6774ad1`）已端到端验证：
+
+| 场景 | 结果 |
+| --- | --- |
+| lease 存在 + 普通 `codex` 启动 | ✅ 注入 `--remote unix://<RA2A 托管 socket>` |
+| RA2A 不可用（无 lease / socket 不可连） | ✅ 完整透传原生 codex |
+| 用户显式 `--remote`（任意位置） | ✅ 不注入，透传用户参数 |
+
+Queue 投递链（`thread/queue/add` 客户端，commit `1a5d83e`）：wrapper-attached TUI 活跃回合期间入队 → 消息在 TUI 实时显示（`› ...`）→ 当前回合结束后精确执行一次并给出唯一回复；全程单一 app-server、单一 writer，submission ID 留存（如 `01a0738f-ae47-7a21-a989-cd8f7de22029`）。
+
+实验旁证与限制：
+
+- **账号限流横幅是 plan 级 `codex` 周桶（10080min）≥90% 触发**（源码 `RATE_LIMIT_SWITCH_PROMPT_THRESHOLD=90`），与模型/remote 无关；模型独立桶（如 codex_bengalfox=63%）不参与触发。横幅不阻断真实用户（Esc/选项 3 可关），但会挡 pty 自动化按键；实验连跑会把 plan 周桶推满（100%），随后后端拦截 `chatgpt.com/backend-api/codex/responses`（cf-ray 拦截页）。**实验前须查 `account/rateLimits/read`**（见 `runbooks/codex-account-usage-check.md`，probe `--account-rates`）。
+- 实验线程会按用户全局 config 加载 MCP 服务器（状态栏可见 `Starting MCP RA2A`）——实验/适配器与生产 RA2A MCP 存在共享配置接触面，需在适配器设计中留意。
+- 「人工续聊」自动验证被限流横幅与后端拦截打断（TUI 级行为，V7 已覆盖同一栈），待 plan 周桶重置后补自动收尾证据。
+
 ## 环境改动与清理
 
 - 本轮安装了 standalone codex 0.153.4 并接管 `~/.local/bin/codex`、启动官方 daemon，随后按用户决定全部回退：daemon stop、删除 `~/.codex/packages`、删除 `~/.local/bin/codex` shim、移除 `.zprofile` 安装器 PATH 行；`codex` 恢复 npm 全局版（0.153.3）。生产 RA2A daemon 与 `.ra2a-<pid>.sock` 全程未动。
