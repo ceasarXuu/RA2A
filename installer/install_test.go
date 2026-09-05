@@ -171,12 +171,77 @@ func TestUnixUninstallUsesExplicitCodex(t *testing.T) {
 	assertFileContains(t, filepath.Join(home, "codex-remove.log"), "mcp remove ra2a")
 }
 
+func TestUnixInstallerInstallsCodexWrapperWithMarker(t *testing.T) {
+	requireUnixShell(t)
+	home, fakeBin := installerEnvironment(t, "Darwin")
+	command := exec.Command("sh", "../install.sh", "--codex-wrapper")
+	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, output)
+	}
+	wrapper := filepath.Join(home, ".local", "bin", "codex")
+	marker := filepath.Join(home, ".local", "bin", ".ra2a-codex-wrapper")
+	for _, required := range []string{wrapper, marker, filepath.Join(home, ".local", "bin", "ra2a")} {
+		if _, err := os.Stat(required); err != nil {
+			t.Fatalf("%s not installed: %v", required, err)
+		}
+	}
+}
+
+func TestUnixInstallerRefusesToOverwriteForeignCodex(t *testing.T) {
+	requireUnixShell(t)
+	home, fakeBin := installerEnvironment(t, "Darwin")
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(binDir, "codex"), "#!/bin/sh\nexit 0\n")
+	command := exec.Command("sh", "../install.sh", "--codex-wrapper")
+	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	output, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "refusing to overwrite") {
+		t.Fatalf("err=%v output=%s", err, output)
+	}
+}
+
+func TestUnixUninstallRestoresNativeCodex(t *testing.T) {
+	requireUnixShell(t)
+	home, fakeBin := installerEnvironment(t, "Darwin")
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(binDir, "codex")
+	marker := filepath.Join(binDir, ".ra2a-codex-wrapper")
+	foreign := filepath.Join(binDir, "codex-custom")
+	writeExecutable(t, wrapper, "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, foreign, "#!/bin/sh\nexit 0\n")
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(fakeBin, "ra2a"), "#!/bin/sh\nexit 0\n")
+	command := exec.Command("sh", "../install.sh", "--uninstall")
+	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("uninstall: %v\n%s", err, output)
+	}
+	for _, gone := range []string{wrapper, marker} {
+		if _, err := os.Stat(gone); !os.IsNotExist(err) {
+			t.Fatalf("%s should be removed", gone)
+		}
+	}
+	if _, err := os.Stat(foreign); err != nil {
+		t.Fatalf("foreign binary %s must not be touched", foreign)
+	}
+}
+
 func TestPowerShellInstallerDelegatesLifecycleToRA2A(t *testing.T) {
 	content, err := os.ReadFile("../install.ps1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"go build", "setup", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "Uninstall", "Run ra2a to finish setup", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'", "$Mcp = $Codex", "ra2a.exe.retired-", "Move-Item -LiteralPath $RetiredPath -Destination $BinaryPath"} {
+	for _, marker := range []string{"go build", "setup", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "Uninstall", "Run ra2a to finish setup", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'", "$Mcp = $Codex", "ra2a.exe.retired-", "Move-Item -LiteralPath $RetiredPath -Destination $BinaryPath", "CodexWrapper", ".ra2a-codex-wrapper", "codex.cmd", "cmd/codex-wrapper"} {
 		if !strings.Contains(string(content), marker) {
 			t.Errorf("install.ps1 missing %q", marker)
 		}
