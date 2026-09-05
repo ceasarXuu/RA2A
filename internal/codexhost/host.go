@@ -16,10 +16,11 @@ import (
 )
 
 type Config struct {
-	CodexPath  string
-	SocketPath string
-	Stderr     io.Writer
-	OwnerPath  string
+	CodexPath    string
+	SocketPath   string
+	Stderr       io.Writer
+	OwnerPath    string
+	RestartDelay time.Duration
 }
 
 var ErrSessionBusy = errors.New("SESSION_BUSY")
@@ -83,11 +84,28 @@ func startManaged(ctx context.Context, config Config) (*managedProcess, error) {
 	}
 	go func() {
 		waitErr := command.Wait()
-		reportManagedExit(config.Stderr, command.Process.Pid, waitErr, ctx.Err())
-		_ = clearOwnerRecord(process.ownerPath, command.Process.Pid, process.socketPath)
+		finalizeManagedExit(command, config.Stderr, process.ownerPath, process.socketPath, waitErr, ctx.Err())
 		close(process.done)
 	}()
 	return process, nil
+}
+
+// finalizeManagedExit runs after the managed leader exits: it records the exit,
+// reaps any residual process group members (Linux node-wrapper codex child),
+// and only then clears the owner record. The owner record is kept when the reap
+// fails so a later daemon startup can still reclaim the residual group.
+func finalizeManagedExit(command *exec.Cmd, stderr io.Writer, ownerPath, socketPath string, waitErr, parentErr error) {
+	reportManagedExit(stderr, command.Process.Pid, waitErr, parentErr)
+	reaped, reapErr := reapManagedGroup(command)
+	switch {
+	case reaped:
+		reportManagedReaped(stderr, command.Process.Pid)
+	case reapErr != nil:
+		reportManagedReapFailed(stderr, command.Process.Pid, reapErr)
+	}
+	if reapErr == nil {
+		_ = clearOwnerRecord(ownerPath, command.Process.Pid, socketPath)
+	}
 }
 
 func reportManagedExit(writer io.Writer, pid int, waitErr, parentErr error) {
@@ -101,6 +119,20 @@ func reportManagedExit(writer io.Writer, pid int, waitErr, parentErr error) {
 	fmt.Fprintf(writer, "event=managed_codex_host_exited pid=%d error=%q\n", pid, waitErr)
 }
 
+func reportManagedReaped(writer io.Writer, pid int) {
+	if writer == nil {
+		return
+	}
+	fmt.Fprintf(writer, "event=managed_codex_host_reaped pid=%d\n", pid)
+}
+
+func reportManagedReapFailed(writer io.Writer, pid int, reapErr error) {
+	if writer == nil {
+		return
+	}
+	fmt.Fprintf(writer, "event=managed_codex_host_reap_failed pid=%d error=%q\n", pid, reapErr)
+}
+
 func managedCommand(ctx context.Context, config Config) *exec.Cmd {
 	command := exec.CommandContext(ctx, config.CodexPath, "app-server", "--listen", unixListenURL(config.SocketPath))
 	configureManagedCommand(command)
@@ -112,9 +144,13 @@ func unixListenURL(socketPath string) string {
 }
 
 func startWith(ctx context.Context, config Config, start startFunc, connect connectFunc, retryDelay time.Duration) (*Host, error) {
+	restartDelay := config.RestartDelay
+	if restartDelay <= 0 {
+		restartDelay = time.Second
+	}
 	host := &Host{
 		config: config, start: start, connect: connect,
-		retryDelay: retryDelay, restartDelay: time.Second,
+		retryDelay: retryDelay, restartDelay: restartDelay,
 	}
 	host.mu.Lock()
 	err := host.ensureConnected(ctx)
@@ -184,7 +220,6 @@ func (host *Host) ensureConnected(ctx context.Context) error {
 	}
 	if host.process != nil && processDone(host.process) {
 		host.disconnect()
-		host.reapManaged(host.process)
 		host.process = nil
 	}
 	if host.client != nil {
@@ -238,7 +273,6 @@ func (host *Host) watchProcess(ctx context.Context, process *managedProcess) {
 	}
 	host.disconnect()
 	host.process = nil
-	host.reapManaged(process)
 	_ = host.ensureConnected(ctx)
 }
 
@@ -259,21 +293,6 @@ func (host *Host) disconnect() {
 	}
 	host.connection = nil
 	host.client = nil
-}
-
-// reapManaged terminates any residual process group members left behind by an
-// exited managed leader (for example the codex child of a killed node wrapper
-// on Linux). It only logs when it actually killed surviving members.
-func (host *Host) reapManaged(process *managedProcess) {
-	if process == nil || process.command == nil || process.command.Process == nil {
-		return
-	}
-	if err := terminateManagedProcess(process.command); err != nil {
-		return
-	}
-	if host.config.Stderr != nil {
-		fmt.Fprintf(host.config.Stderr, "event=managed_codex_host_reaped pid=%d\n", process.command.Process.Pid)
-	}
 }
 
 func processDone(process *managedProcess) bool {

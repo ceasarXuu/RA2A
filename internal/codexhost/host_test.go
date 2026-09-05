@@ -187,12 +187,11 @@ func TestHostRestartsManagedProcessWithoutWaitingForRequest(t *testing.T) {
 	serveHostProtocol(t, firstServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
 	serveHostProtocol(t, secondServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
 
-	host, err := startWith(context.Background(), Config{SocketPath: "/managed.sock"}, start, connect, time.Millisecond)
+	host, err := startWith(context.Background(), Config{SocketPath: "/managed.sock", RestartDelay: time.Millisecond}, start, connect, time.Millisecond)
 	if err != nil {
 		t.Fatalf("start host: %v", err)
 	}
 	defer host.Close()
-	host.restartDelay = time.Millisecond
 	close(firstProcess.done)
 	_ = firstServer.Close()
 
@@ -225,7 +224,11 @@ func TestSupervisorReapsResidualProcessGroupAfterManagedLeaderExit(t *testing.T)
 			}
 			leaderPid = command.Process.Pid
 			process := &managedProcess{command: command, done: firstDone}
-			go func() { _ = command.Wait(); close(firstDone) }()
+			go func() {
+				waitErr := command.Wait()
+				finalizeManagedExit(command, nil, "", "", waitErr, nil)
+				close(firstDone)
+			}()
 			return process, nil
 		}
 		close(restarted)
@@ -242,49 +245,19 @@ func TestSupervisorReapsResidualProcessGroupAfterManagedLeaderExit(t *testing.T)
 	serveHostProtocol(t, firstServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
 	serveHostProtocol(t, secondServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
 
-	host, err := startWith(context.Background(), Config{SocketPath: "/managed.sock"}, start, connect, time.Millisecond)
+	host, err := startWith(context.Background(), Config{SocketPath: "/managed.sock", RestartDelay: 50 * time.Millisecond}, start, connect, time.Millisecond)
 	if err != nil {
 		t.Fatalf("start host: %v", err)
 	}
 	defer host.Close()
-	host.restartDelay = 50 * time.Millisecond
+	t.Cleanup(func() {
+		if leaderPid > 0 {
+			_ = syscall.Kill(-leaderPid, syscall.SIGKILL)
+		}
+	})
 
-	groupMembers := func() int {
-		entries, err := os.ReadDir("/proc")
-		if err != nil {
-			return 0
-		}
-		members := 0
-		for _, entry := range entries {
-			pid, err := strconv.Atoi(entry.Name())
-			if err != nil {
-				continue
-			}
-			stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-			if err != nil {
-				continue
-			}
-			index := strings.Index(string(stat), ")")
-			if index < 0 {
-				continue
-			}
-			fields := strings.Fields(string(stat)[index+1:])
-			if len(fields) < 3 {
-				continue
-			}
-			pgrp, err := strconv.Atoi(fields[2])
-			if err == nil && pgrp == leaderPid {
-				members++
-			}
-		}
-		return members
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	for groupMembers() < 2 {
-		if time.Now().After(deadline) {
-			t.Fatalf("managed leader never forked its residual child")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if err := waitForGroupMembers(leaderPid, 2, 2*time.Second); err != nil {
+		t.Fatal(err)
 	}
 	if err := syscall.Kill(leaderPid, syscall.SIGKILL); err != nil {
 		t.Fatalf("kill managed leader: %v", err)
@@ -292,14 +265,14 @@ func TestSupervisorReapsResidualProcessGroupAfterManagedLeaderExit(t *testing.T)
 	<-firstDone
 
 	if err := syscall.Kill(-leaderPid, 0); err != nil {
-		t.Fatalf("residual child process group vanished before supervision reaped it: %v", err)
+		t.Fatalf("residual child process group vanished before finalize reaped it: %v", err)
 	}
 	select {
 	case <-restarted:
 	case <-time.After(2 * time.Second):
 		t.Fatal("managed process was not restarted proactively")
 	}
-	deadline = time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(2 * time.Second)
 	for {
 		if err := syscall.Kill(-leaderPid, 0); err != nil {
 			break
@@ -309,6 +282,212 @@ func TestSupervisorReapsResidualProcessGroupAfterManagedLeaderExit(t *testing.T)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+func TestFinalizeManagedExitReapsResidualGroupAndClearsOwnerRecord(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group fixture is Unix-only")
+	}
+	root := t.TempDir()
+	ownerPath := filepath.Join(root, "owner.json")
+	socketPath := filepath.Join(root, "ra2a.sock")
+
+	command := exec.Command("sh", "-c", "sleep 60 & sleep 60")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	leaderPid := command.Process.Pid
+	t.Cleanup(func() { _ = syscall.Kill(-leaderPid, syscall.SIGKILL) })
+	if err := writeOwnerRecord(ownerPath, ownerRecord{PID: leaderPid, SocketPath: socketPath}); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForGroupMembers(leaderPid, 2, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(leaderPid, syscall.SIGKILL); err != nil {
+		t.Fatalf("kill managed leader: %v", err)
+	}
+
+	var output bytes.Buffer
+	waitErr := command.Wait()
+	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil)
+
+	logs := output.String()
+	if !strings.Contains(logs, "event=managed_codex_host_exited pid="+strconv.Itoa(leaderPid)) ||
+		!strings.Contains(logs, "event=managed_codex_host_reaped pid="+strconv.Itoa(leaderPid)) {
+		t.Fatalf("finalize logs = %q", logs)
+	}
+	if _, err := os.Stat(ownerPath); !os.IsNotExist(err) {
+		t.Fatalf("owner record still exists: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if err := syscall.Kill(-leaderPid, 0); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("residual child process group was not reaped")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestFinalizeManagedExitSkipsReapedLogWhenGroupAlreadyGone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group fixture is Unix-only")
+	}
+	root := t.TempDir()
+	ownerPath := filepath.Join(root, "owner.json")
+	socketPath := filepath.Join(root, "ra2a.sock")
+
+	command := exec.Command("sh", "-c", "exit 0")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	leaderPid := command.Process.Pid
+	if err := writeOwnerRecord(ownerPath, ownerRecord{PID: leaderPid, SocketPath: socketPath}); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	waitErr := command.Wait()
+	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil)
+
+	logs := output.String()
+	if !strings.Contains(logs, "event=managed_codex_host_exited pid="+strconv.Itoa(leaderPid)+" status=clean") {
+		t.Fatalf("finalize logs = %q", logs)
+	}
+	if strings.Contains(logs, "managed_codex_host_reaped") {
+		t.Fatalf("reaped logged for an already-gone group: %q", logs)
+	}
+	if _, err := os.Stat(ownerPath); !os.IsNotExist(err) {
+		t.Fatalf("owner record still exists: %v", err)
+	}
+}
+
+func TestFinalizeManagedExitSkipsReapedLogWhenCloseTerminatedTheGroup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group fixture is Unix-only")
+	}
+	root := t.TempDir()
+	ownerPath := filepath.Join(root, "owner.json")
+	socketPath := filepath.Join(root, "ra2a.sock")
+
+	command := exec.Command("sh", "-c", "sleep 60 & sleep 60")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	leaderPid := command.Process.Pid
+	t.Cleanup(func() { _ = syscall.Kill(-leaderPid, syscall.SIGKILL) })
+	if err := waitForGroupMembers(leaderPid, 2, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := terminateManagedProcess(command); err != nil {
+		t.Fatalf("terminate managed process: %v", err)
+	}
+	waitErr := command.Wait()
+	var output bytes.Buffer
+	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil)
+
+	logs := output.String()
+	if strings.Contains(logs, "managed_codex_host_reaped") {
+		t.Fatalf("reaped logged although Close already terminated the group: %q", logs)
+	}
+	if _, err := os.Stat(ownerPath); !os.IsNotExist(err) {
+		t.Fatalf("owner record still exists: %v", err)
+	}
+}
+
+func TestCleanupOwnerRecordReapsResidualGroupAfterDaemonCrash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group fixture is Unix-only")
+	}
+	root := t.TempDir()
+	ownerPath := filepath.Join(root, "owner.json")
+	socketPath := filepath.Join(root, "ra2a.sock")
+
+	command := exec.Command("sh", "-c", "sleep 60 & sleep 60")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	leaderPid := command.Process.Pid
+	t.Cleanup(func() { _ = syscall.Kill(-leaderPid, syscall.SIGKILL) })
+	if err := waitForGroupMembers(leaderPid, 2, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeOwnerRecord(ownerPath, ownerRecord{PID: leaderPid, SocketPath: socketPath}); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(leaderPid, syscall.SIGKILL); err != nil {
+		t.Fatalf("kill managed leader: %v", err)
+	}
+	waitErr := command.Wait()
+	_ = waitErr
+
+	if err := cleanupOwnerRecord(ownerPath); err != nil {
+		t.Fatalf("cleanup owner record: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if err := syscall.Kill(-leaderPid, 0); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("residual group survived daemon-restart cleanup")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(ownerPath); !os.IsNotExist(err) {
+		t.Fatalf("owner record still exists: %v", err)
+	}
+}
+
+func waitForGroupMembers(pgid, want int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for processGroupMemberCount(pgid) < want {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("process group %d never reached %d members", pgid, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil
+}
+
+func processGroupMemberCount(pgid int) int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0
+	}
+	members := 0
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			continue
+		}
+		index := strings.Index(string(stat), ")")
+		if index < 0 {
+			continue
+		}
+		fields := strings.Fields(string(stat)[index+1:])
+		if len(fields) < 3 {
+			continue
+		}
+		pgrp, err := strconv.Atoi(fields[2])
+		if err == nil && pgrp == pgid {
+			members++
+		}
+	}
+	return members
 }
 
 func TestReportManagedExitRecordsUnexpectedExit(t *testing.T) {
