@@ -197,6 +197,12 @@ func (client *Client) InjectMessage(threadID, text string) (json.RawMessage, err
 	return client.StartTurn(threadID, text)
 }
 
+// ReadAccountRateLimits returns the account usage snapshot used by the TUI
+// rate-limit warnings and the switch-model prompt. Read-only diagnostic.
+func (client *Client) ReadAccountRateLimits() (json.RawMessage, error) {
+	return client.call("account/rateLimits/read", map[string]any{})
+}
+
 // QueuedSubmission is the stable identity the app-server assigns to a queued
 // user turn; field names follow the V5 contract projection and are read
 // defensively until V8 pins the exact response shape.

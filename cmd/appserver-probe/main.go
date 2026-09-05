@@ -21,6 +21,7 @@ type options struct {
 	threadID         string
 	message          string
 	queueMessage     string
+	accountRates     bool
 	ephemeralMessage string
 	cwd              string
 	allowWrite       bool
@@ -36,9 +37,11 @@ func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 		if !opts.allowWrite {
 			return errors.New("refusing to start an ephemeral turn without --allow-write")
 		}
+	} else if opts.accountRates {
+		// validated in run() below; this mode has no write options
 	} else if opts.queueMessage != "" {
-		if opts.threadID == "" || opts.message == "" || opts.probeContext || opts.ephemeralMessage != "" {
-			return errors.New("--queue-add requires thread-id and message and no other write options")
+		if opts.threadID == "" || opts.message != "" || opts.probeContext || opts.ephemeralMessage != "" {
+			return errors.New("--queue-add requires only thread-id and the queued text")
 		}
 	} else if opts.probeContext {
 		if opts.threadID == "" || opts.message != "" {
@@ -73,6 +76,8 @@ func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 				"turn":     json.RawMessage(result),
 			})
 		}
+	} else if opts.accountRates {
+		result, err = client.ReadAccountRateLimits()
 	} else if opts.queueMessage != "" {
 		submission, queueErr := client.QueueMessage(opts.threadID, appserverprobe.NewMessageID(), opts.queueMessage)
 		if queueErr != nil {
@@ -142,6 +147,7 @@ func main() {
 	flag.StringVar(&opts.ephemeralMessage, "ephemeral-message", "", "message for a non-persistent probe thread")
 	flag.BoolVar(&opts.allowWrite, "allow-write", false, "allow resume and turn/start on the target thread")
 	flag.BoolVar(&opts.probeContext, "probe-context", false, "call the RA2A MCP context probe on thread-id")
+	flag.BoolVar(&opts.accountRates, "account-rates", false, "read the account rate-limit snapshot (read-only)")
 	flag.StringVar(&mcpProbePath, "mcp-probe-bin", "", "absolute path to mcp-context-probe")
 	flag.StringVar(&socketPath, "socket", "", "connect to an existing App Server Unix socket")
 	flag.Func("source-kind", "limit thread listing to a source kind; repeatable", func(value string) error {
