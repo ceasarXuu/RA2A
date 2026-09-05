@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/appserverprobe"
@@ -33,6 +34,10 @@ type managedProcess struct {
 	done       chan struct{}
 	ownerPath  string
 	socketPath string
+	// terminatedByOwner is set by Close after it terminated the process
+	// group itself; the exit goroutine then skips residual reaping (and its
+	// reaped log) because no survivor can remain.
+	terminatedByOwner atomic.Bool
 }
 
 type Host struct {
@@ -84,7 +89,7 @@ func startManaged(ctx context.Context, config Config) (*managedProcess, error) {
 	}
 	go func() {
 		waitErr := command.Wait()
-		finalizeManagedExit(command, config.Stderr, process.ownerPath, process.socketPath, waitErr, ctx.Err())
+		finalizeManagedExit(command, config.Stderr, process.ownerPath, process.socketPath, waitErr, ctx.Err(), process.terminatedByOwner.Load())
 		close(process.done)
 	}()
 	return process, nil
@@ -93,19 +98,25 @@ func startManaged(ctx context.Context, config Config) (*managedProcess, error) {
 // finalizeManagedExit runs after the managed leader exits: it records the exit,
 // reaps any residual process group members (Linux node-wrapper codex child),
 // and only then clears the owner record. The owner record is kept when the reap
-// fails so a later daemon startup can still reclaim the residual group.
-func finalizeManagedExit(command *exec.Cmd, stderr io.Writer, ownerPath, socketPath string, waitErr, parentErr error) {
+// fails so a later daemon startup can still reclaim the residual group. When
+// Close itself terminated the process group, reaping is skipped: no survivor
+// can remain and the reaped log would be misleading.
+func finalizeManagedExit(command *exec.Cmd, stderr io.Writer, ownerPath, socketPath string, waitErr, parentErr error, terminatedByOwner bool) {
 	reportManagedExit(stderr, command.Process.Pid, waitErr, parentErr)
-	reaped, reapErr := reapManagedGroup(command)
-	switch {
-	case reaped:
-		reportManagedReaped(stderr, command.Process.Pid)
-	case reapErr != nil:
-		reportManagedReapFailed(stderr, command.Process.Pid, reapErr)
+	if !terminatedByOwner {
+		reaped, reapErr := reapManagedGroup(command)
+		switch {
+		case reaped:
+			reportManagedReaped(stderr, command.Process.Pid)
+		case reapErr != nil:
+			reportManagedReapFailed(stderr, command.Process.Pid, reapErr)
+		}
+		if reapErr == nil {
+			_ = clearOwnerRecord(ownerPath, command.Process.Pid, socketPath)
+		}
+		return
 	}
-	if reapErr == nil {
-		_ = clearOwnerRecord(ownerPath, command.Process.Pid, socketPath)
-	}
+	_ = clearOwnerRecord(ownerPath, command.Process.Pid, socketPath)
 }
 
 func reportManagedExit(writer io.Writer, pid int, waitErr, parentErr error) {
@@ -314,6 +325,7 @@ func (host *Host) Close() error {
 	host.supervise = false
 	host.disconnect()
 	if host.process != nil && host.process.command != nil && host.process.command.Process != nil {
+		host.process.terminatedByOwner.Store(true)
 		_ = terminateManagedProcess(host.process.command)
 		<-host.process.done
 	}

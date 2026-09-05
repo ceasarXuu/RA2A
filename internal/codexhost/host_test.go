@@ -226,7 +226,7 @@ func TestSupervisorReapsResidualProcessGroupAfterManagedLeaderExit(t *testing.T)
 			process := &managedProcess{command: command, done: firstDone}
 			go func() {
 				waitErr := command.Wait()
-				finalizeManagedExit(command, nil, "", "", waitErr, nil)
+				finalizeManagedExit(command, nil, "", "", waitErr, nil, false)
 				close(firstDone)
 			}()
 			return process, nil
@@ -311,7 +311,7 @@ func TestFinalizeManagedExitReapsResidualGroupAndClearsOwnerRecord(t *testing.T)
 
 	var output bytes.Buffer
 	waitErr := command.Wait()
-	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil)
+	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil, false)
 
 	logs := output.String()
 	if !strings.Contains(logs, "event=managed_codex_host_exited pid="+strconv.Itoa(leaderPid)) ||
@@ -353,7 +353,7 @@ func TestFinalizeManagedExitSkipsReapedLogWhenGroupAlreadyGone(t *testing.T) {
 
 	var output bytes.Buffer
 	waitErr := command.Wait()
-	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil)
+	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil, false)
 
 	logs := output.String()
 	if !strings.Contains(logs, "event=managed_codex_host_exited pid="+strconv.Itoa(leaderPid)+" status=clean") {
@@ -391,11 +391,49 @@ func TestFinalizeManagedExitSkipsReapedLogWhenCloseTerminatedTheGroup(t *testing
 	}
 	waitErr := command.Wait()
 	var output bytes.Buffer
-	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil)
+	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil, true)
 
 	logs := output.String()
 	if strings.Contains(logs, "managed_codex_host_reaped") {
 		t.Fatalf("reaped logged although Close already terminated the group: %q", logs)
+	}
+	if _, err := os.Stat(ownerPath); !os.IsNotExist(err) {
+		t.Fatalf("owner record still exists: %v", err)
+	}
+}
+
+func TestFinalizeManagedExitWithSurvivorsDoesNotDependOnWatchdogGuard(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group fixture is Unix-only")
+	}
+	root := t.TempDir()
+	ownerPath := filepath.Join(root, "owner.json")
+	socketPath := filepath.Join(root, "ra2a.sock")
+
+	command := exec.Command("sh", "-c", "sleep 60 & sleep 60")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	leaderPid := command.Process.Pid
+	t.Cleanup(func() { _ = syscall.Kill(-leaderPid, syscall.SIGKILL) })
+	if err := waitForGroupMembers(leaderPid, 2, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeOwnerRecord(ownerPath, ownerRecord{PID: leaderPid, SocketPath: socketPath}); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(leaderPid, syscall.SIGKILL); err != nil {
+		t.Fatalf("kill managed leader: %v", err)
+	}
+	waitErr := command.Wait()
+
+	var output bytes.Buffer
+	finalizeManagedExit(command, &output, ownerPath, socketPath, waitErr, nil, false)
+
+	logs := output.String()
+	if !strings.Contains(logs, "event=managed_codex_host_reaped pid="+strconv.Itoa(leaderPid)) {
+		t.Fatalf("survivor group was not reaped: %q", logs)
 	}
 	if _, err := os.Stat(ownerPath); !os.IsNotExist(err) {
 		t.Fatalf("owner record still exists: %v", err)
