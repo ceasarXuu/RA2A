@@ -158,7 +158,7 @@ v0.0.15 保持文本消息，候选字段：
 
 - **V9 daemon 自动挂接未生效**：standalone codex 0.153.4 + 官方 daemon 在本机实测，普通 `codex` TUI 未自动连到 daemon（源码含 `maybe_probe_default_daemon_socket` 机制但发布版未触发）；且 `thread-follower-*` 仅存在于 Desktop 私有侧，开源 CLI 无等价的「正常运行即暴露注入通道」。
 - **Owner 确认采用「包装器代传 `--remote`」路线**：`cmd/codex-wrapper` 在 RA2A 托管 app-server 可用（owner lease + socket 可连）时向用户普通 TUI 启动注入 `--remote unix://<managed socket>`；RA2A 不可用、已卸载或用户显式指定 `--remote` 时完整透传原生 codex，不影响原生体验。server 始终是官方 `codex app-server` 二进制，RA2A 保持纯客户端。
-- **原型已端到端验证**（commit `6774ad1`）：注入 / 无 lease 降级透传 / 显式 `--remote` 透传三种行为均通过；单测覆盖参数分类、lease 门禁、socket 活性判定与自引用防护。安装器集成（改名 `codex.bin` + 卸载还原）待 Phase 4 完成。
+- **原型已端到端验证**（commit `6774ad1`）：注入 / 无 lease 降级透传 / 显式 `--remote` 透传三种行为均通过；单测覆盖参数分类、lease 门禁、socket 活性判定与自引用防护。queue 投递链（`1a5d83e`）真机验证：活跃回合入队 → TUI 实时显示 → 下回合精确执行。安装器集成（`d7fac02`）：`install.sh --codex-wrapper` / `install.ps1 -CodexWrapper` 安装包装器与 marker，卸载自动还原原生 codex，拒绝覆盖非 RA2A 管理的 `codex`；未在正式机执行。Phase 4 剩余 MCP 来源识别/config 迁移仍待办。
 
 ## 6. 实施阶段
 
