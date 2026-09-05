@@ -160,6 +160,54 @@ func TestRealCodexPrefersSiblingBinary(t *testing.T) {
 	}
 }
 
+func TestRealCodexFallsBackToPathExcludingWrapper(t *testing.T) {
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "codex")
+	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	realDir := t.TempDir()
+	real := filepath.Join(realDir, "codex")
+	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Join(dir, "bin")+string(os.PathListSeparator)+realDir)
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := realCodex(wrapper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != real {
+		t.Fatalf("realCodex = %q, want %q", got, real)
+	}
+}
+
+func TestRealCodexPrefersOfficialStandaloneManagedPath(t *testing.T) {
+	home := newShortDir(t)
+	t.Setenv("CODEX_HOME", home)
+	standalone := filepath.Join(home, "packages", "standalone", "current", "bin", "codex")
+	if err := os.MkdirAll(filepath.Dir(standalone), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(standalone, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(t.TempDir(), "codex")
+	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+	got, err := realCodex(wrapper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != standalone {
+		t.Fatalf("realCodex = %q, want official standalone %q", got, standalone)
+	}
+}
+
 func TestReadySocketTimeoutDoesNotHang(t *testing.T) {
 	home := newShortDir(t)
 	t.Setenv("CODEX_HOME", home)

@@ -140,6 +140,11 @@ func realCodex(exe string) (string, error) {
 	if info, err := os.Stat(sibling); err == nil && !info.IsDir() {
 		return sibling, nil
 	}
+	// Official standalone managed install layout (chatgpt.com/codex/install.sh).
+	standalone := filepath.Join(codexHome(), "packages", "standalone", "current", "bin", "codex")
+	if info, err := os.Stat(standalone); err == nil && !info.IsDir() {
+		return standalone, nil
+	}
 	resolved, err := exec.LookPath("codex")
 	if err != nil {
 		return "", err
