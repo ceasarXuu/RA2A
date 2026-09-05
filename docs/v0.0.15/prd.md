@@ -1,8 +1,8 @@
-# PRD：RA2A v1.1.0 Codex CLI 与全交叉 Agent 互通
+# PRD：RA2A v0.0.15 Codex CLI 与全交叉 Agent 互通
 
 - 状态：Ready for implementation
 - 创建日期：2026-09-02
-- 版本范围：v1.1.0
+- 版本范围：v0.0.15
 - 请求方：项目 Owner
 - 工程计划：[engineering-plan.md](./engineering-plan.md)
 
@@ -10,7 +10,7 @@
 
 已确认：
 
-- v1.1.0 加入 Codex CLI 支持。
+- v0.0.15 加入 Codex CLI 支持。
 - RA2A 的长期支持模型是全交叉互通，而不是同类 Agent 互通或按 Agent 对逐一集成。
 - 异构 Agent 的会话、消息、所有权和投递语义差异由 RA2A 的兼容适配层吸收。
 - 架构必须允许通过新增适配器扩展 Agent 类型，避免修改已有适配器或增加 N×N 路由分支。
@@ -22,7 +22,7 @@
 
 当前 RA2A 已支持局域网内多个 Codex App session 的发现和定向消息投递。现有实现围绕 Codex App 的 App Server、Desktop IPC 和 session writer 约束建立，直接在现有路径中加入 Codex CLI 条件分支，会把宿主差异扩散到发现、寻址、路由和错误处理层。
 
-v1.1.0 首次引入第二类 Agent 宿主。它必须同时完成两件事：
+v0.0.15 首次引入第二类 Agent 宿主。它必须同时完成两件事：
 
 1. 让 Codex App 与 Codex CLI 在四个方向上互通。
 2. 建立可复用的兼容边界，使后续接入 Claude Code、OpenCode、Pi 等 Agent 时只需实现各自适配器。
@@ -62,7 +62,7 @@ v1.1.0 首次引入第二类 Agent 宿主。它必须同时完成两件事：
 
 ## 非目标
 
-v1.1.0 不包含：
+v0.0.15 不包含：
 
 - 实现 Codex App 和 Codex CLI 之外的 Agent 适配器
 - 文件、图片或流式内容传输
@@ -81,7 +81,7 @@ v1.1.0 不包含：
 6. 目标适配器将消息转换为宿主能接受的操作，并返回统一投递结果。
 7. 失败时，调用方获得稳定且与宿主无关的错误语义；诊断信息可以保留宿主细节。
 
-## v1.1.0 功能范围
+## v0.0.15 功能范围
 
 ### 端点发现
 
@@ -147,7 +147,7 @@ Codex CLI 当前提供以下官方入口：
 - `codex --remote ws://...|unix://...` 可让 TUI 连接远端 App Server。
 - App Server 提供 `thread/list`、`thread/resume` 和 `turn/start` 等接口。
 
-但官方将 `codex app-server` 命令标为 Experimental，可能无预告变化。因此 v1.1.0 不能只依据命令存在就承诺兼容性，必须验证活跃 TUI writer、UI 刷新、并发 turn 和跨平台行为。
+但官方将 `codex app-server` 命令标为 Experimental，可能无预告变化。因此 v0.0.15 不能只依据命令存在就承诺兼容性，必须验证活跃 TUI writer、UI 刷新、并发 turn 和跨平台行为。
 
 资料：
 
@@ -175,11 +175,11 @@ Codex CLI 具体采用 direct resume、共享 App Server 或其他宿主所有�
 
 ## Confirmed Product Decisions
 
-> 此区块为 v1.1.0 的受保护产品决策。后续实现计划只能引用，不能静默改写。既有版本已确认决策继续有效；其中“第一版仅限 Codex App”是 v1.0 范围约束，与本版本不冲突。
+> 此区块为 v0.0.15 的受保护产品决策。后续实现计划只能引用，不能静默改写。既有版本已确认决策继续有效；其中“第一版仅限 Codex App”是 v1.0 范围约束，与本版本不冲突。
 
 | ID | Status | Decision | Rationale | Confirmation Evidence | Supersedes | Revisit Trigger |
 | --- | --- | --- | --- | --- | --- | --- |
-| PD25 | Active | v1.1.0 加入 Codex CLI 支持。 | 本版本明确目标。 | Owner：`在 docs/v1.1.0 中开始做版本规划，目标是加入 codex cli 支持`（2026-09-02） | — | Owner 调整 v1.1.0 范围 |
+| PD25 | Active | v0.0.15 加入 Codex CLI 支持。 | 本版本明确目标。 | Owner：`在 docs/v0.0.15 中开始做版本规划，目标是加入 codex cli 支持`（2026-09-02） | — | Owner 调整 v0.0.15 范围 |
 | PD26 | Active | RA2A 的 Agent 支持采用全交叉模型：任意已支持 Agent 都必须能与其他任意已支持 Agent 进行 RA2A 通信。 | 避免同类孤岛和只覆盖部分组合。 | Owner：`agent 服务支持目标是全交叉支持，即任何 agent 都要支持和其他所有不同类型的 agent 进行 ra2a`（2026-09-02） | — | Owner 修改长期互操作目标 |
 | PD27 | Active | 不同 Agent 架构之间的兼容适配是 RA2A 的核心职责。 | 调用 Agent 不应承担异构宿主转换。 | Owner：`ra2a 的一个重要工作就是做不同架构之间的兼容适配`（2026-09-02） | — | 兼容责任边界被重新定义 |
 | PD28 | Active | RA2A 必须采用强扩展、灵活的架构支撑持续新增 Agent 类型。 | 异构兼容会持续增加，不应形成成对耦合。 | Owner：`这对 ra2a 本身的架构也有挑战，需要设计成强扩展性的灵活架构`（2026-09-02） | — | Owner 接受限定宿主或一次性集成架构 |

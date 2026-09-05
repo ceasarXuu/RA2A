@@ -1,4 +1,4 @@
-# RA2A v1.1.0 工程实施计划
+# RA2A v0.0.15 工程实施计划
 
 - 状态：ready-for-execution
 - 计划日期：2026-09-02
@@ -96,7 +96,7 @@ LAN 和 MCP 对外只暴露完成任务所需字段，不暴露 socket、pipe �
 
 ### 4.3 统一消息信封
 
-v1.1.0 保持文本消息，候选字段：
+v0.0.15 保持文本消息，候选字段：
 
 - 消息 ID
 - 协议版本
@@ -135,7 +135,7 @@ v1.1.0 保持文本消息，候选字段：
 | V6 | 同一节点 App 与 CLI 端点能否无冲突汇总 | 同机同时运行两类宿主并发现 | 地址唯一、类型正确、投递到唯一目标 | 调整端点身份模型并复验；不得从 `thread.source` 猜测类型 |
 | V7 | 单 App Server + remote TUI 能否安全接收 active-turn follow-up | 首条消息触发长时间 turn，在执行期间注入第二条消息并继续人工输入 | follow-up 在同一 thread 中精确执行一次、无重复、TUI 实时更新、人工输入正常 | 不进入 CLI 适配器实现，重新评估活跃 turn 投递入口 |
 
-实验输出写入 `docs/v1.1.0/experiments/`，记录命令、版本、平台、观察结果和结论。只有结论进入架构，原始日志不提交敏感信息。
+实验输出写入 `docs/v0.0.15/experiments/`，记录命令、版本、平台、观察结果和结论。只有结论进入架构，原始日志不提交敏感信息。
 
 所有实验先通过 PD32 隔离门禁：使用独立的开发配置、运行目录、日志、控制地址、App Server socket、节点身份和测试会话；不得执行会安装、升级、停止、重启或重新配置本机正式版的命令。启动前检查与正式版的资源冲突，无法确认隔离时立即停止。
 
@@ -186,7 +186,7 @@ v1.1.0 保持文本消息，候选字段：
 要求：
 
 - 明确协议版本和能力字段。
-- v1.0 节点与 v1.1.0 节点混用时，不得误投或崩溃。
+- v0.0.14 节点与 v0.0.15 节点混用时，不得误投或崩溃。
 - 若地址格式变化，提供已确认的兼容读取期；写出统一新格式。
 
 验证：协议编解码、旧新节点矩阵、未知 Agent 类型和未知能力测试。
@@ -236,20 +236,20 @@ v1.1.0 保持文本消息，候选字段：
 - README 支持列表将 Codex CLI 从计划支持改为当前支持。
 - 补充 CLI 启动、发现、发送和故障排查说明。
 - 记录实验接口兼容范围和最低 Codex CLI 版本。
-- 按现有 GitHub Release 流程发布 v1.1.0，附迁移说明和已知限制。
+- 按现有 GitHub Release 流程发布 v0.0.15，附迁移说明和已知限制。
 
 ## 7. 工作单元与提交边界
 
 | 工作单元 | 可独立验收结果 | 建议原子提交 |
 | --- | --- | --- |
-| W0a | V1-V4 首轮所有权实验完成 | `docs(v1.1.0): validate Codex CLI ownership model` |
-| W0b | V5-V7、三平台和正式版隔离验证完成，Phase 0 结论冻结 | `docs(v1.1.0): freeze Codex CLI feasibility` |
+| W0a | V1-V4 首轮所有权实验完成 | `docs(v0.0.15): validate Codex CLI ownership model` |
+| W0b | V5-V7、三平台和正式版隔离验证完成，Phase 0 结论冻结 | `docs(v0.0.15): freeze Codex CLI feasibility` |
 | W1 | Agent 核心契约与假适配器通过 | `refactor(core): introduce agent adapter boundary` |
 | W2 | 现有 Codex App 行为迁入适配器且无回归 | `refactor(codex-app): isolate host integration` |
 | W3 | 端点协议与混合版本测试通过 | `feat(protocol): add typed agent endpoints` |
 | W4 | Codex CLI 适配器真实投递通过 | `feat(codex-cli): add session adapter` |
 | W5 | 安装、MCP 来源识别和配置迁移通过 | `feat(setup): register Codex CLI integration` |
-| W6 | 四方向长时间测试和发布文档完成 | `release: prepare v1.1.0` |
+| W6 | 四方向长时间测试和发布文档完成 | `release: prepare v0.0.15` |
 
 不得将架构重构、CLI 新能力和发布元数据压入同一提交。
 

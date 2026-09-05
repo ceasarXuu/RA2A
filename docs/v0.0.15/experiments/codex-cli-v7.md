@@ -19,7 +19,7 @@ CLI 的活跃回合语义与 Codex Desktop 不同：`codex queue` 在 active tur
 实验 App Server 只监听工作区内的独立地址：
 
 ```text
-unix:///Volumes/inwolf-4T/projects/RA2A/.cache/v1.1.0-v7-20260903/app-server.sock
+unix:///Volumes/inwolf-4T/projects/RA2A/.cache/v0.0.15-v7-20260903/app-server.sock
 ```
 
 实验结束后该 socket 自动清理；正式版 RA2A daemon 和 Codex App Server 的 PID 保持不变。
