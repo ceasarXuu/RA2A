@@ -20,6 +20,7 @@ import (
 type options struct {
 	threadID         string
 	message          string
+	queueMessage     string
 	ephemeralMessage string
 	cwd              string
 	allowWrite       bool
@@ -29,11 +30,15 @@ type options struct {
 
 func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 	if opts.ephemeralMessage != "" {
-		if opts.threadID != "" || opts.message != "" || opts.probeContext {
+		if opts.threadID != "" || opts.message != "" || opts.probeContext || opts.queueMessage != "" {
 			return errors.New("--ephemeral-message cannot be combined with thread or context options")
 		}
 		if !opts.allowWrite {
 			return errors.New("refusing to start an ephemeral turn without --allow-write")
+		}
+	} else if opts.queueMessage != "" {
+		if opts.threadID == "" || opts.message == "" || opts.probeContext || opts.ephemeralMessage != "" {
+			return errors.New("--queue-add requires thread-id and message and no other write options")
 		}
 	} else if opts.probeContext {
 		if opts.threadID == "" || opts.message != "" {
@@ -67,6 +72,13 @@ func run(client *appserverprobe.Client, opts options, output io.Writer) error {
 				"thread":   json.RawMessage(threadResult),
 				"turn":     json.RawMessage(result),
 			})
+		}
+	} else if opts.queueMessage != "" {
+		submission, queueErr := client.QueueMessage(opts.threadID, appserverprobe.NewMessageID(), opts.queueMessage)
+		if queueErr != nil {
+			err = queueErr
+		} else {
+			result, err = json.Marshal(map[string]any{"queuedSubmission": submission})
 		}
 	} else if opts.probeContext {
 		result, err = client.CallMCPTool(opts.threadID, "ra2a_probe", "probe_context", map[string]any{})
@@ -102,6 +114,21 @@ func openRemoteClient(ctx context.Context, socketPath string) (*appserverprobe.C
 	return appserverprobe.New(connection, connection), connection, nil
 }
 
+func openExperimentalRemoteClient(ctx context.Context, socketPath string) (*appserverprobe.Client, io.Closer, error) {
+	connection, err := codexhost.DialUnixWebSocket(ctx, socketPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return appserverprobe.NewExperimental(connection, connection), connection, nil
+}
+
+func newClientFor(input io.Reader, output io.Writer, experimental bool) *appserverprobe.Client {
+	if experimental {
+		return appserverprobe.NewExperimental(input, output)
+	}
+	return appserverprobe.New(input, output)
+}
+
 func main() {
 	var opts options
 	var codexPath string
@@ -111,6 +138,7 @@ func main() {
 	flag.StringVar(&codexPath, "codex", "codex", "path to the Codex CLI binary")
 	flag.StringVar(&opts.threadID, "thread-id", "", "target thread ID; omit for a read-only list")
 	flag.StringVar(&opts.message, "message", "", "message for the target thread")
+	flag.StringVar(&opts.queueMessage, "queue-add", "", "queue a message for the target thread (CLI delivery surface)")
 	flag.StringVar(&opts.ephemeralMessage, "ephemeral-message", "", "message for a non-persistent probe thread")
 	flag.BoolVar(&opts.allowWrite, "allow-write", false, "allow resume and turn/start on the target thread")
 	flag.BoolVar(&opts.probeContext, "probe-context", false, "call the RA2A MCP context probe on thread-id")
@@ -133,6 +161,9 @@ func main() {
 	defer cancel()
 	if socketPath != "" {
 		client, closer, openErr := openRemoteClient(ctx, socketPath)
+		if opts.queueMessage != "" {
+			client, closer, openErr = openExperimentalRemoteClient(ctx, socketPath)
+		}
 		if openErr != nil {
 			fmt.Fprintln(os.Stderr, openErr)
 			os.Exit(1)
@@ -177,7 +208,7 @@ func main() {
 		_ = command.Wait()
 	}()
 
-	if err := run(appserverprobe.New(stdout, stdin), opts, os.Stdout); err != nil {
+	if err := run(newClientFor(stdout, stdin, opts.queueMessage != ""), opts, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

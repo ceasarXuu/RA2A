@@ -290,6 +290,97 @@ func TestStartEphemeralThreadUsesRequestedWorkspace(t *testing.T) {
 	}
 }
 
+func TestInitializeDefaultDoesNotDeclareExperimentalApi(t *testing.T) {
+	responses := `{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"codex","version":"test"}}}`
+	var requests bytes.Buffer
+	client := New(strings.NewReader(responses), &requests)
+	if err := client.Initialize(); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	params := decodeRequests(t, requests.Bytes())[0]["params"].(map[string]any)
+	capabilities := params["capabilities"].(map[string]any)
+	if capabilities["experimentalApi"] != false {
+		t.Fatalf("experimentalApi = %v, want false for default client", capabilities["experimentalApi"])
+	}
+}
+
+func TestInitializeExperimentalNegotiatesExperimentalApi(t *testing.T) {
+	responses := `{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"codex","version":"test"}}}`
+	var requests bytes.Buffer
+	client := NewExperimental(strings.NewReader(responses), &requests)
+	if err := client.Initialize(); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	params := decodeRequests(t, requests.Bytes())[0]["params"].(map[string]any)
+	capabilities := params["capabilities"].(map[string]any)
+	if capabilities["experimentalApi"] != true {
+		t.Fatalf("experimentalApi = %v, want true", capabilities["experimentalApi"])
+	}
+}
+
+func TestQueueMessageSendsQueueAddContract(t *testing.T) {
+	responses := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"codex","version":"test"}}}`,
+		`{"jsonrpc":"2.0","id":2,"result":{"queuedSubmission":{"id":"submission-1"}}}`,
+	}, "\n")
+	var requests bytes.Buffer
+	client := NewExperimental(strings.NewReader(responses), &requests)
+	if err := client.Initialize(); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	submission, err := client.QueueMessage("thread-1", "msg-42", "hello queued")
+	if err != nil {
+		t.Fatalf("queue message: %v", err)
+	}
+	if submission.ID != "submission-1" {
+		t.Fatalf("submission ID = %q", submission.ID)
+	}
+	request := decodeRequests(t, requests.Bytes())[2]
+	if request["method"] != "thread/queue/add" {
+		t.Fatalf("method = %v", request["method"])
+	}
+	params := request["params"].(map[string]any)
+	if params["threadId"] != "thread-1" || params["clientUserMessageId"] != "msg-42" {
+		t.Fatalf("params = %#v", params)
+	}
+	input := params["input"].([]any)[0].(map[string]any)
+	if input["type"] != "text" || input["text"] != "hello queued" {
+		t.Fatalf("input = %#v", input)
+	}
+}
+
+func TestQueueMessageParsesSubmissionVariants(t *testing.T) {
+	for _, fixture := range []struct {
+		result   string
+		expected string
+	}{
+		{`{"submission":{"id":"sub-2"}}`, "sub-2"},
+		{`{"id":"top-level"}`, "top-level"},
+		{`{}`, ""},
+	} {
+		submission, err := decodeQueuedSubmission(json.RawMessage(fixture.result))
+		if err != nil {
+			t.Fatalf("decode %s: %v", fixture.result, err)
+		}
+		if submission.ID != fixture.expected {
+			t.Fatalf("decode %s: id = %q, want %q", fixture.result, submission.ID, fixture.expected)
+		}
+	}
+}
+
+func TestQueueMessageSurfacesExperimentalApiRejection(t *testing.T) {
+	responses := `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"thread/queue/add requires experimentalApi capability"}}`
+	var requests bytes.Buffer
+	client := New(strings.NewReader(responses), &requests)
+	_, err := client.QueueMessage("thread-1", "msg-1", "hello")
+	if err == nil {
+		t.Fatal("expected experimentalApi rejection error")
+	}
+	if !strings.Contains(err.Error(), "experimentalApi capability") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func decodeRequests(t *testing.T, data []byte) []map[string]any {
 	t.Helper()
 	decoder := json.NewDecoder(bytes.NewReader(data))

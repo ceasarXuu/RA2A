@@ -1,17 +1,21 @@
 package appserverprobe
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 type Client struct {
-	decoder *json.Decoder
-	encoder *json.Encoder
-	nextID  int64
+	decoder        *json.Decoder
+	encoder        *json.Encoder
+	nextID         int64
+	experimentalAP bool
 }
 
 type response struct {
@@ -38,14 +42,33 @@ type ThreadSummary struct {
 
 const maxThreadTitleBytes = 160
 
+// NewMessageID returns a client-generated stable ID suitable for
+// clientUserMessageId in thread/queue/add and turn/start.
+func NewMessageID() string {
+	random := make([]byte, 8)
+	if _, err := rand.Read(random); err != nil {
+		return fmt.Sprintf("ra2a-%d", time.Now().UnixNano())
+	}
+	return "ra2a-" + hex.EncodeToString(random)
+}
+
 func New(input io.Reader, output io.Writer) *Client {
 	return &Client{decoder: json.NewDecoder(input), encoder: json.NewEncoder(output)}
+}
+
+// NewExperimental returns a client that negotiates capabilities.experimentalApi
+// during initialize. The Codex CLI delivery surface (thread/queue/*) rejects
+// clients that do not declare it; the Desktop path does not need it.
+func NewExperimental(input io.Reader, output io.Writer) *Client {
+	client := New(input, output)
+	client.experimentalAP = true
+	return client
 }
 
 func (client *Client) Initialize() error {
 	_, err := client.call("initialize", map[string]any{
 		"clientInfo":   map[string]string{"name": "ra2a", "title": "RA2A", "version": "0.1.0"},
-		"capabilities": map[string]any{"experimentalApi": false},
+		"capabilities": map[string]any{"experimentalApi": client.experimentalAP},
 	})
 	if err != nil {
 		return err
@@ -172,6 +195,51 @@ func (client *Client) InjectMessage(threadID, text string) (json.RawMessage, err
 		return nil, fmt.Errorf("resume thread: %w", err)
 	}
 	return client.StartTurn(threadID, text)
+}
+
+// QueuedSubmission is the stable identity the app-server assigns to a queued
+// user turn; field names follow the V5 contract projection and are read
+// defensively until V8 pins the exact response shape.
+type QueuedSubmission struct {
+	ID string
+}
+
+// QueueMessage persists a user turn for FIFO submission when the thread next
+// becomes idle. It is the CLI delivery surface: it never creates a second
+// writer and queues during an active turn (V7 semantics).
+func (client *Client) QueueMessage(threadID, messageID, text string) (QueuedSubmission, error) {
+	result, err := client.call("thread/queue/add", map[string]any{
+		"threadId":            threadID,
+		"clientUserMessageId": messageID,
+		"input":               []map[string]string{{"type": "text", "text": text}},
+	})
+	if err != nil {
+		return QueuedSubmission{}, fmt.Errorf("queue message: %w", err)
+	}
+	return decodeQueuedSubmission(result)
+}
+
+func decodeQueuedSubmission(result json.RawMessage) (QueuedSubmission, error) {
+	var decoded struct {
+		QueuedSubmission struct {
+			ID string `json:"id"`
+		} `json:"queuedSubmission"`
+		Submission struct {
+			ID string `json:"id"`
+		} `json:"submission"`
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(result, &decoded); err != nil {
+		return QueuedSubmission{}, fmt.Errorf("decode queued submission: %w", err)
+	}
+	submission := decoded.QueuedSubmission.ID
+	if submission == "" {
+		submission = decoded.Submission.ID
+	}
+	if submission == "" {
+		submission = decoded.ID
+	}
+	return QueuedSubmission{ID: submission}, nil
 }
 
 func (client *Client) StartEphemeralThread(cwd string) (string, error) {
