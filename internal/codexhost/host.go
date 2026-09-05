@@ -184,6 +184,7 @@ func (host *Host) ensureConnected(ctx context.Context) error {
 	}
 	if host.process != nil && processDone(host.process) {
 		host.disconnect()
+		host.reapManaged(host.process)
 		host.process = nil
 	}
 	if host.client != nil {
@@ -237,6 +238,7 @@ func (host *Host) watchProcess(ctx context.Context, process *managedProcess) {
 	}
 	host.disconnect()
 	host.process = nil
+	host.reapManaged(process)
 	_ = host.ensureConnected(ctx)
 }
 
@@ -257,6 +259,21 @@ func (host *Host) disconnect() {
 	}
 	host.connection = nil
 	host.client = nil
+}
+
+// reapManaged terminates any residual process group members left behind by an
+// exited managed leader (for example the codex child of a killed node wrapper
+// on Linux). It only logs when it actually killed surviving members.
+func (host *Host) reapManaged(process *managedProcess) {
+	if process == nil || process.command == nil || process.command.Process == nil {
+		return
+	}
+	if err := terminateManagedProcess(process.command); err != nil {
+		return
+	}
+	if host.config.Stderr != nil {
+		fmt.Fprintf(host.config.Stderr, "event=managed_codex_host_reaped pid=%d\n", process.command.Process.Pid)
+	}
 }
 
 func processDone(process *managedProcess) bool {

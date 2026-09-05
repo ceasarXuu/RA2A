@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -13,7 +14,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -197,6 +200,114 @@ func TestHostRestartsManagedProcessWithoutWaitingForRequest(t *testing.T) {
 	case <-restarted:
 	case <-time.After(time.Second):
 		t.Fatal("managed process was not restarted proactively")
+	}
+}
+
+func TestSupervisorReapsResidualProcessGroupAfterManagedLeaderExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group fixture is Unix-only")
+	}
+	firstClient, firstServer := net.Pipe()
+	secondClient, secondServer := net.Pipe()
+	defer secondServer.Close()
+
+	firstDone := make(chan struct{})
+	restarted := make(chan struct{})
+	startCalls := 0
+	var leaderPid int
+	start := func(context.Context, Config) (*managedProcess, error) {
+		startCalls++
+		if startCalls == 1 {
+			command := exec.Command("sh", "-c", "sleep 60 & sleep 60")
+			command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			if err := command.Start(); err != nil {
+				return nil, err
+			}
+			leaderPid = command.Process.Pid
+			process := &managedProcess{command: command, done: firstDone}
+			go func() { _ = command.Wait(); close(firstDone) }()
+			return process, nil
+		}
+		close(restarted)
+		return &managedProcess{done: make(chan struct{})}, nil
+	}
+	connectCalls := 0
+	connect := func(context.Context, string) (io.ReadWriteCloser, error) {
+		connectCalls++
+		if connectCalls == 1 {
+			return firstClient, nil
+		}
+		return secondClient, nil
+	}
+	serveHostProtocol(t, firstServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
+	serveHostProtocol(t, secondServer, []rpcExchange{{method: "initialize", result: map[string]any{}}})
+
+	host, err := startWith(context.Background(), Config{SocketPath: "/managed.sock"}, start, connect, time.Millisecond)
+	if err != nil {
+		t.Fatalf("start host: %v", err)
+	}
+	defer host.Close()
+	host.restartDelay = 50 * time.Millisecond
+
+	groupMembers := func() int {
+		entries, err := os.ReadDir("/proc")
+		if err != nil {
+			return 0
+		}
+		members := 0
+		for _, entry := range entries {
+			pid, err := strconv.Atoi(entry.Name())
+			if err != nil {
+				continue
+			}
+			stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+			if err != nil {
+				continue
+			}
+			index := strings.Index(string(stat), ")")
+			if index < 0 {
+				continue
+			}
+			fields := strings.Fields(string(stat)[index+1:])
+			if len(fields) < 3 {
+				continue
+			}
+			pgrp, err := strconv.Atoi(fields[2])
+			if err == nil && pgrp == leaderPid {
+				members++
+			}
+		}
+		return members
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for groupMembers() < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("managed leader never forked its residual child")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := syscall.Kill(leaderPid, syscall.SIGKILL); err != nil {
+		t.Fatalf("kill managed leader: %v", err)
+	}
+	<-firstDone
+
+	if err := syscall.Kill(-leaderPid, 0); err != nil {
+		t.Fatalf("residual child process group vanished before supervision reaped it: %v", err)
+	}
+	select {
+	case <-restarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("managed process was not restarted proactively")
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		if err := syscall.Kill(-leaderPid, 0); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("residual child of exited managed leader was not reaped")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
