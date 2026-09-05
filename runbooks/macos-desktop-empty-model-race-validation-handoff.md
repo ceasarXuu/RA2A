@@ -44,9 +44,12 @@ invalid_request_error: The '' model is not supported when using Codex with a Cha
 1. active turn 仍只走 steer，不读取或改变模型。
 2. steer 明确 inactive 后，RA2A 通过受管 App Server 执行
    `thread/read(includeTurns=false)`；若 thread model 非空则使用它。
-3. thread model 为空时执行 `model/list`，选择 `isDefault=true` 的当前默认模型；不得
-   硬编码 `gpt-5.6-sol` 或其他名称。
-4. 解析不到非空模型时，在 start 帧写出前明确失败。
+3. thread model 为空时，读取该线程 rollout 记录中的原始模型：
+   `session_meta.base_instructions.provenance.model` 优先，其次最后一条
+   `turn_context.model`。**不再执行 `model/list` 默认模型回退**：app-server 默认模型
+   不得覆盖线程原有模型（曾导致 Desktop 模型选择被改写为默认值）。
+4. rollout 中也解析不到模型时，在 start 帧写出前明确失败；用户应在 Desktop
+   中为该 session 设置模型后重试。
 5. `thread-follower-update-thread-settings` 的 `threadSettings.model` 必须携带解析结果，
    随后的 `thread-follower-start-turn` 在 `turnStart.request.model` 中携带同一值。
    只设置后一处已被 Windows R8 实机证明仍会产生空 `turn_context.model`。
@@ -134,7 +137,7 @@ renderer/error-boundary 或 IPC reset
 正常 idle 路径应为：
 
 ```text
-receive → steer 明确 inactive 拒绝 → thread/read → 必要时 model/list
+receive → steer 明确 inactive 拒绝 → thread/read → 必要时读 rollout 原始模型
 → 携带非空 model 的 settings update → 一次携带同一 model 的 start-turn
 → turn/start → task_started → task_complete
 ```
@@ -169,7 +172,7 @@ $logs | Select-String -Pattern `
 ```
 
 如果仍观察到空 model 错误，立即判定 FAIL；记录 start request 是否携带非空 model，
-不要重试。thread model 为空和默认模型回退分支由自动化单元测试覆盖。
+不要重试。thread model 为空、rollout 原始模型读取和拒绝分支由自动化单元测试覆盖。
 
 ### Rollout 统计
 
@@ -210,7 +213,7 @@ single successful turn ID:
 empty-model rejection observed: yes/no
 settings barrier observed: yes/no
 resolved model non-empty: yes/no
-model source: thread/read or model/list default
+model source: thread/read or rollout record
 retry count:
 manual continuation succeeded: yes/no
 Desktop restart during formal test: yes/no

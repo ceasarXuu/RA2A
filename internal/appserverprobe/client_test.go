@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -171,36 +173,69 @@ func TestResolveThreadModelUsesStoredThreadModel(t *testing.T) {
 	}
 }
 
-func TestResolveThreadModelFallsBackToCurrentDefault(t *testing.T) {
-	responses := strings.Join([]string{
-		`{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":""}}}`,
-		`{"jsonrpc":"2.0","id":2,"result":{"data":[{"model":"gpt-5.5","isDefault":false},{"model":"gpt-5.6-sol","isDefault":true}],"nextCursor":null}}`,
-	}, "\n")
+func TestResolveThreadModelUsesRolloutProvenanceModel(t *testing.T) {
+	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
+	provenance := `{"type":"session_meta","payload":{"base_instructions":{"provenance":{"model":"gpt-5.3-codex-spark"}}}}` + "\n"
+	if err := os.WriteFile(rollout, []byte(provenance), 0o600); err != nil {
+		t.Fatalf("write rollout: %v", err)
+	}
+	response := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":"","path":%q}}}`, rollout)
 	var requests bytes.Buffer
-	client := New(strings.NewReader(responses), &requests)
+	client := New(strings.NewReader(response), &requests)
 
 	model, err := client.ResolveThreadModel("thread-1")
 	if err != nil {
 		t.Fatalf("resolve thread model: %v", err)
 	}
-	if model != "gpt-5.6-sol" {
+	if model != "gpt-5.3-codex-spark" {
 		t.Fatalf("model = %q", model)
 	}
 	requestList := decodeRequests(t, requests.Bytes())
-	if len(requestList) != 2 || requestList[0]["method"] != "thread/read" || requestList[1]["method"] != "model/list" {
+	if len(requestList) != 1 || requestList[0]["method"] != "thread/read" {
 		t.Fatalf("requests = %#v", requestList)
 	}
 }
 
-func TestResolveThreadModelRejectsMissingDefault(t *testing.T) {
-	responses := strings.Join([]string{
-		`{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":" "}}}`,
-		`{"jsonrpc":"2.0","id":2,"result":{"data":[{"model":"gpt-5.5","isDefault":false}],"nextCursor":null}}`,
-	}, "\n")
-	client := New(strings.NewReader(responses), &bytes.Buffer{})
+func TestResolveThreadModelUsesLastTurnContextModel(t *testing.T) {
+	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
+	records := strings.Join([]string{
+		`{"type":"session_meta","payload":{}}`,
+		`{"type":"turn_context","payload":{"model":"gpt-5.2"}}`,
+		`{"type":"turn_context","payload":{"model":"gpt-5.3"}}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(rollout, []byte(records), 0o600); err != nil {
+		t.Fatalf("write rollout: %v", err)
+	}
+	response := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":"","path":%q}}}`, rollout)
+	var requests bytes.Buffer
+	client := New(strings.NewReader(response), &requests)
+
+	model, err := client.ResolveThreadModel("thread-1")
+	if err != nil {
+		t.Fatalf("resolve thread model: %v", err)
+	}
+	if model != "gpt-5.3" {
+		t.Fatalf("model = %q", model)
+	}
+}
+
+func TestResolveThreadModelRejectsThreadWithoutModel(t *testing.T) {
+	response := `{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":" "}}}`
+	client := New(strings.NewReader(response), &bytes.Buffer{})
 
 	_, err := client.ResolveThreadModel("thread-1")
-	if err == nil || !strings.Contains(err.Error(), "default model") {
+	if err == nil || !strings.Contains(err.Error(), "no model") {
+		t.Fatalf("error = %v", err)
+	}
+
+	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
+	if err := os.WriteFile(rollout, []byte(`{"type":"session_meta","payload":{}}`+"\n"), 0o600); err != nil {
+		t.Fatalf("write rollout: %v", err)
+	}
+	response = fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1","model":"","path":%q}}}`, rollout)
+	client = New(strings.NewReader(response), &bytes.Buffer{})
+	_, err = client.ResolveThreadModel("thread-1")
+	if err == nil || !strings.Contains(err.Error(), "no model") {
 		t.Fatalf("error = %v", err)
 	}
 }

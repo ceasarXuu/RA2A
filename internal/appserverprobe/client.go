@@ -152,6 +152,7 @@ func (client *Client) ResolveThreadModel(threadID string) (string, error) {
 	var threadResult struct {
 		Thread struct {
 			Model string `json:"model"`
+			Path  string `json:"path"`
 		} `json:"thread"`
 	}
 	if err := json.Unmarshal(result, &threadResult); err != nil {
@@ -160,28 +161,10 @@ func (client *Client) ResolveThreadModel(threadID string) (string, error) {
 	if model := strings.TrimSpace(threadResult.Thread.Model); model != "" {
 		return model, nil
 	}
-
-	result, err = client.call("model/list", map[string]any{
-		"cursor": nil, "includeHidden": true, "limit": 100,
-	})
-	if err != nil {
-		return "", fmt.Errorf("list models: %w", err)
+	if model, err := rolloutModel(threadResult.Thread.Path); err == nil {
+		return model, nil
 	}
-	var modelResult struct {
-		Data []struct {
-			Model     string `json:"model"`
-			IsDefault bool   `json:"isDefault"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(result, &modelResult); err != nil {
-		return "", fmt.Errorf("decode model/list response: %w", err)
-	}
-	for _, candidate := range modelResult.Data {
-		if model := strings.TrimSpace(candidate.Model); candidate.IsDefault && model != "" {
-			return model, nil
-		}
-	}
-	return "", errors.New("model/list response did not include a default model")
+	return "", errors.New("thread has no model: set a model in Codex Desktop and retry")
 }
 
 func (client *Client) InjectMessage(threadID, text string) (json.RawMessage, error) {

@@ -300,19 +300,21 @@ func TestSendMessageMapsActiveWriterToSessionBusy(t *testing.T) {
 	}
 }
 
-func TestResolveThreadModelFallsBackToManagedHostDefault(t *testing.T) {
+func TestResolveThreadModelUsesRolloutProvenanceModel(t *testing.T) {
 	clientSide, serverSide := net.Pipe()
 	defer serverSide.Close()
 	connect := func(context.Context, string) (io.ReadWriteCloser, error) { return clientSide, nil }
 	start := func(context.Context, Config) (*managedProcess, error) {
 		return &managedProcess{done: make(chan struct{})}, nil
 	}
+	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
+	records := `{"type":"session_meta","payload":{"base_instructions":{"provenance":{"model":"gpt-test"}}}}` + "\n"
+	if err := os.WriteFile(rollout, []byte(records), 0o600); err != nil {
+		t.Fatalf("write rollout: %v", err)
+	}
 	serveHostProtocol(t, serverSide, []rpcExchange{
 		{method: "initialize", result: map[string]any{}},
-		{method: "thread/read", result: map[string]any{"thread": map[string]any{"id": "thread-1", "model": ""}}},
-		{method: "model/list", result: map[string]any{
-			"data": []any{map[string]any{"model": "gpt-test", "isDefault": true}},
-		}},
+		{method: "thread/read", result: map[string]any{"thread": map[string]any{"id": "thread-1", "model": "", "path": rollout}}},
 	})
 	host, err := startWith(context.Background(), Config{}, start, connect, time.Millisecond)
 	if err != nil {
@@ -325,6 +327,28 @@ func TestResolveThreadModelFallsBackToManagedHostDefault(t *testing.T) {
 	}
 	if model != "gpt-test" {
 		t.Fatalf("model = %q", model)
+	}
+}
+
+func TestResolveThreadModelRejectsThreadWithoutModel(t *testing.T) {
+	clientSide, serverSide := net.Pipe()
+	defer serverSide.Close()
+	connect := func(context.Context, string) (io.ReadWriteCloser, error) { return clientSide, nil }
+	start := func(context.Context, Config) (*managedProcess, error) {
+		return &managedProcess{done: make(chan struct{})}, nil
+	}
+	serveHostProtocol(t, serverSide, []rpcExchange{
+		{method: "initialize", result: map[string]any{}},
+		{method: "thread/read", result: map[string]any{"thread": map[string]any{"id": "thread-1", "model": "", "path": ""}}},
+	})
+	host, err := startWith(context.Background(), Config{}, start, connect, time.Millisecond)
+	if err != nil {
+		t.Fatalf("start host: %v", err)
+	}
+	defer host.Close()
+	_, err = host.ResolveThreadModel(context.Background(), "thread-1")
+	if err == nil || !strings.Contains(err.Error(), "no model") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
