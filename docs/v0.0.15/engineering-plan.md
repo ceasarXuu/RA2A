@@ -160,6 +160,13 @@ v0.0.15 保持文本消息，候选字段：
 - **Owner 确认采用「包装器代传 `--remote`」路线**：`cmd/codex-wrapper` 在 RA2A 托管 app-server 可用（owner lease + socket 可连）时向用户普通 TUI 启动注入 `--remote unix://<managed socket>`；RA2A 不可用、已卸载或用户显式指定 `--remote` 时完整透传原生 codex，不影响原生体验。server 始终是官方 `codex app-server` 二进制，RA2A 保持纯客户端。
 - **原型已端到端验证**（commit `6774ad1`）：注入 / 无 lease 降级透传 / 显式 `--remote` 透传三种行为均通过；单测覆盖参数分类、lease 门禁、socket 活性判定与自引用防护。queue 投递链（`1a5d83e`）真机验证：活跃回合入队 → TUI 实时显示 → 下回合精确执行。安装器集成（`d7fac02`）：`install.sh --codex-wrapper` / `install.ps1 -CodexWrapper` 安装包装器与 marker，卸载自动还原原生 codex，拒绝覆盖非 RA2A 管理的 `codex`；未在正式机执行。Phase 4 剩余 MCP 来源识别/config 迁移仍待办。
 
+2026-09-06 追加（Phase 1 实施进度，W1/W2 已入库）：
+
+- **W1 agentbridge 边界入库**（commit `6ce9efc`）：`internal/agentbridge/` 作为宿主无关适配器契约提交，含 `AgentAdapter`、确定性端点 `Registry`、统一 `Endpoint`/`DeliveryResult`。`Endpoint` 带过渡字段 `NativeStatus`（adapter 持有的原生状态串，仅用于 LAN 投影展示，Phase 2 lannode session 类型化后移除）。注册/冲突检测/不透明地址投递均有单测。
+- **W2 App 宿主行为收口为适配器**（commit `7694dae`）：新增 `internal/codexapp/` 实现 `AgentAdapter`——复用已三平台验证的 `codexhost`（发现 + thread model 解析），投递走 Desktop IPC（desktop-first）；**删除从未触发的 managed-host 写 fallback 死分支**（v0.0.10-14 产品语义即"从不回退"，Desktop 是 session writer owner；CLI 写路径属 Phase 3 的 codex-cli 适配器，不从本适配器借路）。`cmd/ra2a/main.go` 改由 `agentbridge.Registry` 接线：`registrySessionSource` 把 Registry 世界翻译回现有 `sessionSource` seam，LAN 会话身份保持原生 thread id（== 过渡期 endpoint address，PD30 不解释地址），`deliveryResultToError` 把 `start_required/unknown/busy/not_found` 映射回 control 词汇（sentinel + SESSION_BUSY/TARGET_NOT_FOUND 子串契约不变）。
+- **行为差异（不改产品语义，Phase 2 会消除）**：(1) session 列表顺序改为按 agent type + endpoint ID 确定性排序；(2) 对已归档/已删除 thread 投递返回干净的 `TARGET_NOT_FOUND: no session …`（原为 AppServer 原始错误）；(3) Desktop IPC 分类测试随逻辑迁入 `internal/codexapp/deliver_test.go`。LAN/control/MCP 对外契约与工具文案本轮未动；run() 层注入 fake 的既有测试零改动。
+- **验证**：`go test ./...`（codexhost process-group 测试除外，宿主编译环境不支持扩进程组，与本轮改动无关）、`go vet ./...`、`GOOS=windows/linux/darwin go build ./...` 全通过；`internal/codexapp` + `internal/agentbridge` + `cmd/ra2a` 额外 `-race` 通过。
+
 ## 6. 实施阶段
 
 ### Phase 0：产品决策与可行性冻结
