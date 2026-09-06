@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ceasarXuu/RA2A/internal/control"
+	"github.com/ceasarXuu/RA2A/internal/lannode"
 )
 
 type fakeBackend struct {
@@ -23,6 +24,42 @@ func (backend *fakeBackend) ListTargets(context.Context) ([]control.Target, erro
 func (backend *fakeBackend) Send(_ context.Context, request control.SendRequest) error {
 	backend.sent = request
 	return backend.sendErr
+}
+
+func TestListTargetsExposesAgentEndpoints(t *testing.T) {
+	backend := &fakeBackend{targets: []control.Target{{
+		ID: "node-b", Name: "Node B", Status: "ready",
+		Endpoints: []lannode.EndpointView{
+			{ID: "thread-1", AgentType: "codex-app", Capabilities: []string{"receiveText"}, Address: "ra2a://node-b/codex-app/thread-1"},
+		},
+	}}}
+	responses := serveRequests(t, backend,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_targets","arguments":{}}}`,
+	)
+	result := responses[0]["result"].(map[string]any)
+	target := result["structuredContent"].(map[string]any)["targets"].([]any)[0].(map[string]any)
+	endpoints := target["endpoints"].([]any)
+	if len(endpoints) != 1 {
+		t.Fatalf("endpoints = %#v", endpoints)
+	}
+	endpoint := endpoints[0].(map[string]any)
+	if endpoint["agentType"] != "codex-app" || endpoint["address"] != "ra2a://node-b/codex-app/thread-1" {
+		t.Fatalf("endpoint = %#v", endpoint)
+	}
+}
+
+func TestSendMessageAcceptsLegacyTwoSegmentAddress(t *testing.T) {
+	backend := &fakeBackend{}
+	responses := serveRequests(t, backend,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello"},"_meta":{"threadId":"thread-a"}}}`,
+	)
+	if backend.sent.To != "ra2a://node-b/thread-b" || backend.sent.SourceSessionID != "thread-a" {
+		t.Fatalf("sent = %#v", backend.sent)
+	}
+	result := responses[0]["result"].(map[string]any)
+	if result["isError"] != false {
+		t.Fatalf("result = %#v", result)
+	}
 }
 
 func TestServeListsOnlyProductionTools(t *testing.T) {

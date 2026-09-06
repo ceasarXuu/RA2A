@@ -17,6 +17,7 @@ import (
 type fakeLAN struct {
 	peers       []lannode.Peer
 	sessions    map[string][]lannode.Session
+	endpoints   map[string][]lannode.EndpointView
 	blocked     map[string]bool
 	delays      map[string]time.Duration
 	sentPeer    lannode.Peer
@@ -58,6 +59,24 @@ func (lan *fakeLAN) ListSessions(ctx context.Context, peer lannode.Peer) ([]lann
 		return nil, errors.New("offline")
 	}
 	return sessions, nil
+}
+
+func (lan *fakeLAN) ListEndpoints(ctx context.Context, peer lannode.Peer) ([]lannode.EndpointView, error) {
+	if endpoints, ok := lan.endpoints[peer.ID]; ok {
+		return endpoints, nil
+	}
+	// Legacy peer simulation: sessions exist but no endpoint views.
+	sessions, err := lan.ListSessions(ctx, peer)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]lannode.EndpointView, 0, len(sessions))
+	for _, session := range sessions {
+		views = append(views, lannode.EndpointView{
+			ID: session.ID, AgentType: session.AgentType, Address: session.ID,
+		})
+	}
+	return views, nil
 }
 
 func TestCoordinatorAllowsSlowCodexSessionEnumeration(t *testing.T) {
@@ -155,7 +174,7 @@ func TestCoordinatorSendsWithCallerAddressAndMessageID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lan.sentPeer.ID != "remote" || lan.sent.TargetSessionID != "thread-2" || lan.sent.Text != "hello" {
+	if lan.sentPeer.ID != "remote" || lan.sent.TargetSessionID != "ra2a://remote/thread-2" || lan.sent.Text != "hello" || lan.sent.TargetAgent != "codex-app" {
 		t.Fatalf("peer=%#v message=%#v", lan.sentPeer, lan.sent)
 	}
 	if lan.sent.Source != "ra2a://local/thread-1" || lan.sent.MessageID == "" {
@@ -237,6 +256,68 @@ func TestHTTPClientRoundTripsTargetsAndSend(t *testing.T) {
 	}
 	if backend.sent != request {
 		t.Fatalf("sent=%#v", backend.sent)
+	}
+}
+
+func TestParseTargetAcceptsModernAndLegacyAddresses(t *testing.T) {
+	tests := []struct {
+		name        string
+		target      string
+		nodeID      string
+		agentType   string
+		sessionID   string
+		wantInvalid bool
+	}{
+		{name: "modern three segment", target: "ra2a://node-b/codex-app/thread-2", nodeID: "node-b", agentType: "codex-app", sessionID: "thread-2"},
+		{name: "legacy two segment falls back", target: "ra2a://node-b/thread-2", nodeID: "node-b", agentType: "codex-app", sessionID: "thread-2"},
+		{name: "explicit agent preserved", target: "ra2a://node-b/codex-cli/thread-9", nodeID: "node-b", agentType: "codex-cli", sessionID: "thread-9"},
+		{name: "rejects empty session", target: "ra2a://node-b/", wantInvalid: true},
+		{name: "rejects too many segments", target: "ra2a://node-b/a/b/c", wantInvalid: true},
+		{name: "rejects wrong scheme", target: "http://node-b/thread-2", wantInvalid: true},
+		{name: "rejects missing node", target: "ra2a:///thread-2", wantInvalid: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := parseTarget(test.target)
+			if test.wantInvalid {
+				if !errors.Is(err, ErrInvalidRequest) {
+					t.Fatalf("err = %v, want INVALID_REQUEST", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseTarget(%q): %v", test.target, err)
+			}
+			if parsed.nodeID != test.nodeID || parsed.agentType != test.agentType || parsed.sessionID != test.sessionID {
+				t.Fatalf("parsed = %#v", parsed)
+			}
+		})
+	}
+}
+
+func TestCoordinatorListsEndpointViewsForReachablePeer(t *testing.T) {
+	lan := &fakeLAN{
+		peers: []lannode.Peer{{ID: "remote", Name: "Remote"}},
+		sessions: map[string][]lannode.Session{
+			"remote": {{ID: "thread-1", Title: "Ready", Status: "idle", AgentType: "codex-app"}},
+		},
+		endpoints: map[string][]lannode.EndpointView{
+			"remote": {{ID: "thread-1", AgentType: "codex-app", Capabilities: []string{"receiveText"}, Address: "ra2a://remote/codex-app/thread-1"}},
+		},
+	}
+	targets, err := NewCoordinator("local", lan).ListTargets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 || len(targets[0].Endpoints) != 1 {
+		t.Fatalf("targets = %#v", targets)
+	}
+	endpoint := targets[0].Endpoints[0]
+	if endpoint.Address != "ra2a://remote/codex-app/thread-1" || endpoint.AgentType != "codex-app" {
+		t.Fatalf("endpoint = %#v", endpoint)
+	}
+	if targets[0].Sessions[0].AgentType != "codex-app" {
+		t.Fatalf("session = %#v", targets[0].Sessions[0])
 	}
 }
 

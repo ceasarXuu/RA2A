@@ -43,6 +43,7 @@ type Config struct {
 	Name        string
 	PIN         string
 	Sessions    func(context.Context) ([]Session, error)
+	Endpoints   func(context.Context) ([]EndpointView, error) // optional; legacy nodes omit it
 	SendMessage func(context.Context, Message) error
 }
 
@@ -52,21 +53,41 @@ type Peer struct {
 	Address string
 }
 
+// Session is one conversation exposed by a peer. AgentType is empty on
+// legacy peers that predate endpoint addressing; callers then treat the
+// session as codex-app (the only registered type at that protocol version).
 type Session struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+	AgentType string `json:"agentType,omitempty"`
 }
 
+// EndpointView is the agent-aware delivery view of one endpoint on a peer.
+// Address is the opaque target string callers pass back verbatim to send
+// messages; its format is never inspected by LAN code.
+type EndpointView struct {
+	ID           string   `json:"id"`
+	AgentType    string   `json:"agentType"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Address      string   `json:"address"`
+}
+
+// Message is one cross-node delivery. TargetSessionID carries the full,
+// opaque target address (ra2a://node/<agent>/<session> or, from legacy
+// senders, a bare native session ID). TargetAgent is a transitive routing
+// hint only; receivers must not trust it without resolving the address.
 type Message struct {
 	TargetSessionID string `json:"targetSessionId"`
+	TargetAgent     string `json:"targetAgent,omitempty"`
 	Text            string `json:"text"`
 	Source          string `json:"source,omitempty"`
 	MessageID       string `json:"messageId,omitempty"`
 }
 
 type sessionsResponse struct {
-	Sessions []Session `json:"sessions"`
+	Sessions  []Session      `json:"sessions"`
+	Endpoints []EndpointView `json:"endpoints,omitempty"`
 }
 
 type Node struct {
@@ -183,16 +204,23 @@ func (n *Node) handleMessage(w mux.ResponseWriter, request *mux.Message) {
 }
 
 func (n *Node) handleSessions(w mux.ResponseWriter, request *mux.Message) {
-	sessions := make([]Session, 0)
+	response := sessionsResponse{Sessions: make([]Session, 0)}
 	var err error
 	if n.config.Sessions != nil {
-		sessions, err = n.config.Sessions(request.Context())
+		response.Sessions, err = n.config.Sessions(request.Context())
 	}
 	if err != nil {
 		_ = w.SetResponse(codes.InternalServerError, message.TextPlain, strings.NewReader(err.Error()))
 		return
 	}
-	payload, err := json.Marshal(sessionsResponse{Sessions: sessions})
+	if n.config.Endpoints != nil {
+		response.Endpoints, err = n.config.Endpoints(request.Context())
+		if err != nil {
+			_ = w.SetResponse(codes.InternalServerError, message.TextPlain, strings.NewReader(err.Error()))
+			return
+		}
+	}
+	payload, err := json.Marshal(response)
 	if err == nil {
 		err = w.SetResponse(codes.Content, message.AppJSON, bytes.NewReader(payload))
 	}
@@ -328,28 +356,47 @@ func (n *Node) Peer(id string) (Peer, bool) {
 }
 
 func (n *Node) ListSessions(ctx context.Context, peer Peer) ([]Session, error) {
+	decoded, err := n.fetchSessions(ctx, peer)
+	if err != nil {
+		return nil, err
+	}
+	return decoded.Sessions, nil
+}
+
+// ListEndpoints returns the agent-aware endpoint views of a peer. Peers that
+// predate endpoint addressing return no endpoints; callers fall back to
+// ListSessions (codex-app) for those.
+func (n *Node) ListEndpoints(ctx context.Context, peer Peer) ([]EndpointView, error) {
+	decoded, err := n.fetchSessions(ctx, peer)
+	if err != nil {
+		return nil, err
+	}
+	return decoded.Endpoints, nil
+}
+
+func (n *Node) fetchSessions(ctx context.Context, peer Peer) (sessionsResponse, error) {
 	client, err := n.dialPeer(ctx, peer)
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %w", peer.ID, err)
+		return sessionsResponse{}, fmt.Errorf("connect to %s: %w", peer.ID, err)
 	}
 	defer client.Close()
 	response, err := client.Get(ctx, "/v1/sessions")
 	if err != nil {
-		return nil, fmt.Errorf("request sessions from %s: %w", peer.ID, err)
+		return sessionsResponse{}, fmt.Errorf("request sessions from %s: %w", peer.ID, err)
 	}
 	defer client.ReleaseMessage(response)
 	if response.Code() != codes.Content {
-		return nil, fmt.Errorf("request sessions from %s: CoAP code %v", peer.ID, response.Code())
+		return sessionsResponse{}, fmt.Errorf("request sessions from %s: CoAP code %v", peer.ID, response.Code())
 	}
 	body, err := io.ReadAll(response.Body())
 	if err != nil {
-		return nil, fmt.Errorf("read sessions from %s: %w", peer.ID, err)
+		return sessionsResponse{}, fmt.Errorf("read sessions from %s: %w", peer.ID, err)
 	}
 	var decoded sessionsResponse
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, fmt.Errorf("decode sessions from %s: %w", peer.ID, err)
+		return sessionsResponse{}, fmt.Errorf("decode sessions from %s: %w", peer.ID, err)
 	}
-	return decoded.Sessions, nil
+	return decoded, nil
 }
 
 func (n *Node) SendMessage(ctx context.Context, peer Peer, outgoing Message) error {

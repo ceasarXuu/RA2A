@@ -85,18 +85,18 @@ func productionTools() []any {
 	return []any{
 		map[string]any{
 			"name":        "list_targets",
-			"description": "List discovered RA2A nodes, their availability status, and current or stale Codex sessions.",
+			"description": "List discovered RA2A nodes, their reachability status, and the agent endpoints (type, capabilities, opaque address) each node currently exposes.",
 			"inputSchema": map[string]any{
 				"type": "object", "properties": map[string]any{}, "additionalProperties": false,
 			},
 		},
 		map[string]any{
 			"name":        "send_message",
-			"description": "Send a text message to a target ra2a://node/session address through its Codex Desktop owner. If Desktop is not running, start it and retry.",
+			"description": "Send a text message to a target conversation address (ra2a://node/agent/session-id; codex-app may omit the agent segment). Delivery goes through the conversation's owning agent.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"to":   map[string]string{"type": "string", "description": "Target address: ra2a://node-id/session-id"},
+					"to":   map[string]string{"type": "string", "description": "Target address returned by list_targets, e.g. ra2a://node-id/codex-app/session-id"},
 					"text": map[string]string{"type": "string", "description": "Message text"},
 				},
 				"required": []string{"to", "text"}, "additionalProperties": false,

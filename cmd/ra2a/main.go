@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -24,6 +25,7 @@ import (
 
 type sessionSource interface {
 	ListSessions(context.Context) ([]lannode.Session, error)
+	ListEndpoints(context.Context) ([]lannode.EndpointView, error)
 	SendMessage(context.Context, string, string) error
 	Close() error
 }
@@ -175,6 +177,18 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	defer source.Close()
 	node, err := lannode.Start(ctx, lannode.Config{
 		ID: *id, Name: *name, PIN: *pin, Sessions: source.ListSessions,
+		Endpoints: func(ctx context.Context) ([]lannode.EndpointView, error) {
+			views, err := source.ListEndpoints(ctx)
+			if err != nil {
+				return nil, err
+			}
+			prefixed := make([]lannode.EndpointView, 0, len(views))
+			for _, view := range views {
+				view.Address = "ra2a://" + *id + "/" + view.Address
+				prefixed = append(prefixed, view)
+			}
+			return prefixed, nil
+		},
 		SendMessage: func(ctx context.Context, message lannode.Message) error {
 			return source.SendMessage(ctx, message.TargetSessionID, formatIncomingMessage(message))
 		},
@@ -284,8 +298,9 @@ type sourceRegistry interface {
 }
 
 // registrySessionSource adapts the agentbridge Registry world to the legacy
-// LAN sessionSource seam. LAN identity is transitional: a session ID is the
-// native thread ID and doubles as the opaque endpoint address until Phase 2.
+// LAN sessionSource seam. Endpoint addresses are adapter-local
+// ("<agent>/<id>"); they gain a node prefix only when published over the LAN
+// and lose it again when a message arrives for this node.
 type registrySessionSource struct {
 	registry sourceRegistry
 }
@@ -298,8 +313,20 @@ func (source *registrySessionSource) ListSessions(ctx context.Context) ([]lannod
 	return sessionsFromRefs(refs), nil
 }
 
+// ListEndpoints projects registry endpoints onto LAN endpoint views with
+// adapter-local addresses ("<agent>/<id>"). The daemon adds its node prefix
+// when publishing the views over the LAN.
+func (source *registrySessionSource) ListEndpoints(ctx context.Context) ([]lannode.EndpointView, error) {
+	refs, err := source.registry.ListEndpoints(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return endpointViewsFromRefs(refs), nil
+}
+
 func (source *registrySessionSource) SendMessage(ctx context.Context, target, prompt string) error {
-	result, err := source.registry.Deliver(ctx, target, prompt)
+	address := localAddress(target)
+	result, err := source.registry.Deliver(ctx, address, prompt)
 	if err != nil {
 		return err
 	}
@@ -310,8 +337,47 @@ func (source *registrySessionSource) Close() error {
 	return source.registry.Close()
 }
 
+// endpointViewsFromRefs projects registry endpoints onto LAN endpoint views.
+// Each address stays adapter-local ("<agent>/<id>"); the daemon prefixes its
+// node ID before publishing so peers can round-trip the full target.
+func endpointViewsFromRefs(refs []agentbridge.EndpointRef) []lannode.EndpointView {
+	views := make([]lannode.EndpointView, 0, len(refs))
+	for _, ref := range refs {
+		capabilities := make([]string, 0, len(ref.Endpoint.Capabilities))
+		for capability := range ref.Endpoint.Capabilities {
+			capabilities = append(capabilities, string(capability))
+		}
+		views = append(views, lannode.EndpointView{
+			ID:           ref.Endpoint.EndpointID,
+			AgentType:    string(ref.Endpoint.AgentType),
+			Capabilities: capabilities,
+			Address:      ref.Endpoint.Address,
+		})
+	}
+	return views
+}
+
+// localAddress normalizes an incoming target into the adapter-local address
+// space. Full LAN addresses (ra2a://<node>/<agent>/<id>) shed their node
+// prefix; legacy bare session IDs (from older peers or the CLI --session
+// flag) fall back to the default agent family.
+func localAddress(target string) string {
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.Scheme != "ra2a" || parsed.Host == "" {
+		if target == "" {
+			return target
+		}
+		return string(codexapp.AgentTypeCodexApp) + "/" + target
+	}
+	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/"), "/")
+	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0] + "/" + parts[1]
+	}
+	return target
+}
+
 // sessionsFromRefs projects registry endpoints onto the legacy LAN session
-// model. Identity stays native (Session.ID == thread ID) until Phase 2.
+// model. Identity stays native (Session.ID == thread ID).
 func sessionsFromRefs(refs []agentbridge.EndpointRef) []lannode.Session {
 	sessions := make([]lannode.Session, 0, len(refs))
 	for _, ref := range refs {
@@ -321,6 +387,7 @@ func sessionsFromRefs(refs []agentbridge.EndpointRef) []lannode.Session {
 		}
 		sessions = append(sessions, lannode.Session{
 			ID: ref.Endpoint.EndpointID, Title: ref.Endpoint.Title, Status: status,
+			AgentType: string(ref.Endpoint.AgentType),
 		})
 	}
 	return sessions

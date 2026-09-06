@@ -399,6 +399,10 @@ func (source *fakeSessionSource) ListSessions(context.Context) ([]lannode.Sessio
 	return source.sessions, nil
 }
 
+func (source *fakeSessionSource) ListEndpoints(context.Context) ([]lannode.EndpointView, error) {
+	return nil, nil
+}
+
 func (source *fakeSessionSource) Close() error { return nil }
 
 func (source *fakeSessionSource) SendMessage(_ context.Context, target, prompt string) error {
@@ -554,13 +558,15 @@ type fakeSourceRegistry struct {
 	deliverErr error
 	listErr    error
 	closed     bool
+	lastAddr   string
 }
 
 func (fake *fakeSourceRegistry) ListEndpoints(context.Context) ([]agentbridge.EndpointRef, error) {
 	return fake.refs, fake.listErr
 }
 
-func (fake *fakeSourceRegistry) Deliver(context.Context, string, string) (agentbridge.DeliveryResult, error) {
+func (fake *fakeSourceRegistry) Deliver(_ context.Context, address, _ string) (agentbridge.DeliveryResult, error) {
+	fake.lastAddr = address
 	return fake.result, fake.deliverErr
 }
 
@@ -585,6 +591,9 @@ func TestRegistrySessionSourceBridgesListAndDeliver(t *testing.T) {
 	if err := source.SendMessage(ctx, "t1", "hello"); err != nil {
 		t.Fatalf("send delivered: %v", err)
 	}
+	if fake.lastAddr != "codex-app/t1" {
+		t.Fatalf("deliver address = %q, want legacy session ID mapped to codex-app", fake.lastAddr)
+	}
 
 	fake.result = agentbridge.DeliveryResult{Code: agentbridge.StartRequired, Detail: "start Codex Desktop and retry"}
 	err = source.SendMessage(ctx, "t1", "hello")
@@ -594,5 +603,44 @@ func TestRegistrySessionSourceBridgesListAndDeliver(t *testing.T) {
 
 	if err := source.Close(); err != nil || !fake.closed {
 		t.Fatalf("close: err=%v closed=%v", err, fake.closed)
+	}
+}
+
+func TestLocalAddressNormalizesTargets(t *testing.T) {
+	tests := []struct {
+		name   string
+		target string
+		want   string
+	}{
+		{name: "full lan address sheds node prefix", target: "ra2a://node-b/codex-app/thread-2", want: "codex-app/thread-2"},
+		{name: "explicit agent preserved", target: "ra2a://node-b/codex-cli/thread-9", want: "codex-cli/thread-9"},
+		{name: "legacy bare id falls back to codex-app", target: "thread-1", want: "codex-app/thread-1"},
+		{name: "empty stays empty", target: "", want: ""},
+		{name: "malformed url passed through", target: "ra2a://node-b/", want: "ra2a://node-b/"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := localAddress(test.target); got != test.want {
+				t.Fatalf("localAddress(%q) = %q, want %q", test.target, got, test.want)
+			}
+		})
+	}
+}
+
+func TestEndpointViewsFromRefsCarriesAgentAndCapabilities(t *testing.T) {
+	refs := []agentbridge.EndpointRef{
+		{Endpoint: agentbridge.Endpoint{
+			EndpointID: "t1", AgentType: "codex-app",
+			Capabilities: map[agentbridge.Capability]bool{agentbridge.CapabilityReceiveText: true},
+			Address:      "codex-app/t1",
+		}},
+	}
+	views := endpointViewsFromRefs(refs)
+	if len(views) != 1 {
+		t.Fatalf("views = %#v", views)
+	}
+	view := views[0]
+	if view.ID != "t1" || view.AgentType != "codex-app" || view.Address != "codex-app/t1" || len(view.Capabilities) != 1 {
+		t.Fatalf("view = %#v", view)
 	}
 }

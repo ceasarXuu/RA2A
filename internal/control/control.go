@@ -31,11 +31,12 @@ var ErrDeliveryUnknown = errors.New("DELIVERY_UNKNOWN")
 var ErrDesktopOwnerUnavailable = errors.New("DESKTOP_OWNER_UNAVAILABLE")
 
 type Target struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Status        string            `json:"status"`
-	SessionsStale bool              `json:"sessionsStale"`
-	Sessions      []lannode.Session `json:"sessions"`
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	Status        string                 `json:"status"`
+	SessionsStale bool                   `json:"sessionsStale"`
+	Sessions      []lannode.Session      `json:"sessions"`
+	Endpoints     []lannode.EndpointView `json:"endpoints,omitempty"`
 }
 
 type SendRequest struct {
@@ -54,6 +55,7 @@ type LAN interface {
 	Peer(string) (lannode.Peer, bool)
 	RefreshPeer(context.Context, string, string) (lannode.Peer, error)
 	ListSessions(context.Context, lannode.Peer) ([]lannode.Session, error)
+	ListEndpoints(context.Context, lannode.Peer) ([]lannode.EndpointView, error)
 	SendMessage(context.Context, lannode.Peer, lannode.Message) error
 }
 
@@ -84,8 +86,11 @@ func (coordinator *Coordinator) ListTargets(ctx context.Context) ([]Target, erro
 	defer cancel()
 	for _, peer := range peers {
 		go func(peer lannode.Peer) {
-			sessions, err := coordinator.lan.ListSessions(probeCtx, peer)
-			results <- probeResult{peer: peer, target: Target{ID: peer.ID, Name: peer.Name, Status: "ready", Sessions: sessions}, err: err}
+			sessions, endpoints, err := coordinator.probePeer(probeCtx, peer)
+			results <- probeResult{peer: peer, target: Target{
+				ID: peer.ID, Name: peer.Name, Status: "ready",
+				Sessions: sessions, Endpoints: endpoints,
+			}, err: err}
 		}(peer)
 	}
 	for range peers {
@@ -110,6 +115,20 @@ func (coordinator *Coordinator) ListTargets(ctx context.Context) ([]Target, erro
 		}
 	}
 	return sortedTargets(targets), nil
+}
+
+// probePeer fetches the session list and, when the peer supports it, the
+// agent-aware endpoint list. Legacy peers report no endpoints.
+func (coordinator *Coordinator) probePeer(ctx context.Context, peer lannode.Peer) ([]lannode.Session, []lannode.EndpointView, error) {
+	sessions, err := coordinator.lan.ListSessions(ctx, peer)
+	if err != nil {
+		return nil, nil, err
+	}
+	endpoints, err := coordinator.lan.ListEndpoints(ctx, peer)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sessions, endpoints, nil
 }
 
 func (coordinator *Coordinator) unavailableTarget(peer lannode.Peer) Target {
@@ -138,11 +157,11 @@ func sortedTargets(byID map[string]Target) []Target {
 }
 
 func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) error {
-	nodeID, sessionID, err := parseTarget(request.To)
+	target, err := parseTarget(request.To)
 	if err != nil || request.Text == "" || request.SourceSessionID == "" {
 		return ErrInvalidRequest
 	}
-	peer, ok := coordinator.lan.Peer(nodeID)
+	peer, ok := coordinator.lan.Peer(target.nodeID)
 	if !ok {
 		return ErrTargetNotFound
 	}
@@ -151,7 +170,8 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 		return fmt.Errorf("create message ID: %w", err)
 	}
 	outgoing := lannode.Message{
-		TargetSessionID: sessionID,
+		TargetSessionID: request.To,
+		TargetAgent:     target.agentType,
 		Text:            request.Text,
 		Source:          "ra2a://" + coordinator.localID + "/" + request.SourceSessionID,
 		MessageID:       messageID,
@@ -159,7 +179,7 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 	err = coordinator.lan.SendMessage(ctx, peer, outgoing)
 	if errors.Is(err, lannode.ErrPeerUnreachable) {
 		refreshCtx, cancel := context.WithTimeout(ctx, peerRefreshTimeout)
-		refreshed, refreshErr := coordinator.lan.RefreshPeer(refreshCtx, nodeID, peer.Address)
+		refreshed, refreshErr := coordinator.lan.RefreshPeer(refreshCtx, target.nodeID, peer.Address)
 		cancel()
 		if refreshErr != nil {
 			return fmt.Errorf("%w: %v", ErrTargetUnreachable, err)
@@ -178,16 +198,42 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 	return err
 }
 
-func parseTarget(target string) (string, string, error) {
+// DefaultAgentType is the fallback agent family for legacy two-segment
+// addresses that predate endpoint addressing.
+const DefaultAgentType = "codex-app"
+
+// parsedTarget is one decoded ra2a:// target address.
+type parsedTarget struct {
+	nodeID    string
+	agentType string
+	sessionID string
+}
+
+// parseTarget accepts both modern three-segment addresses
+// (ra2a://node/<agent>/<session>) and legacy two-segment addresses
+// (ra2a://node/<session>), which fall back to the default agent family.
+func parseTarget(target string) (parsedTarget, error) {
+	var result parsedTarget
 	parsed, err := url.Parse(target)
 	if err != nil || parsed.Scheme != "ra2a" || parsed.Host == "" {
-		return "", "", ErrInvalidRequest
+		return result, ErrInvalidRequest
 	}
-	sessionID := strings.TrimPrefix(parsed.Path, "/")
-	if sessionID == "" || strings.Contains(sessionID, "/") {
-		return "", "", ErrInvalidRequest
+	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/"), "/")
+	switch len(parts) {
+	case 1:
+		if parts[0] == "" {
+			return result, ErrInvalidRequest
+		}
+		result = parsedTarget{nodeID: parsed.Host, agentType: DefaultAgentType, sessionID: parts[0]}
+	case 2:
+		if parts[0] == "" || parts[1] == "" {
+			return result, ErrInvalidRequest
+		}
+		result = parsedTarget{nodeID: parsed.Host, agentType: parts[0], sessionID: parts[1]}
+	default:
+		return result, ErrInvalidRequest
 	}
-	return parsed.Host, sessionID, nil
+	return result, nil
 }
 
 func newMessageID() (string, error) {

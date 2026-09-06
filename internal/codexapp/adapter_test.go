@@ -45,12 +45,15 @@ func TestDescriptorIdentifiesCodexApp(t *testing.T) {
 	}
 }
 
-func TestEndpointForThreadUsesTransitionalIdentity(t *testing.T) {
+func TestEndpointForThreadUsesAgentPrefixedAddress(t *testing.T) {
 	endpoint := endpointForThread(appserverprobe.ThreadSummary{
 		ID: "01abc", Title: "Fix bug", Status: "idle",
 	})
-	if endpoint.EndpointID != "01abc" || endpoint.NativeSessionID != "01abc" || endpoint.Address != "01abc" {
-		t.Fatalf("transitional identity not equal: %#v", endpoint)
+	if endpoint.EndpointID != "01abc" || endpoint.NativeSessionID != "01abc" {
+		t.Fatalf("identity not equal: %#v", endpoint)
+	}
+	if endpoint.Address != "codex-app/01abc" {
+		t.Fatalf("address = %q, want agent-prefixed local address", endpoint.Address)
 	}
 	if endpoint.AgentType != AgentTypeCodexApp {
 		t.Fatalf("agent type = %q", endpoint.AgentType)

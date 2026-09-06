@@ -2,6 +2,7 @@ package lannode
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/netip"
 	"reflect"
@@ -276,5 +277,56 @@ func TestPeersReturnsSortedSnapshot(t *testing.T) {
 	got[0].Name = "changed"
 	if node.peers["a-node"].Name != "A" {
 		t.Fatal("Peers returned mutable internal state")
+	}
+}
+
+func TestSessionSerializationOmitsEmptyAgentFields(t *testing.T) {
+	legacy := Session{ID: "t1", Title: "Legacy", Status: "idle"}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "agentType") {
+		t.Fatalf("legacy session must not emit agentType: %s", data)
+	}
+	typed := Session{ID: "t1", Title: "Typed", Status: "idle", AgentType: "codex-app"}
+	data, err = json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"agentType":"codex-app"`) {
+		t.Fatalf("typed session must emit agentType: %s", data)
+	}
+}
+
+func TestNodeListEndpointsRoundTripsEndpointViews(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	node, err := Start(ctx, Config{
+		ID: "endpoint-test-node", Name: "Endpoint Test", PIN: "A2B3C4",
+		Sessions: func(context.Context) ([]Session, error) {
+			return []Session{{ID: "t1", Title: "One", Status: "idle"}}, nil
+		},
+		Endpoints: func(context.Context) ([]EndpointView, error) {
+			return []EndpointView{
+				{ID: "t1", AgentType: "codex-app", Capabilities: []string{"receiveText"}, Address: "ra2a://endpoint-test-node/codex-app/t1"},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer node.Close()
+	peer, err := node.WaitForPeer(ctx, "endpoint-test-node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoints, err := node.ListEndpoints(ctx, peer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(endpoints) != 1 || endpoints[0].ID != "t1" || endpoints[0].AgentType != "codex-app" ||
+		endpoints[0].Address != "ra2a://endpoint-test-node/codex-app/t1" || len(endpoints[0].Capabilities) != 1 {
+		t.Fatalf("endpoints = %#v", endpoints)
 	}
 }

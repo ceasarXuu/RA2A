@@ -113,12 +113,15 @@ func endpointForThread(thread appserverprobe.ThreadSummary) agentbridge.Endpoint
 	return agentbridge.Endpoint{
 		EndpointID:      thread.ID,
 		AgentType:       AgentTypeCodexApp,
-		NativeSessionID: thread.ID, // transitional: endpoint identity == native thread ID
+		NativeSessionID: thread.ID,
 		Title:           thread.Title,
 		Status:          status,
 		Capabilities:    map[agentbridge.Capability]bool{agentbridge.CapabilityReceiveText: true},
-		Address:         thread.ID, // transitional identity, see ListEndpoints
-		NativeStatus:    thread.Status,
+		// Address is the adapter-local opaque target "<agent>/<id>". The node
+		// prefix is added by the daemon when the address crosses the LAN; it is
+		// never part of the adapter's own address space.
+		Address:      string(AgentTypeCodexApp) + "/" + thread.ID,
+		NativeStatus: thread.Status,
 	}
 }
 
