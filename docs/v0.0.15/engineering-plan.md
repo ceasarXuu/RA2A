@@ -167,6 +167,12 @@ v0.0.15 保持文本消息，候选字段：
 - **行为差异（不改产品语义，Phase 2 会消除）**：(1) session 列表顺序改为按 agent type + endpoint ID 确定性排序；(2) 对已归档/已删除 thread 投递返回干净的 `TARGET_NOT_FOUND: no session …`（原为 AppServer 原始错误）；(3) Desktop IPC 分类测试随逻辑迁入 `internal/codexapp/deliver_test.go`。LAN/control/MCP 对外契约与工具文案本轮未动；run() 层注入 fake 的既有测试零改动。
 - **验证**：`go test ./...`（codexhost process-group 测试除外，宿主编译环境不支持扩进程组，与本轮改动无关）、`go vet ./...`、`GOOS=windows/linux/darwin go build ./...` 全通过；`internal/codexapp` + `internal/agentbridge` + `cmd/ra2a` 额外 `-race` 通过。
 
+2026-09-06 追加（Phase 2 实施进度，W3 地址模型切片已入库）：
+
+- **Endpoint 地址模型演进**（commit `00599ec`）：adapter 本地端点地址升级为 `<agent>/<id>`（`internal/codexapp` 生成 `codex-app/<thread-id>`）；lannode 新增 `EndpointView`（id/agentType/capabilities/address）与可选 `Config.Endpoints` 回调，`/v1/sessions` 响应同包带 `sessions`+`endpoints`，跨节点经 `ListEndpoints` 拉取；LAN 发布地址为 `ra2a://node/<agent>/<id>` 三段完整不透明目标。`control.parseTarget` 兼容两段（回落 codex-app）/三段地址，`Send` 透传完整地址并带 `targetAgent` 提示；`list_targets` 输出 `endpoints` 数组（保留 `sessions` 兼容展示），MCP 文案改 Agent 中立。`cmd/ra2a` bridge 用 `localAddress` 把入站三段地址剥 node 前缀归一化为 adapter 本地地址、把旧裸 session id 回落 `codex-app/<id>`。
+- **边界记录**：新→旧（v0.0.14）投递把三段地址当裸 thread id，需先升级接收端——按 Owner 决策接受为本阶段边界。兼容读取成立：旧节点裸 id/两段地址到新节点回落 codex-app，`ra2a://node/session` 旧形态在 MCP 仍可用。Session/Message JSON 仅新增 `omitempty` 可选字段，旧客户端读取不破坏。
+- **验证**：`go test ./...`、`go vet ./...`、三平台 `go build ./...` 通过；lannode `ListEndpoints` 往返、control 地址矩阵、MCP endpoint 输出、bridge 归一化均有单测。真实双设备三段地址投递待 PD32 独立环境真机执行（记录为 Phase 5 前待办）。
+
 ## 6. 实施阶段
 
 ### Phase 0：产品决策与可行性冻结
