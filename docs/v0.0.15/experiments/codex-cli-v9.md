@@ -87,7 +87,7 @@ Queue 投递链（`thread/queue/add` 客户端，commit `1a5d83e`）：wrapper-a
 - **账号限流横幅机制（最终闭环）**：TUI 弹窗「Approaching rate limits / switch to…」由 **plan 级 `codex` 周桶（10080min）≥90%** 触发（`RATE_LIMIT_SWITCH_PROMPT_THRESHOLD=90`），**与模型桶无关**（实测同刻 5.3/3.5 两桶均 <90% 时新进程仍弹）。展示在回合完成时刻；抑制条件：`[notice].hide_rate_limit_model_nudge`（用户选「never show again」持久化）、已呈现的 backend banner、常驻进程旧会话状态。**新进程必弹、长驻进程（02:43 起的 codex --yolo）被内态抑制**——这解释了「用户从未见过 vs 我的实验必弹」的表观矛盾；用户手动选择 never show again 后全机不再弹。实验前仍建议用 `--account-rates` 自查 plan 桶（runbooks/codex-account-usage-check.md）。
 - **plan 桶 100% 期间账号限制非默认模型**：`-m codex-3.5-spark` 的回合在 100% 状态收到 `The 'codex-3.5-spark' model is not supported when using Codex with a ChatGPT account`（400），默认 gpt-5.3-codex-spark 正常完成——属账号侧限制，与 RA2A 模型继承策略无关。
 - **实验线程会按用户全局 config 加载 MCP 服务器**（状态栏可见 `Starting MCP RA2A`）——实验/适配器与生产 RA2A MCP 存在共享配置接触面，需在适配器设计中留意。
-- 「人工续聊」自动验证：queue 链（active 期入队→TUI 显示→执行→唯一回复）已在 live5 完成；人工续聊为 TUI 原生行为（V7 同栈已验证、wrapper 仅透传 stdin），自动化收尾在账号状态恢复后补。
+- 「人工续聊」自动验证：queue 链（active 期入队→TUI 实时显示→下回合精确执行一次→唯一回复）多次完整 PASS（submission IDs：`01a0738f-…`、`01a07403-…`、`01a07406-…`，TUI 日志可见 `› Follow-up…` 显示与 `• WRAPLIVE_FOLLOWUP_OK` 唯一回复，全程单一 app-server/writer、无 400、无弹窗）。人工续聊在 pty 自动化下的最后一步（输入框提交）受驱动按键注入限制未能自动闭环——属测试驱动缺陷；该行为是 TUI 原生能力（V7 同栈已人工验证、wrapper 仅透传 stdin），保留为用户级验收项。
 
 ## 环境改动与清理
 
