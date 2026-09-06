@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ceasarXuu/RA2A/internal/agentbridge"
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
 	"github.com/ceasarXuu/RA2A/internal/control"
-	"github.com/ceasarXuu/RA2A/internal/desktopipc"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 )
 
@@ -497,79 +497,102 @@ func TestRunMCPExposesProductionTools(t *testing.T) {
 	}
 }
 
-func TestSendWithDesktopPreferenceUsesDesktopOwnerFirst(t *testing.T) {
-	managedCalls := 0
-	desktopCalls := 0
-	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		managedCalls++
-		return nil
-	}, func(context.Context, string, string) error {
-		desktopCalls++
-		return nil
-	})
-	if err != nil || desktopCalls != 1 || managedCalls != 0 {
-		t.Fatalf("err=%v desktopCalls=%d managedCalls=%d", err, desktopCalls, managedCalls)
+func TestDeliveryResultToErrorMapsCodesToControlVocabulary(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  agentbridge.DeliveryResult
+		wantIs  error
+		wantErr bool
+		wantSub string
+	}{
+		{name: "delivered is nil", result: agentbridge.DeliveryResult{Code: agentbridge.Delivered}},
+		{name: "start required wraps desktop owner sentinel", result: agentbridge.DeliveryResult{Code: agentbridge.StartRequired, Detail: "start Codex Desktop and retry: x"}, wantErr: true, wantIs: control.ErrDesktopOwnerUnavailable, wantSub: "start Codex Desktop"},
+		{name: "unknown wraps delivery unknown", result: agentbridge.DeliveryResult{Code: agentbridge.DeliveryUnknown, Detail: "timeout"}, wantErr: true, wantIs: control.ErrDeliveryUnknown, wantSub: "DELIVERY_UNKNOWN"},
+		{name: "busy wraps session busy", result: agentbridge.DeliveryResult{Code: agentbridge.Busy, Detail: "active writer"}, wantErr: true, wantIs: codexhost.ErrSessionBusy, wantSub: "SESSION_BUSY"},
+		{name: "not found keeps target substring", result: agentbridge.DeliveryResult{Code: agentbridge.NotFound, Detail: "gone"}, wantErr: true, wantSub: "TARGET_NOT_FOUND"},
+		{name: "adapter failed keeps code", result: agentbridge.DeliveryResult{Code: agentbridge.AdapterFailed, Detail: "boom"}, wantErr: true, wantSub: "adapter_failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := deliveryResultToError(test.result, "thread-1")
+			if !test.wantErr && err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if test.wantErr && err == nil {
+				t.Fatal("err = nil, want non-nil")
+			}
+			if test.wantIs != nil && !errors.Is(err, test.wantIs) {
+				t.Fatalf("err = %v, want errors.Is %v", err, test.wantIs)
+			}
+			if test.wantSub != "" && !strings.Contains(err.Error(), test.wantSub) {
+				t.Fatalf("err = %q, want substring %q", err.Error(), test.wantSub)
+			}
+		})
 	}
 }
 
-func TestSendWithDesktopPreferenceDoesNotUseManagedWriterWhenDesktopIsUnavailable(t *testing.T) {
-	managedCalls := 0
-	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		managedCalls++
-		return nil
-	}, func(context.Context, string, string) error {
-		return &desktopipc.NotDeliveredError{Cause: errors.New("no Desktop owner")}
-	})
-	if err == nil || managedCalls != 0 || !strings.Contains(err.Error(), "start Codex Desktop") {
-		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
+func TestSessionsFromRefsProjectsNativeStatus(t *testing.T) {
+	refs := []agentbridge.EndpointRef{
+		{Endpoint: agentbridge.Endpoint{EndpointID: "t1", AgentType: "codex-app", Title: "A", NativeStatus: "idle", Status: agentbridge.StatusReady}},
+		{Endpoint: agentbridge.Endpoint{EndpointID: "t2", AgentType: "codex-app", Title: "B", NativeStatus: "working", Status: agentbridge.StatusBusy}},
+	}
+	sessions := sessionsFromRefs(refs)
+	if len(sessions) != 2 {
+		t.Fatalf("sessions = %d", len(sessions))
+	}
+	if sessions[0].ID != "t1" || sessions[0].Status != "idle" {
+		t.Fatalf("session[0] = %#v", sessions[0])
+	}
+	if sessions[1].ID != "t2" || sessions[1].Status != "working" {
+		t.Fatalf("session[1] = %#v", sessions[1])
 	}
 }
 
-func TestSendWithDesktopPreferenceDoesNotDuplicateUnknownDelivery(t *testing.T) {
-	managedCalls := 0
-	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		managedCalls++
-		return nil
-	}, func(context.Context, string, string) error {
-		return &desktopipc.DeliveryUnknownError{Cause: context.DeadlineExceeded}
-	})
-	if !errors.Is(err, control.ErrDeliveryUnknown) || managedCalls != 0 {
-		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
-	}
+type fakeSourceRegistry struct {
+	refs       []agentbridge.EndpointRef
+	result     agentbridge.DeliveryResult
+	deliverErr error
+	listErr    error
+	closed     bool
 }
 
-func TestSendWithDesktopPreferenceDoesNotFallbackOnUnclassifiedError(t *testing.T) {
-	managedCalls := 0
-	want := errors.New("unexpected Desktop failure")
-	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		managedCalls++
-		return nil
-	}, func(context.Context, string, string) error {
-		return want
-	})
-	if !errors.Is(err, want) || managedCalls != 0 {
-		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
-	}
+func (fake *fakeSourceRegistry) ListEndpoints(context.Context) ([]agentbridge.EndpointRef, error) {
+	return fake.refs, fake.listErr
 }
 
-func TestSendWithDesktopPreferenceDoesNotExposeManagedWriterFailure(t *testing.T) {
-	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		return codexhost.ErrSessionBusy
-	}, func(context.Context, string, string) error {
-		return &desktopipc.NotDeliveredError{Cause: errors.New("Desktop unavailable")}
-	})
-	if !errors.Is(err, control.ErrDesktopOwnerUnavailable) || !strings.Contains(err.Error(), "Desktop unavailable") {
-		t.Fatalf("error = %v", err)
-	}
+func (fake *fakeSourceRegistry) Deliver(context.Context, string, string) (agentbridge.DeliveryResult, error) {
+	return fake.result, fake.deliverErr
 }
 
-func TestSendWithDesktopPreferenceUsesManagedWhenDesktopIntegrationIsDisabled(t *testing.T) {
-	managedCalls := 0
-	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
-		managedCalls++
-		return nil
-	}, nil)
-	if err == nil || managedCalls != 0 || !strings.Contains(err.Error(), "start Codex Desktop") {
-		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
+func (fake *fakeSourceRegistry) Close() error {
+	fake.closed = true
+	return nil
+}
+
+func TestRegistrySessionSourceBridgesListAndDeliver(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeSourceRegistry{refs: []agentbridge.EndpointRef{
+		{Endpoint: agentbridge.Endpoint{EndpointID: "t1", AgentType: "codex-app", Title: "T", NativeStatus: "idle"}},
+	}}
+	source := &registrySessionSource{registry: fake}
+
+	sessions, err := source.ListSessions(ctx)
+	if err != nil || len(sessions) != 1 || sessions[0].ID != "t1" {
+		t.Fatalf("sessions=%#v err=%v", sessions, err)
+	}
+
+	fake.result = agentbridge.DeliveryResult{Code: agentbridge.Delivered}
+	if err := source.SendMessage(ctx, "t1", "hello"); err != nil {
+		t.Fatalf("send delivered: %v", err)
+	}
+
+	fake.result = agentbridge.DeliveryResult{Code: agentbridge.StartRequired, Detail: "start Codex Desktop and retry"}
+	err = source.SendMessage(ctx, "t1", "hello")
+	if !errors.Is(err, control.ErrDesktopOwnerUnavailable) {
+		t.Fatalf("send start_required: %v", err)
+	}
+
+	if err := source.Close(); err != nil || !fake.closed {
+		t.Fatalf("close: err=%v closed=%v", err, fake.closed)
 	}
 }

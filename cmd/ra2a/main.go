@@ -13,9 +13,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ceasarXuu/RA2A/internal/agentbridge"
+	"github.com/ceasarXuu/RA2A/internal/codexapp"
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
 	"github.com/ceasarXuu/RA2A/internal/control"
-	"github.com/ceasarXuu/RA2A/internal/desktopipc"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 	"github.com/ceasarXuu/RA2A/internal/mcpserver"
 	"github.com/ceasarXuu/RA2A/internal/operator"
@@ -29,14 +30,6 @@ type sessionSource interface {
 
 type sessionSourceFactory func(context.Context, string, string, io.Writer) (sessionSource, error)
 
-type codexSessionSource struct {
-	host        *codexhost.Host
-	desktopSend desktopMessageSender
-}
-
-type messageSender func(context.Context, string, string) error
-type desktopMessageSender func(context.Context, string, string, desktopipc.StartModelResolver) error
-
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -44,7 +37,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "mcp" {
 		err = runMCP(ctx, os.Args[2:], os.Stdin, os.Stdout)
 	} else {
-		err = run(ctx, os.Args[1:], os.Stdout, startCodexSessionSource)
+		err = run(ctx, os.Args[1:], os.Stdout, startRegistrySessionSource)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -267,74 +260,90 @@ func defaultAppServerSocket() string {
 	return codexhost.DefaultSocketPath()
 }
 
-func startCodexSessionSource(ctx context.Context, codexPath, appServerSocket string, stderr io.Writer) (sessionSource, error) {
-	host, err := codexhost.Start(ctx, codexhost.Config{
+func startRegistrySessionSource(ctx context.Context, codexPath, appServerSocket string, stderr io.Writer) (sessionSource, error) {
+	adapter, err := codexapp.New(ctx, codexhost.Config{
 		CodexPath: codexPath, SocketPath: appServerSocket, Stderr: stderr,
-	})
+	}, true /* desktopEnabled */)
 	if err != nil {
 		return nil, err
 	}
-	return &codexSessionSource{host: host, desktopSend: sendDesktopMessage}, nil
+	registry := agentbridge.NewRegistry()
+	if err := registry.Register(adapter); err != nil {
+		_ = adapter.Close()
+		return nil, err
+	}
+	return &registrySessionSource{registry: registry}, nil
 }
 
-func (source *codexSessionSource) SendMessage(ctx context.Context, target, prompt string) error {
-	var desktop messageSender
-	if source.desktopSend != nil {
-		desktop = func(ctx context.Context, target, prompt string) error {
-			return source.desktopSend(ctx, target, prompt, source.host.ResolveThreadModel)
+// sourceRegistry is the slice of agentbridge.Registry the session source
+// needs; it is an interface so main tests can inject a fake.
+type sourceRegistry interface {
+	ListEndpoints(context.Context) ([]agentbridge.EndpointRef, error)
+	Deliver(context.Context, string, string) (agentbridge.DeliveryResult, error)
+	Close() error
+}
+
+// registrySessionSource adapts the agentbridge Registry world to the legacy
+// LAN sessionSource seam. LAN identity is transitional: a session ID is the
+// native thread ID and doubles as the opaque endpoint address until Phase 2.
+type registrySessionSource struct {
+	registry sourceRegistry
+}
+
+func (source *registrySessionSource) ListSessions(ctx context.Context) ([]lannode.Session, error) {
+	refs, err := source.registry.ListEndpoints(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sessionsFromRefs(refs), nil
+}
+
+func (source *registrySessionSource) SendMessage(ctx context.Context, target, prompt string) error {
+	result, err := source.registry.Deliver(ctx, target, prompt)
+	if err != nil {
+		return err
+	}
+	return deliveryResultToError(result, target)
+}
+
+func (source *registrySessionSource) Close() error {
+	return source.registry.Close()
+}
+
+// sessionsFromRefs projects registry endpoints onto the legacy LAN session
+// model. Identity stays native (Session.ID == thread ID) until Phase 2.
+func sessionsFromRefs(refs []agentbridge.EndpointRef) []lannode.Session {
+	sessions := make([]lannode.Session, 0, len(refs))
+	for _, ref := range refs {
+		status := ref.Endpoint.NativeStatus
+		if status == "" {
+			status = string(ref.Endpoint.Status)
 		}
-	}
-	return sendWithDesktopPreference(ctx, target, prompt, source.host.SendMessage, desktop)
-}
-
-func sendWithDesktopPreference(ctx context.Context, target, prompt string, managed, desktop messageSender) error {
-	if desktop == nil {
-		return fmt.Errorf("%w: start Codex Desktop and retry", control.ErrDesktopOwnerUnavailable)
-	}
-	desktopErr := desktop(ctx, target, prompt)
-	if desktopErr == nil {
-		return nil
-	}
-	if desktopipc.IsDeliveryUnknown(desktopErr) {
-		return fmt.Errorf("%w: %v", control.ErrDeliveryUnknown, desktopErr)
-	}
-	if !desktopipc.IsNotDelivered(desktopErr) {
-		return desktopErr
-	}
-	return fmt.Errorf("%w: start Codex Desktop and retry: %v", control.ErrDesktopOwnerUnavailable, desktopErr)
-}
-
-func sendDesktopMessage(ctx context.Context, target, prompt string, resolveModel desktopipc.StartModelResolver) error {
-	connection, _, err := desktopipc.DialContext(ctx, "")
-	if err != nil {
-		return &desktopipc.NotDeliveredError{Cause: err}
-	}
-	defer connection.Close()
-	client := desktopipc.New(connection)
-	if err := client.Initialize(ctx); err != nil {
-		return &desktopipc.NotDeliveredError{Cause: err}
-	}
-	_, err = client.SendMessage(ctx, target, prompt, desktopipc.NewMessageID(), resolveModel)
-	return err
-}
-
-func (source *codexSessionSource) ListSessions(ctx context.Context) ([]lannode.Session, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	threads, err := source.host.ListThreadSummaries(ctx)
-	if err != nil {
-		return nil, err
-	}
-	sessions := make([]lannode.Session, 0, len(threads))
-	for _, thread := range threads {
 		sessions = append(sessions, lannode.Session{
-			ID: thread.ID, Title: thread.Title, Status: thread.Status,
+			ID: ref.Endpoint.EndpointID, Title: ref.Endpoint.Title, Status: status,
 		})
 	}
-	return sessions, nil
+	return sessions
 }
 
-func (source *codexSessionSource) Close() error {
-	return source.host.Close()
+// deliveryResultToError converts an agentbridge outcome back into the
+// LAN/control error vocabulary that lannode and the MCP control HTTP handler
+// key on (sentinel wrapping plus SESSION_BUSY / TARGET_NOT_FOUND substrings).
+func deliveryResultToError(result agentbridge.DeliveryResult, target string) error {
+	switch result.Code {
+	case agentbridge.Delivered:
+		return nil
+	case agentbridge.StartRequired:
+		return fmt.Errorf("%w: %s", control.ErrDesktopOwnerUnavailable, result.Detail)
+	case agentbridge.DeliveryUnknown:
+		return fmt.Errorf("%w: %s", control.ErrDeliveryUnknown, result.Detail)
+	case agentbridge.Busy:
+		return fmt.Errorf("%w: %s", codexhost.ErrSessionBusy, result.Detail)
+	case agentbridge.NotFound:
+		return fmt.Errorf("TARGET_NOT_FOUND: no session %q: %s", target, result.Detail)
+	default: // unreachable, unsupported, adapter_failed
+		return fmt.Errorf("%s: %s", result.Code, result.Detail)
+	}
 }
+
+var _ sessionSource = (*registrySessionSource)(nil)
