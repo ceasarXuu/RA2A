@@ -625,7 +625,7 @@ func respondToSettingsBarrier(conn net.Conn, threadID string) error {
 	if err != nil {
 		return err
 	}
-	if barrier.Method != "thread-follower-update-thread-settings" || barrier.Version != 1 {
+	if barrier.Method != "thread-follower-update-thread-settings" || barrier.Version != 2 {
 		return fmt.Errorf("settings barrier = %#v", barrier)
 	}
 	if barrier.Params["conversationId"] != threadID {

@@ -189,7 +189,7 @@ func (client *Client) synchronizeThreadSettings(ctx context.Context, threadID, m
 	_, err := client.call(ctx, envelope{
 		Type:           "request",
 		SourceClientID: client.clientID,
-		Version:        1,
+		Version:        2,
 		Method:         "thread-follower-update-thread-settings",
 		Params: map[string]any{
 			"conversationId": threadID,
