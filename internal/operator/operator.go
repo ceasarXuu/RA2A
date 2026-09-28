@@ -389,6 +389,11 @@ func InstallAndStart(config Config) error {
 	if output, err := exec.Command(config.Codex, "mcp", "add", "ra2a", "--", executable, "mcp").CombinedOutput(); err != nil {
 		return fmt.Errorf("register Codex MCP: %w: %s", err, strings.TrimSpace(string(output)))
 	}
+	// OpenCode agents must be able to send without the operator editing their
+	// config, so registration happens here rather than being documented as a step.
+	if err := RegisterOpenCodeMCP(executable); err != nil {
+		fmt.Fprintf(os.Stderr, "register OpenCode MCP: %v\n", err)
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		return installDarwin(executable)
