@@ -9,9 +9,9 @@
 
 | 发送端 ＼ 接收端 | codex-app | codex-cli | opencode |
 | --- | --- | --- | --- |
-| **codex-app** | ✅ 长期回归，Windows/Ubuntu/macOS | ⚠️ Windows 本机通过，LAN 未验 | ⚠️ RA2A 投递侧验证（`delivery: confirmed`），非 Codex App agent 实际发起 |
+| **codex-app** | ✅ 长期回归，Windows/Ubuntu/macOS | ⚠️ Windows 本机通过，LAN 未验 | ✅ **用户目视确认**（`RA2A-FULLCHAIN-024937` 实时出现在 attach 的 TUI 中） |
 | **codex-cli** | ⚠️ 同上，反向 | ⚠️ Windows 本机通过，LAN 未验 | — |
-| **opencode** | ⚠️ 工具层通，调用方识别未通（见下） | — | ⚠️ RA2A 投递侧通，agent 互发未验 |
+| **opencode** | ⚠️ 工具可达，模型未稳定选用（见下） | — | ✅ RA2A 投递侧通 |
 
 ## 接收方向：零配置已达成
 
@@ -20,7 +20,28 @@ opencode 适配器默认**发布共享 server 报告的全部会话**，与 code
 
 `ra2a adopt-oc` 保留为**收窄**手段（只暴露指定会话），不再是前置步骤。
 
-## 未打通的格子：opencode → 任何 agent 的调用方识别
+## 未打通的格子：opencode agent 未稳定选用 RA2A 工具
+
+真机追查（`RA2A-FULLCHAIN-024937` 同一会话）：
+
+- **可达**：opencode agent 能发现 `ra2a_send_message`，并构造出正确参数
+  （实测 `{"to": ..., "text": ...}`）。
+- **不稳定**：三次测试中 agent 两次改用 bash 自行调查，而不是调用 MCP 工具。
+  这是模型行为问题，不是接口或协议问题。
+- **调用方识别已不再阻塞投递**：归因改为尽力而为（`8e9f1a4`），无法识别时记为
+  anonymous 照常投递。回信地址随消息正文的 `from:` 行传递，跨 `/new` 不失效，
+  不需要任何进程级或会话级注入。
+
+## 接收方向的目视确认记录
+
+| 时间 | marker | 目标 | 发起方 | 确认 |
+|---|---|---|---|---|
+| 02:31 | `RA2A-LIVE-023158` | Quick greeting | 探针客户端 | 用户目视确认 |
+| 02:49 | `RA2A-FULLCHAIN-024937` | Quick greeting | codex-app session `019f247e-…` | 用户目视确认 |
+
+第二条走的是完整部署链路：`POST /v1/send` → 注册表 → opencode 适配器 → 共享
+server → 用户 TUI，且 `delivery: confirmed`（适配器等到了 `session.idle` 终态，
+而非仅"已交给传输层"）。
 
 真机追查结论（opencode 1.18.33）：
 
