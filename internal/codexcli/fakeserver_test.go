@@ -264,17 +264,23 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 		}
 		if method == "turn/steer" {
 			server.steerExpectations = append(server.steerExpectations, extractString(params, "expectedTurnId"))
+		} else {
+			server.turnCounter++
 		}
-		server.turnCounter++
-		turnID := fmt.Sprintf("22222222-2222-4222-8222-%012d", server.turnCounter)
+		turnID := server.activeTurns[threadID]
+		if method == "turn/start" {
+			turnID = fmt.Sprintf("22222222-2222-4222-8222-%012d", server.turnCounter)
+		}
 		server.activeTurns[threadID] = turnID
 		suppress := server.suppressDone[threadID]
 		failure := server.failTurn[threadID]
 		server.mu.Unlock()
 
-		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": map[string]any{
-			"turn": map[string]any{"id": turnID, "status": "inProgress", "error": nil},
-		}})
+		result := map[string]any{"turn": map[string]any{"id": turnID, "status": "inProgress", "error": nil}}
+		if method == "turn/steer" {
+			result = map[string]any{"turnId": turnID}
+		}
+		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": result})
 		if suppress {
 			return nil
 		}

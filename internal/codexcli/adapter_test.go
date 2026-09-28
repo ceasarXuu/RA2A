@@ -70,6 +70,9 @@ func TestDeliverSteersActiveTurnWithExpectedTurnID(t *testing.T) {
 	if !result.Delivered() {
 		t.Fatalf("active follow-up must be delivered, got %+v", result)
 	}
+	if result.TurnID != "33333333-3333-4333-8333-333333333333" {
+		t.Fatalf("steer must confirm the existing turn id, got %+v", result)
+	}
 	targets := server.steerTargets()
 	if len(targets) != 1 || targets[0] != "33333333-3333-4333-8333-333333333333" {
 		t.Fatalf("steer must carry the active turn id, got %v", targets)

@@ -85,6 +85,10 @@ type turnResponse struct {
 	Turn turnRecord `json:"turn"`
 }
 
+type turnSteerResponse struct {
+	TurnID string `json:"turnId"`
+}
+
 type turnsListResponse struct {
 	Data []struct {
 		ID     string          `json:"id"`
@@ -186,11 +190,17 @@ func (server *appServer) turnStart(ctx context.Context, threadID, text string) (
 }
 
 func (server *appServer) turnSteer(ctx context.Context, threadID, expectedTurnID, text string) (turnRecord, error) {
-	var response turnResponse
+	var response turnSteerResponse
 	err := server.conn.call(ctx, "turn/steer",
 		map[string]any{"threadId": threadID, "expectedTurnId": expectedTurnID, "input": userInput(text)},
 		&response)
-	return response.Turn, err
+	if err != nil {
+		return turnRecord{}, err
+	}
+	if response.TurnID == "" {
+		return turnRecord{}, errors.New("turn/steer response omitted turnId")
+	}
+	return turnRecord{ID: response.TurnID}, nil
 }
 
 func classifyRPCError(err error) string {
