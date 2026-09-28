@@ -129,9 +129,13 @@ func passthrough(args []string, stdout, stderr *os.File) error {
 	return command.Run()
 }
 
-// nativeExecutable finds the real opencode, skipping this wrapper so it can never
-// invoke itself. The installer places the real binary under a recorded path; a
-// same-directory sibling is the fallback.
+// nativeExecutable finds the real opencode, skipping this wrapper so it can
+// never invoke itself.
+//
+// The installer places the wrapper in a PATH directory that precedes the real
+// binary, so a plain exec.LookPath("opencode") resolves back to the wrapper. The
+// whole PATH is therefore scanned and the first candidate that is not this
+// binary wins; returning a bare name would resolve to the wrapper again.
 func nativeExecutable() string {
 	if recorded := os.Getenv("RA2A_OPENCODE_BINARY"); recorded != "" {
 		if _, err := os.Stat(recorded); err == nil {
@@ -147,8 +151,18 @@ func nativeExecutable() string {
 			}
 		}
 	}
-	if path, err := exec.LookPath("opencode"); err == nil && !isSelf(path) {
-		return path
+	for _, directory := range filepath.SplitList(os.Getenv("PATH")) {
+		if directory == "" {
+			directory = "."
+		}
+		candidate := filepath.Join(directory, "opencode")
+		if info, err := os.Stat(candidate); err != nil || info.IsDir() {
+			continue
+		}
+		if isSelf(candidate) {
+			continue
+		}
+		return candidate
 	}
 	return "opencode"
 }

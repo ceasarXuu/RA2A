@@ -83,3 +83,39 @@ func TestEnvOrFallsBack(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// The installer places the wrapper in a PATH directory that precedes the real
+// binary, so the resolution must skip itself instead of resolving back to it.
+func TestNativeExecutableSkipsTheWrapperItselfInPath(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Skip("no executable path")
+	}
+	directory := t.TempDir()
+	wrapperDir := filepath.Join(directory, "bin")
+	realDir := filepath.Join(directory, "real")
+	for _, path := range []string{wrapperDir, realDir} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The first PATH entry holds this very binary, exactly as the wrapper would
+	// find itself after installation.
+	shadow := filepath.Join(wrapperDir, "opencode")
+	if err := os.Symlink(self, shadow); err != nil {
+		t.Fatalf("shadow the current executable: %v", err)
+	}
+	real := filepath.Join(realDir, "opencode")
+	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", wrapperDir+string(os.PathListSeparator)+realDir)
+	t.Setenv("RA2A_OPENCODE_BINARY", "")
+	got := nativeExecutable()
+	if got == shadow {
+		t.Fatal("the wrapper must never resolve to itself")
+	}
+	if got != real {
+		t.Fatalf("expected the real binary %q, got %q", real, got)
+	}
+}
