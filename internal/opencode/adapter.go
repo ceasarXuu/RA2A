@@ -13,8 +13,9 @@ import (
 
 // AgentKind is the agent identity this adapter publishes. OpenCode is an
 // adapted agent: it holds real conversations, so it gets a first-class kind
-// rather than being folded into the mailbox channel.
-const AgentKind agentbridge.AgentKind = "opencode"
+// registered in the shared contract rather than being folded into the mailbox
+// channel.
+const AgentKind = agentbridge.AgentOpenCode
 
 type Adapter struct {
 	nodeID  string
@@ -50,6 +51,17 @@ func (adapter *Adapter) Adopt(sessionID string) error {
 	defer adapter.mu.Unlock()
 	adapter.adopted[sessionID] = struct{}{}
 	return nil
+}
+
+// Reachable reports whether an OpenCode server answers at the URL. The adapter
+// uses it to stay absent instead of unhealthy when OpenCode is simply not
+// running, so the other adapters keep serving.
+func Reachable(ctx context.Context, baseURL string) bool {
+	client := NewClient(Config{BaseURL: baseURL})
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, err := client.ListSessions(ctx)
+	return err == nil
 }
 
 func (adapter *Adapter) Adopted() []string {

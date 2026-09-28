@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,6 +25,8 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 	"github.com/ceasarXuu/RA2A/internal/mailbox"
 	"github.com/ceasarXuu/RA2A/internal/mcpserver"
+	"github.com/ceasarXuu/RA2A/internal/ochost"
+	"github.com/ceasarXuu/RA2A/internal/opencode"
 	"github.com/ceasarXuu/RA2A/internal/operator"
 )
 
@@ -132,22 +136,23 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return nil
 	case "mailbox":
 		return runMailbox(args[1:], output)
-	case "adopt-cli", "release-cli":
+	case "adopt-cli", "release-cli", "adopt-oc", "release-oc":
 		if len(args) != 2 || args[1] == "" {
-			return fmt.Errorf("%s requires a thread id", args[0])
+			return fmt.Errorf("%s requires an id", args[0])
 		}
-		var config operator.Config
-		var err error
-		if args[0] == "adopt-cli" {
-			config, err = operator.AdoptCLISession(args[1])
-		} else {
-			config, err = operator.ReleaseCLISession(args[1])
-		}
+		config, err := applySessionCommand(args[0], args[1])
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "cli-session=%s published=%d\n", args[1], len(config.CLISessions))
+		switch {
+		case strings.HasSuffix(args[0], "-cli"):
+			fmt.Fprintf(output, "cli-session=%s published=%d\n", args[1], len(config.CLISessions))
+		default:
+			fmt.Fprintf(output, "opencode-session=%s published=%d\n", args[1], len(config.OpenCodeSessions))
+		}
 		return nil
+	case "opencode":
+		return runOpencodeAttach(ctx, args[1:], output)
 	case "setup":
 		flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 		flags.SetOutput(io.Discard)
@@ -192,7 +197,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return run(ctx, []string{"serve", "--pin", config.PIN, "--id", config.NodeID, "--name", config.Name, "--codex", config.Codex, "--control-address", controlAddress}, output, startSource)
 	}
 	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
-		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|mailbox|selftest|serve|send> [options]")
+		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|adopt-oc|release-oc|mailbox|opencode|selftest|serve|send> [options]")
 	}
 
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
@@ -368,6 +373,92 @@ func runMailbox(args []string, output io.Writer) error {
 	}
 }
 
+func applySessionCommand(command, id string) (operator.Config, error) {
+	switch command {
+	case "adopt-cli":
+		return operator.AdoptCLISession(id)
+	case "release-cli":
+		return operator.ReleaseCLISession(id)
+	case "adopt-oc":
+		return operator.AdoptOpenCodeSession(id)
+	case "release-oc":
+		return operator.ReleaseOpenCodeSession(id)
+	}
+	return operator.Config{}, fmt.Errorf("unknown session command %q", command)
+}
+
+// opencodeSettings resolves the shared OpenCode server URL. It is deliberately
+// overridable so a self-hosted OpenCode instance can be adopted without a
+// rebuild, but the default stays on loopback.
+func opencodeSettings() (url string, sessions []string) {
+	url = "http://127.0.0.1:4099"
+	if override := strings.TrimSpace(os.Getenv("RA2A_OPENCODE_URL")); override != "" {
+		url = override
+	}
+	if config, err := operator.Load(); err == nil {
+		if config.OpenCodeURL != "" {
+			url = config.OpenCodeURL
+		}
+		sessions = config.OpenCodeSessions
+	}
+	return url, sessions
+}
+
+// startOpencodeAdapter attaches to the shared OpenCode server and subscribes to
+// its event stream. A missing or unreachable server leaves the other adapters
+// untouched: OpenCode is optional, and RA2A must still serve Codex.
+func startOpencodeAdapter(ctx context.Context, nodeID string, stderr io.Writer) (agentbridge.Adapter, error) {
+	url, adopted := opencodeSettings()
+	client := opencode.NewClient(opencode.Config{BaseURL: url, Stderr: stderr, ClientName: "ra2a"})
+	adapter := opencode.New(nodeID, client, stderr)
+	for _, sessionID := range adopted {
+		if err := adapter.Adopt(sessionID); err != nil {
+			fmt.Fprintf(stderr, "skip opencode session %q: %v\n", sessionID, err)
+		}
+	}
+	if !opencode.Reachable(ctx, url) {
+		return nil, fmt.Errorf("no OpenCode server at %s (start it with `opencode --ra2a`)", url)
+	}
+	adapter.Watch(ctx)
+	return adapter, nil
+}
+
+// runOpencodeAttach starts the shared server if needed and hands the terminal to
+// `opencode attach`, so `opencode --ra2a` and this command behave identically.
+func runOpencodeAttach(ctx context.Context, args []string, output io.Writer) error {
+	url, _ := opencodeSettings()
+	host, err := ochost.Start(ctx, ochost.Config{
+		Executable: opencodeExecutable(), URL: url, Stderr: os.Stderr,
+		OwnerPath: opencodeOwnerPath(), ReadinessTimeout: 25 * time.Second,
+	})
+	if err != nil {
+		return fmt.Errorf("prepare the shared OpenCode server: %w", err)
+	}
+	defer func() { _ = host.Close() }()
+	fmt.Fprintf(output, "opencode-server=%s owned=%v\n", host.URL(), host.Owned())
+	command := exec.CommandContext(ctx, opencodeExecutable(),
+		append([]string{"attach", host.URL()}, args...)...)
+	command.Stdin = os.Stdin
+	command.Stdout = output
+	command.Stderr = os.Stderr
+	return command.Run()
+}
+
+func opencodeExecutable() string {
+	if override := strings.TrimSpace(os.Getenv("RA2A_OPENCODE_BINARY")); override != "" {
+		return override
+	}
+	return "opencode"
+}
+
+func opencodeOwnerPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "ra2a", "opencode-owner.json")
+}
+
 // openMailboxStore places the mailbox under the RA2A config directory so it
 // survives restarts and inherits the config directory's private permissions.
 func openMailboxStore() (*mailbox.Store, error) {
@@ -411,6 +502,13 @@ func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket strin
 		}
 	}
 	if err := registry.Register(cliAdapter); err != nil {
+		_ = source.Close()
+		return nil, err
+	}
+	opencodeAdapter, err := startOpencodeAdapter(ctx, nodeID, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "opencode integration unavailable: %v\n", err)
+	} else if err := registry.Register(opencodeAdapter); err != nil {
 		_ = source.Close()
 		return nil, err
 	}

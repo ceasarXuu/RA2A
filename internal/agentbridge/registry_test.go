@@ -423,3 +423,20 @@ func TestResolveCallerRefusesUnpublishedAdapterGuess(t *testing.T) {
 		t.Fatalf("an unpublished guess must be refused with actionable guidance, got %v", err)
 	}
 }
+
+func TestEveryRegisteredKindIsPartOfTheSharedContract(t *testing.T) {
+	// A new adapter must declare its kind in agentbridge rather than inventing
+	// one locally, otherwise the registry silently refuses it at runtime.
+	for _, kind := range []AgentKind{AgentCodexApp, AgentCodexCLI, AgentOpenCode} {
+		if !kind.Valid() {
+			t.Fatalf("kind %q must be valid", kind)
+		}
+		registry := NewRegistry("node-a")
+		if err := registry.Register(&fakeAdapter{kind: kind, health: Ready()}); err != nil {
+			t.Fatalf("kind %q must be registrable: %v", kind, err)
+		}
+	}
+	if AgentKind("some-future-agent").Valid() {
+		t.Fatal("an unregistered kind must stay invalid")
+	}
+}
