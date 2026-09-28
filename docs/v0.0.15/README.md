@@ -38,12 +38,15 @@ v0.0.15 的目标是加入 **Codex CLI** 支持，并将 RA2A 从“Codex App �
 | Phase 2 端点协议 | 已落地：`lannode.Session` 增量字段 `agent`/`capabilities` + `protocolVersion`，旧节点缺字段按 Codex App 读取 |
 | Phase 3 CLI 适配器 | 已落地：`internal/codexcli`，WebSocket over AF_UNIX 接入官方 daemon，投递契约与 V10 实测一致，16 个契约测试钉死 |
 | 归属登记 | 已落地：`ra2a adopt-cli <thread-id>` 显式登记，未登记 thread 不发布 |
-| Phase 4 MCP 来源识别 / 配置迁移 | 未完成 |
-| Phase 5 交叉矩阵 | 未完成（CLI→App 方向、三平台、20+ 轮） |
+| Phase 4 MCP 来源识别 | 已落地：`agentbridge.CallerResolver` 下沉到适配器；codexapp 读 `_meta.threadId`，codexcli 明确不猜测并要求 `from` 声明 |
+| Phase 4 配置迁移 | 部分完成：`cliSessions` 承载归属登记；单一 `codex` 路径由两个适配器共用，暂不需要分叉配置 |
+| Phase 5 交叉矩阵 | 未完成：Windows 本机 W1-W7 通过，**LAN 端到端与 CLI→App 方向未做**，20+ 轮未做 |
 | Phase 6 文档与发布 | 未完成 |
 
 行为变更：本地投递现在要求目标已由本节点发布过，未发布地址返回 `DELIVERY_UNKNOWN` 而不再盲发。
 
-Windows 侧验证清单见 `runbooks/windows-codex-cli-validation-checklist.md`，其中 W4（零动作挂接）是唯一已知可行性风险点。
+Windows 侧验证记录见 `runbooks/windows-codex-cli-validation-evidence-2026-09-28.md`：W1/W3/W4/W7/W9 通过，W2 Desktop 回归本机通过（LAN 待补），W5/W6 本机适配器通过（LAN 待补），W8 部分完成。W4 零动作挂接在 Windows 上成立，AF_UNIX 108 字节风险未触发（真实 socket 74 字符）。
+
+Windows 验证中发现并已修复的问题：Desktop 会话被全部丢弃（`busy` 端点被 `Validate` 拒绝）、本机节点重复出现在 `list_targets`、Windows `userAgent` 版本解析错误导致绕过最低版本门槛、`turn/steer` 响应 `turnId` 解码错误、Windows 测试夹具不可移植。
 
 另：`v0.0.15` 已于 2026-09-13 发布，但发布范围小于本计划范围（CLI 适配器未交付），承载版本待 Owner 决定，详见 [engineering-plan.md §0](./engineering-plan.md)。

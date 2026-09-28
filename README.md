@@ -37,7 +37,7 @@ flowchart LR
 | Agent / App | Status | Notes |
 |---|---|---|
 | **Codex App** | ✅ Supported | Cross-device validation completed on macOS and Windows |
-| Codex CLI | 🧭 Planned | Connect CLI sessions |
+| Codex CLI | 🧪 Validated, not released | Adapter implemented; delivery contract verified on Ubuntu and Windows |
 | Claude Code | 🧭 Planned | Connect through its session interface |
 | Claude Desktop App | 🧭 Planned | Deliver messages to specific desktop sessions |
 | OpenCode | 🧭 Planned | Integrate with RA2A discovery and messaging |

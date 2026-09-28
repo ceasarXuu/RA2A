@@ -37,7 +37,7 @@ flowchart LR
 | Agent / App | 状态 | 说明 |
 |---|---|---|
 | **Codex App** | ✅ 当前支持 | macOS 与 Windows 跨设备真实验收通过 |
-| Codex CLI | 🧭 计划支持 | 接入 CLI session |
+| Codex CLI | 🧪 已验证未发布 | 适配器已实现，投递契约已在 Ubuntu 与 Windows 验证 |
 | Claude Code | 🧭 计划支持 | 接入对应会话接口 |
 | Claude Desktop App | 🧭 计划支持 | 支持桌面会话定向投递 |
 | OpenCode | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
