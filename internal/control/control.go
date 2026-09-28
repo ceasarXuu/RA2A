@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/lannode"
+	"github.com/ceasarXuu/RA2A/internal/mailbox"
 )
 
 const DefaultEndpoint = "http://127.0.0.1:47321"
@@ -203,8 +204,12 @@ func newMessageID() (string, error) {
 	return hex.EncodeToString(value), nil
 }
 
-func NewHandler(backend Backend) http.Handler {
+// NewHandler builds the loopback control plane. When a mailbox store is
+// supplied the mailbox routes are mounted alongside the endpoint routes, which
+// is what lets an un-adapted harness read its mail without an adapter.
+func NewHandler(backend Backend, store *mailbox.Store) http.Handler {
 	mux := http.NewServeMux()
+	RegisterMailboxRoutes(mux, store, nodeIDOf(backend))
 	mux.HandleFunc("GET /v1/targets", func(writer http.ResponseWriter, request *http.Request) {
 		targets, err := backend.ListTargets(request.Context())
 		if err != nil {
@@ -260,7 +265,16 @@ func deliveryConfirmation(backend Backend, target string) string {
 	return "handed_to_transport"
 }
 
-func Start(ctx context.Context, address string, backend Backend) error {
+// nodeIDOf lets the mailbox routes label local deliveries without the control
+// package needing to know how a backend is built.
+func nodeIDOf(backend Backend) string {
+	if provider, ok := backend.(interface{ LocalNodeID() string }); ok {
+		return provider.LocalNodeID()
+	}
+	return "local"
+}
+
+func Start(ctx context.Context, address string, backend Backend, store *mailbox.Store) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return fmt.Errorf("invalid control address: %w", err)
@@ -273,7 +287,7 @@ func Start(ctx context.Context, address string, backend Backend) error {
 	if err != nil {
 		return fmt.Errorf("listen for local MCP control: %w", err)
 	}
-	server := &http.Server{Handler: NewHandler(backend)}
+	server := &http.Server{Handler: NewHandler(backend, store)}
 	go func() { _ = server.Serve(listener) }()
 	go func() { <-ctx.Done(); _ = server.Close() }()
 	return nil

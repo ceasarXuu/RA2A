@@ -21,6 +21,7 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/control"
 	"github.com/ceasarXuu/RA2A/internal/desktopipc"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
+	"github.com/ceasarXuu/RA2A/internal/mailbox"
 	"github.com/ceasarXuu/RA2A/internal/mcpserver"
 	"github.com/ceasarXuu/RA2A/internal/operator"
 )
@@ -129,6 +130,8 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		}
 		fmt.Fprintf(output, "name: %s\nstatus: exited\n", config.Name)
 		return nil
+	case "mailbox":
+		return runMailbox(args[1:], output)
 	case "adopt-cli", "release-cli":
 		if len(args) != 2 || args[1] == "" {
 			return fmt.Errorf("%s requires a thread id", args[0])
@@ -189,7 +192,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return run(ctx, []string{"serve", "--pin", config.PIN, "--id", config.NodeID, "--name", config.Name, "--codex", config.Codex, "--control-address", controlAddress}, output, startSource)
 	}
 	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
-		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|selftest|serve|send> [options]")
+		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|mailbox|selftest|serve|send> [options]")
 	}
 
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
@@ -221,6 +224,10 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	if err != nil {
 		return err
 	}
+	store, err := openMailboxStore()
+	if err != nil {
+		return err
+	}
 	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource, adopted)
 	if err != nil {
 		return err
@@ -229,7 +236,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	node, err := lannode.Start(ctx, lannode.Config{
 		ID: *id, Name: *name, PIN: *pin, Sessions: registryAdapter{registry: registry}.ListSessions,
 		SendMessage: func(ctx context.Context, message lannode.Message) error {
-			return deliverOverLAN(ctx, *id, registry, message)
+			return deliverOverLAN(ctx, *id, registry, store, message)
 		},
 	})
 	if err != nil {
@@ -239,7 +246,12 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 
 	if args[0] == "serve" {
 		coordinator := control.NewAdapterCoordinator(*id, node, registryAdapter{registry: registry})
-		if err := control.Start(ctx, *controlAddress, coordinator); err != nil {
+		store, err := openMailboxStore()
+		if err != nil {
+			return err
+		}
+		coordinator = coordinator.WithMailbox(store)
+		if err := control.Start(ctx, *controlAddress, coordinator, store); err != nil {
 			return err
 		}
 		fmt.Fprintf(output, "node=ra2a://%s status=running\n", *id)
@@ -299,6 +311,77 @@ func commandValue(args []string, input io.Reader, output io.Writer) (string, err
 // buildRegistry wires one adapter per supported agent. Adding an agent means
 // registering one more adapter here; the router, LAN layer and MCP layer stay
 // unchanged.
+// runMailbox is the client side of the mailbox. It deliberately uses only the
+// loopback control plane, so any harness can read its mail without an adapter,
+// a live session or a model call.
+func runMailbox(args []string, output io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("mailbox requires read, send or list")
+	}
+	flags := flag.NewFlagSet("mailbox", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	controlURL := flags.String("control-url", control.DefaultEndpoint, "local RA2A daemon control URL")
+	recipient := flags.String("to", "", "mailbox recipient")
+	from := flags.String("from", "", "sender address recorded on the message")
+	text := flags.String("message", "", "message text (send only)")
+	peek := flags.Bool("peek", false, "read without marking messages as read")
+	limit := flags.Int("limit", 0, "maximum messages to return")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	client := control.NewClient(*controlURL)
+	switch args[0] {
+	case "list":
+		names, err := client.ListMailboxes(context.Background())
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			fmt.Fprintln(output, name)
+		}
+		return nil
+	case "read":
+		if *recipient == "" {
+			return errors.New("mailbox read requires --to")
+		}
+		result, err := client.ReadMailbox(context.Background(), control.MailboxReadRequest{
+			To: *recipient, Limit: *limit, Peek: *peek,
+		})
+		if err != nil {
+			return err
+		}
+		for _, message := range result.Messages {
+			fmt.Fprintf(output, "--- %s from %s at %s\n%s\n",
+				message.ID, message.From, message.SentAt.Format(time.RFC3339), message.Text)
+		}
+		fmt.Fprintf(output, "pending=%d returned=%d\n", result.Pending, len(result.Messages))
+		return nil
+	case "send":
+		if *recipient == "" || *text == "" {
+			return errors.New("mailbox send requires --to and --message")
+		}
+		return client.SendMailbox(context.Background(), control.MailboxSendRequest{
+			To: *recipient, Text: *text, From: *from,
+		})
+	default:
+		return fmt.Errorf("unknown mailbox command %q", args[0])
+	}
+}
+
+// openMailboxStore places the mailbox under the RA2A config directory so it
+// survives restarts and inherits the config directory's private permissions.
+func openMailboxStore() (*mailbox.Store, error) {
+	path, err := operator.MailboxPath()
+	if err != nil {
+		return nil, err
+	}
+	store, err := mailbox.OpenStore(path)
+	if err != nil {
+		return nil, fmt.Errorf("open mailbox store: %w", err)
+	}
+	return store, nil
+}
+
 // adoptedCLISessions reads the operator-recorded CLI thread IDs. A missing or
 // unreadable config simply publishes nothing rather than failing daemon start.
 func adoptedCLISessions() ([]string, error) {
@@ -381,7 +464,7 @@ func (wrapper registryAdapter) ResolveCaller(ctx context.Context, caller agentbr
 // deliverOverLAN keeps the established wire format: an incoming LAN message is
 // turned into a unified envelope and routed through the same registry the local
 // control plane uses, so both paths share one delivery implementation.
-func deliverOverLAN(ctx context.Context, nodeID string, registry *agentbridge.Registry, message lannode.Message) error {
+func deliverOverLAN(ctx context.Context, nodeID string, registry *agentbridge.Registry, store *mailbox.Store, message lannode.Message) error {
 	envelope := agentbridge.MessageEnvelope{
 		ID:              message.MessageID,
 		ProtocolVersion: agentbridge.ProtocolVersion,
@@ -389,6 +472,14 @@ func deliverOverLAN(ctx context.Context, nodeID string, registry *agentbridge.Re
 		TargetAddress:   "ra2a://" + nodeID + "/" + message.TargetSessionID,
 		Text:            message.Text,
 		CreatedAt:       time.Now().UTC(),
+	}
+	// A mailbox target is a node service, not an agent endpoint: it is stored
+	// locally and no adapter, session or model call is involved.
+	if result, handled := control.DeliverMailbox(store, nodeID, envelope); handled {
+		if result.Delivered() {
+			return nil
+		}
+		return fmt.Errorf("%w: %s", control.ErrDeliveryUnknown, result.Detail)
 	}
 	if envelope.ID == "" {
 		envelope.ID = message.TargetSessionID + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)

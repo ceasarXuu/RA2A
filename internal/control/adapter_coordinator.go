@@ -10,6 +10,7 @@ import (
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
+	"github.com/ceasarXuu/RA2A/internal/mailbox"
 )
 
 var ErrStartRequired = errors.New("START_REQUIRED")
@@ -35,6 +36,7 @@ type AdapterCoordinator struct {
 	localID  string
 	lan      LAN
 	registry LocalRegistry
+	mailbox  *mailbox.Store
 	mu       sync.RWMutex
 	cache    map[string][]lannode.Session
 }
@@ -42,6 +44,16 @@ type AdapterCoordinator struct {
 func NewAdapterCoordinator(localID string, lan LAN, registry LocalRegistry) *AdapterCoordinator {
 	return &AdapterCoordinator{localID: localID, lan: lan, registry: registry, cache: make(map[string][]lannode.Session)}
 }
+
+// WithMailbox attaches a mailbox store so local deliveries can be addressed to
+// a mailbox instead of an agent endpoint.
+func (coordinator *AdapterCoordinator) WithMailbox(store *mailbox.Store) *AdapterCoordinator {
+	coordinator.mailbox = store
+	return coordinator
+}
+
+// LocalNodeID exposes this node's identity for the control plane.
+func (coordinator *AdapterCoordinator) LocalNodeID() string { return coordinator.localID }
 
 func (coordinator *AdapterCoordinator) ListTargets(ctx context.Context) ([]Target, error) {
 	targets, err := NewCoordinator(coordinator.localID, coordinator.lan).ListTargets(ctx)
@@ -110,8 +122,26 @@ func (coordinator *AdapterCoordinator) localSessions(ctx context.Context) ([]lan
 // Send delivers locally when the target belongs to this node, and otherwise
 // keeps the established LAN path unchanged.
 func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendRequest) error {
+	if request.Text == "" {
+		return ErrInvalidRequest
+	}
+	// A mailbox address is not an endpoint address, so it is recognised before
+	// the strict endpoint parser runs.
+	if boxNode, recipient, isMailbox, boxErr := mailbox.ParseAddress(request.To); isMailbox {
+		if boxErr != nil {
+			return fmt.Errorf("TARGET_UNSUPPORTED: %v", boxErr)
+		}
+		if boxNode != coordinator.localID {
+			return fmt.Errorf("%w: mailbox %s lives on node %s", ErrTargetUnreachable, recipient, boxNode)
+		}
+		source, err := coordinator.resolveSource(ctx, request)
+		if err != nil {
+			return err
+		}
+		return resultError(coordinator.storeMailbox(recipient, source, request))
+	}
 	nodeID, _, err := parseTarget(request.To)
-	if err != nil || request.Text == "" {
+	if err != nil {
 		return ErrInvalidRequest
 	}
 	if nodeID != coordinator.localID || coordinator.registry == nil {
@@ -136,8 +166,37 @@ func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendReq
 		}
 		envelope.ID = generated
 	}
+	if result, handled := coordinator.deliverLocal(ctx, envelope, coordinator.mailbox); handled {
+		return resultError(result)
+	}
 	result := coordinator.registry.Deliver(ctx, envelope)
 	return resultError(result)
+}
+
+// recipientAddress builds the local opaque address for a mailbox recipient.
+func recipientAddress(nodeID, recipient string) string {
+	return mailbox.Address(nodeID, recipient)
+}
+
+// storeMailbox writes one envelope into a local mailbox.
+func (coordinator *AdapterCoordinator) storeMailbox(recipient, source string, request SendRequest) agentbridge.DeliveryResult {
+	envelope := agentbridge.MessageEnvelope{
+		ID:              request.MessageID,
+		ProtocolVersion: agentbridge.ProtocolVersion,
+		SourceAddress:   source,
+		TargetAddress:   recipientAddress(coordinator.localID, recipient),
+		Text:            request.Text,
+		CreatedAt:       time.Now().UTC(),
+	}
+	result, _ := DeliverMailbox(coordinator.mailbox, coordinator.localID, envelope)
+	return result
+}
+
+// deliverLocal routes a local envelope. A mailbox address is handled before any
+// adapter lookup, because a mailbox is not a conversation endpoint and must
+// never reach an agent.
+func (coordinator *AdapterCoordinator) deliverLocal(ctx context.Context, envelope agentbridge.MessageEnvelope, store *mailbox.Store) (agentbridge.DeliveryResult, bool) {
+	return DeliverMailbox(store, coordinator.localID, envelope)
 }
 
 // resolveSource turns whatever the caller supplied into one published opaque
@@ -149,6 +208,12 @@ func (coordinator *AdapterCoordinator) resolveSource(ctx context.Context, reques
 	})
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrCallerUnknown, err)
+	}
+	// A resolver answer is still an untrusted claim until this node confirms it
+	// publishes the endpoint, so an adapter cannot attribute mail to an address
+	// nobody can reply through.
+	if !address.Valid() || address.NodeID != coordinator.localID {
+		return "", fmt.Errorf("%w: resolved caller address %q is not served by this node", ErrCallerUnknown, address)
 	}
 	return address.String(), nil
 }

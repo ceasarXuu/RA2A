@@ -224,7 +224,7 @@ func TestCoordinatorRejectsUnknownTarget(t *testing.T) {
 
 func TestHTTPClientRoundTripsTargetsAndSend(t *testing.T) {
 	backend := &fakeBackend{targets: []Target{{ID: "node-b", Name: "Node B"}}}
-	server := httptest.NewServer(NewHandler(backend))
+	server := httptest.NewServer(NewHandler(backend, nil))
 	defer server.Close()
 	client := NewClient(server.URL)
 	targets, err := client.ListTargets(context.Background())
@@ -242,7 +242,7 @@ func TestHTTPClientRoundTripsTargetsAndSend(t *testing.T) {
 
 func TestHTTPClientPreservesDeliveryErrorCode(t *testing.T) {
 	backend := &fakeBackend{sendErr: errors.New("SESSION_BUSY")}
-	server := httptest.NewServer(NewHandler(backend))
+	server := httptest.NewServer(NewHandler(backend, nil))
 	defer server.Close()
 	err := NewClient(server.URL).Send(context.Background(), SendRequest{To: "ra2a://n/s", Text: "x", SourceSessionID: "c"})
 	if err == nil || !strings.Contains(err.Error(), "SESSION_BUSY") {
@@ -255,7 +255,7 @@ func TestHTTPHandlerMapsTargetUnreachableToServiceUnavailable(t *testing.T) {
 		`{"to":"ra2a://n/s","text":"x","sourceSessionId":"c"}`,
 	))
 	recorder := httptest.NewRecorder()
-	NewHandler(&fakeBackend{sendErr: ErrTargetUnreachable}).ServeHTTP(recorder, request)
+	NewHandler(&fakeBackend{sendErr: ErrTargetUnreachable}, nil).ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
 	}

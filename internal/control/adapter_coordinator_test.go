@@ -77,6 +77,7 @@ func TestLocalSendRoutesThroughRegistry(t *testing.T) {
 		result: agentbridge.Delivered("turn-1"),
 		caller: agentbridge.Address{NodeID: "node-a", EndpointID: "caller-1"},
 	}
+	registry.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "caller-1", agentbridge.AgentCodexApp)}
 	coordinator := NewAdapterCoordinator("node-a", &failingLAN{}, registry)
 	err := coordinator.Send(context.Background(), SendRequest{
 		To: "ra2a://node-a/cli-1", Text: "hello", SourceSessionID: "caller-1",
@@ -104,6 +105,7 @@ func TestLocalSendFallsBackToLANForRemoteNodes(t *testing.T) {
 		result: agentbridge.Delivered("turn-1"),
 		caller: agentbridge.Address{NodeID: "node-a", EndpointID: "caller-1"},
 	}
+	registry.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "caller-1", agentbridge.AgentCodexApp)}
 	lan := &recordingLAN{}
 	coordinator := NewAdapterCoordinator("node-a", lan, registry)
 	if err := coordinator.Send(context.Background(), SendRequest{

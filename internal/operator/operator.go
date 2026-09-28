@@ -69,6 +69,15 @@ func ReleaseCLISession(threadID string) (Config, error) {
 	return config, nil
 }
 
+// MailboxPath returns the directory holding per-recipient mailboxes.
+func MailboxPath() (string, error) {
+	path, err := ConfigPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(path), "mailbox"), nil
+}
+
 func ConfigPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
