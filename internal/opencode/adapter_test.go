@@ -401,27 +401,45 @@ func TestHealthFollowsTheServerRatherThanAMemory(t *testing.T) {
 	t.Fatal("health must stop claiming ready once the server is gone")
 }
 
-// OpenCode publishes no stable caller identity in MCP metadata, so the adapter
-// answers only from what it has adopted and otherwise asks for `from`.
-func TestResolveCallerOnlyClaimsAdoptedSessions(t *testing.T) {
+// Every session the shared server reports must be publishable: the requirement
+// is that any session can reach any other, so no per-session setup is allowed.
+func TestListEndpointsPublishesEverySessionByDefault(t *testing.T) {
 	fake := newFakeOpenCode(t)
 	adapter := newTestAdapter(t, fake)
-	if _, err := adapter.ResolveCaller(context.Background(), agentbridge.CallerContext{}); err == nil {
-		t.Fatal("an adapter with no adopted session must not claim a caller")
+	endpoints, err := adapter.ListEndpoints(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
 	}
+	if len(endpoints) != 2 {
+		t.Fatalf("both server-reported sessions must be published, got %+v", endpoints)
+	}
+}
+
+func TestAdoptNarrowsPublicationOnlyWhenAsked(t *testing.T) {
+	fake := newFakeOpenCode(t)
+	adapter := newTestAdapter(t, fake)
 	if err := adapter.Adopt("ses_1"); err != nil {
 		t.Fatal(err)
 	}
-	address, err := adapter.ResolveCaller(context.Background(), agentbridge.CallerContext{
-		Meta: map[string]any{"sessionID": "ses_1"},
-	})
-	if err != nil || address.EndpointID != "ses_1" {
-		t.Fatalf("a single adopted session must resolve, got %+v %v", address, err)
+	endpoints, err := adapter.ListEndpoints(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
 	}
-	if err := adapter.Adopt("ses_2"); err != nil {
-		t.Fatal(err)
+	if len(endpoints) != 1 || endpoints[0].ID != "ses_1" {
+		t.Fatalf("adopt must narrow publication, got %+v", endpoints)
 	}
+	adapter.Unrestrict()
+	if endpoints, err = adapter.ListEndpoints(context.Background()); err != nil || len(endpoints) != 2 {
+		t.Fatalf("unrestrict must publish everything again, got %+v err=%v", endpoints, err)
+	}
+}
+
+// OpenCode publishes no stable caller identity in MCP metadata, so the adapter
+// answers only when it can do so without guessing.
+func TestResolveCallerRefusesToGuessBetweenSessions(t *testing.T) {
+	fake := newFakeOpenCode(t)
+	adapter := newTestAdapter(t, fake)
 	if _, err := adapter.ResolveCaller(context.Background(), agentbridge.CallerContext{}); err == nil {
-		t.Fatal("several adopted sessions must not be guessed between")
+		t.Fatal("several sessions must not be guessed between")
 	}
 }

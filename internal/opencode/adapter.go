@@ -23,6 +23,7 @@ type Adapter struct {
 	baseURL   string
 	logger    *slog.Logger
 	mu        sync.RWMutex
+	restrict  bool
 	adopted   map[string]struct{}
 	watcher   context.CancelFunc
 	lastProbe time.Time
@@ -42,34 +43,46 @@ func New(nodeID string, client *Client, stderr io.Writer) *Adapter {
 
 func (adapter *Adapter) Kind() agentbridge.AgentKind { return AgentKind }
 
-// Adopt records an OpenCode session as published by this node. OpenCode exposes
-// no per-client session ownership, so publication is an explicit decision, the
-// same rule the Codex CLI adapter follows.
+// Adopt restricts publication to specific sessions. It exists only for
+// operators who want a smaller surface; the default publishes every session the
+// shared server reports, because requiring per-session setup would make the
+// mesh unusable.
 func (adapter *Adapter) Adopt(sessionID string) error {
 	if sessionID == "" {
 		return errors.New("adopt opencode session: empty session id")
 	}
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
+	adapter.restrict = true
 	adapter.adopted[sessionID] = struct{}{}
 	return nil
 }
 
-// ResolveCaller recognises this adapter's own sessions when they act as a
-// sender. OpenCode does not put a stable caller identity in MCP metadata, so the
-// only sound answer is the session the adapter already adopted; guessing from
-// the loaded-session set would attribute messages to the wrong conversation.
+// Unrestrict returns the adapter to publishing every session.
+func (adapter *Adapter) Unrestrict() {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	adapter.restrict = false
+	adapter.adopted = make(map[string]struct{})
+}
+
+// ResolveCaller reports this node's OpenCode sessions when one of them acts as
+// a sender. OpenCode does not put a stable caller identity in MCP metadata, so
+// when exactly one session exists the adapter can answer without guessing;
+// otherwise it asks the caller to declare which session it is rather than
+// attributing the message to the wrong conversation.
 func (adapter *Adapter) ResolveCaller(_ context.Context, caller agentbridge.CallerContext) (agentbridge.Address, error) {
-	adopted := adapter.Adopted()
-	if len(adopted) == 0 {
+	sessions, err := adapter.client.ListSessions(context.Background())
+	if err != nil || len(sessions) == 0 {
 		return agentbridge.Address{}, agentbridge.CallerHint(
-			"no OpenCode session is adopted by this node; run `ra2a adopt-oc <session>` first")
+			"no OpenCode session is available on this node to act as the caller")
 	}
-	if len(adopted) == 1 {
-		return agentbridge.Address{NodeID: adapter.nodeID, EndpointID: adopted[0]}, nil
+	if len(sessions) == 1 {
+		return agentbridge.Address{NodeID: adapter.nodeID, EndpointID: sessions[0].ID}, nil
 	}
 	return agentbridge.Address{}, agentbridge.CallerHint(
-		"this node publishes %d OpenCode sessions; pass `from` with this session's address from list_targets", len(adopted))
+		"this node has %d OpenCode sessions; pass `from` with this session's address from list_targets",
+		len(sessions))
 }
 
 // Reachable reports whether an OpenCode server answers at the URL. The adapter
@@ -120,26 +133,34 @@ func (adapter *Adapter) Watch(ctx context.Context) {
 	}()
 }
 
+// ListEndpoints publishes every session the shared server reports. OpenCode
+// sessions are globally listed and reachable through the one shared server, so
+// there is no ownership ambiguity to resolve and no reason to make the operator
+// register anything.
 func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoint, error) {
-	adopted := adapter.Adopted()
-	if len(adopted) == 0 {
-		return nil, nil
-	}
 	sessions, err := adapter.client.ListSessions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]Session, len(sessions))
-	for _, session := range sessions {
-		byID[session.ID] = session
-	}
-	endpoints := make([]agentbridge.Endpoint, 0, len(adopted))
-	for _, sessionID := range adopted {
-		session, exists := byID[sessionID]
-		if !exists {
-			adapter.logger.Info("opencode_session_missing", "endpoint_id", sessionID)
-			continue
+	adapter.mu.RLock()
+	restrict, adopted := adapter.restrict, adapter.Adopted()
+	adapter.mu.RUnlock()
+	if restrict {
+		allowed := make(map[string]bool, len(adopted))
+		for _, sessionID := range adopted {
+			allowed[sessionID] = true
 		}
+		filtered := sessions[:0]
+		for _, session := range sessions {
+			if allowed[session.ID] {
+				filtered = append(filtered, session)
+			}
+		}
+		sessions = filtered
+	}
+	endpoints := make([]agentbridge.Endpoint, 0, len(sessions))
+	for _, session := range sessions {
+		sessionID := session.ID
 		status := agentbridge.EndpointReady
 		if adapter.client.Busy(sessionID) {
 			status = agentbridge.EndpointBusy

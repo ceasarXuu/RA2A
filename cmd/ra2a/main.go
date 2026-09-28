@@ -233,7 +233,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	if err != nil {
 		return err
 	}
-	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource, adopted)
+	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource, adopted, adoptedOpenCodeSessions())
 	if err != nil {
 		return err
 	}
@@ -415,8 +415,8 @@ func opencodeSettings() (url string, sessions []string) {
 // startOpencodeAdapter attaches to the shared OpenCode server and subscribes to
 // its event stream. A missing or unreachable server leaves the other adapters
 // untouched: OpenCode is optional, and RA2A must still serve Codex.
-func startOpencodeAdapter(ctx context.Context, nodeID string, stderr io.Writer) (agentbridge.Adapter, error) {
-	url, adopted := opencodeSettings()
+func startOpencodeAdapter(ctx context.Context, nodeID string, stderr io.Writer, adopted []string) (agentbridge.Adapter, error) {
+	url, _ := opencodeSettings()
 	if url == "" {
 		return nil, errOpenCodeDisabled
 	}
@@ -484,6 +484,17 @@ func openMailboxStore() (*mailbox.Store, error) {
 	return store, nil
 }
 
+// adoptedOpenCodeSessions returns sessions the operator chose to restrict to.
+// Empty means publish everything the shared server reports, which is the
+// default: the requirement is that any session can reach any other.
+func adoptedOpenCodeSessions() []string {
+	config, err := operator.Load()
+	if err != nil {
+		return nil
+	}
+	return config.OpenCodeSessions
+}
+
 // adoptedCLISessions reads the operator-recorded CLI thread IDs. A missing or
 // unreadable config simply publishes nothing rather than failing daemon start.
 func adoptedCLISessions() ([]string, error) {
@@ -494,7 +505,7 @@ func adoptedCLISessions() ([]string, error) {
 	return config.CLISessions, nil
 }
 
-func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket string, stderr io.Writer, startSource sessionSourceFactory, cliSessions []string) (*agentbridge.Registry, error) {
+func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket string, stderr io.Writer, startSource sessionSourceFactory, cliSessions, opencodeSessions []string) (*agentbridge.Registry, error) {
 	source, err := startSource(ctx, codexPath, appServerSocket, stderr)
 	if err != nil {
 		return nil, fmt.Errorf("start managed Codex App Server: %w", err)
@@ -516,7 +527,7 @@ func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket strin
 		_ = source.Close()
 		return nil, err
 	}
-	opencodeAdapter, err := startOpencodeAdapter(ctx, nodeID, stderr)
+	opencodeAdapter, err := startOpencodeAdapter(ctx, nodeID, stderr, opencodeSessions)
 	if err != nil {
 		fmt.Fprintf(stderr, "opencode integration unavailable: %v\n", err)
 	} else if err := registry.Register(opencodeAdapter); err != nil {
