@@ -1,5 +1,7 @@
 # Windows 侧 Codex CLI 适配验证清单
 
+2026-09-28 Windows 实机执行结果见 [`windows-codex-cli-validation-evidence-2026-09-28.md`](windows-codex-cli-validation-evidence-2026-09-28.md)。
+
 - 目标版本：`main` @ `dff78ec` 之后
 - 依据：`docs/v0.0.15/experiments/codex-cli-v10.md`（Ubuntu 0.158.0 已通过）、`runbooks/codex-cli-isolated-daemon-experiment.md`
 - 平台要求：Windows 11，**非提升** PowerShell（提升终端会导致 daemon detached 启动被拒）
