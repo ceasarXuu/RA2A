@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -174,18 +175,15 @@ func envelope() agentbridge.MessageEnvelope {
 		SourceAddress: "ra2a://node-a/ses_1", TargetAddress: "ra2a://node-a/ses_1", Text: "hi"}
 }
 
-func TestListEndpointsPublishesOnlyAdoptedSessions(t *testing.T) {
+func TestListEndpointsPublishesEveryReportedSession(t *testing.T) {
 	fake := newFakeOpenCode(t)
 	adapter := newTestAdapter(t, fake)
-	if err := adapter.Adopt("ses_1"); err != nil {
-		t.Fatal(err)
-	}
 	endpoints, err := adapter.ListEndpoints(context.Background())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(endpoints) != 1 || endpoints[0].ID != "ses_1" {
-		t.Fatalf("only adopted sessions may be published, got %+v", endpoints)
+	if len(endpoints) != 2 {
+		t.Fatalf("every session the shared server reports must be published, got %+v", endpoints)
 	}
 	if endpoints[0].Agent != AgentKind {
 		t.Fatalf("agent kind must be opencode, got %q", endpoints[0].Agent)
@@ -198,18 +196,18 @@ func TestListEndpointsPublishesOnlyAdoptedSessions(t *testing.T) {
 	}
 }
 
-func TestListEndpointsSkipsAdoptedSessionThatNoLongerExists(t *testing.T) {
+// Nothing is published when the server reports no sessions at all.
+func TestListEndpointsIsEmptyWhenServerHasNoSessions(t *testing.T) {
 	fake := newFakeOpenCode(t)
-	adapter := newTestAdapter(t, fake)
-	if err := adapter.Adopt("ses_gone"); err != nil {
-		t.Fatal(err)
-	}
+	empty := newFakeAppServerWithNoSessions(t, fake)
+	adapter := New("node-a", NewClient(Config{BaseURL: empty, CallTimeout: 2 * time.Second}), nil)
+	defer adapter.Close()
 	endpoints, err := adapter.ListEndpoints(context.Background())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	if len(endpoints) != 0 {
-		t.Fatalf("a session the server does not know must not be published, got %+v", endpoints)
+		t.Fatalf("an empty server must publish nothing, got %+v", endpoints)
 	}
 }
 
@@ -221,9 +219,6 @@ func TestDeliverConfirmsOnSessionIdle(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	adapter.Watch(ctx)
-	if err := adapter.Adopt("ses_1"); err != nil {
-		t.Fatal(err)
-	}
 	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
 	if !result.Delivered() {
 		t.Fatalf("delivery must confirm on session.idle, got %+v", result)
@@ -233,15 +228,17 @@ func TestDeliverConfirmsOnSessionIdle(t *testing.T) {
 	}
 }
 
-func TestDeliverRefusesUnadoptedSession(t *testing.T) {
+// Any session the shared server reports must be deliverable: a local registry
+// must never be able to hide sessions from the mesh.
+func TestDeliverReachesAnyReportedSession(t *testing.T) {
 	fake := newFakeOpenCode(t)
 	adapter := newTestAdapter(t, fake)
-	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
-	if result.Code != agentbridge.ResultNotFound {
-		t.Fatalf("an unadopted session must be not_found, got %+v", result)
-	}
-	if fake.turnCount != 0 {
-		t.Fatal("a refused delivery must not start a turn")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	adapter.Watch(ctx)
+	result := adapter.Deliver(context.Background(), address("ses_2"), envelope())
+	if !result.Delivered() {
+		t.Fatalf("a reported session must be deliverable without adoption, got %+v", result)
 	}
 }
 
@@ -249,9 +246,6 @@ func TestDeliverReportsUnreachableServer(t *testing.T) {
 	fake := newFakeOpenCode(t)
 	fake.server.Close()
 	adapter := newTestAdapter(t, fake)
-	if err := adapter.Adopt("ses_1"); err != nil {
-		t.Fatal(err)
-	}
 	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
 	if result.Code != agentbridge.ResultUnreachable {
 		t.Fatalf("a closed server must be unreachable, got %+v", result)
@@ -262,9 +256,6 @@ func TestDeliverReportsPostRejection(t *testing.T) {
 	fake := newFakeOpenCode(t)
 	fake.postErr = 1
 	adapter := newTestAdapter(t, fake)
-	if err := adapter.Adopt("ses_1"); err != nil {
-		t.Fatal(err)
-	}
 	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
 	if result.Code != agentbridge.ResultUnknown {
 		t.Fatalf("a rejected post must not report delivered, got %+v", result)
@@ -344,9 +335,6 @@ func TestDeliverReconcilesAmbiguousPost(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	adapter.Watch(ctx)
-	if err := adapter.Adopt("ses_1"); err != nil {
-		t.Fatal(err)
-	}
 	// The fake records the user message, then answers slowly enough to blow the
 	// client deadline, then publishes idle.
 	fake.slowPost = 250 * time.Millisecond
@@ -368,9 +356,6 @@ func TestDeliverKeepsUnknownWhenAmbiguousPostDidNotLand(t *testing.T) {
 		IdleWait: 150 * time.Millisecond})
 	adapter := New("node-a", client, nil)
 	defer adapter.Close()
-	if err := adapter.Adopt("ses_1"); err != nil {
-		t.Fatal(err)
-	}
 	fake.dropPost = true
 	fake.slowPost = 200 * time.Millisecond
 	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
@@ -415,25 +400,6 @@ func TestListEndpointsPublishesEverySessionByDefault(t *testing.T) {
 	}
 }
 
-func TestAdoptNarrowsPublicationOnlyWhenAsked(t *testing.T) {
-	fake := newFakeOpenCode(t)
-	adapter := newTestAdapter(t, fake)
-	if err := adapter.Adopt("ses_1"); err != nil {
-		t.Fatal(err)
-	}
-	endpoints, err := adapter.ListEndpoints(context.Background())
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(endpoints) != 1 || endpoints[0].ID != "ses_1" {
-		t.Fatalf("adopt must narrow publication, got %+v", endpoints)
-	}
-	adapter.Unrestrict()
-	if endpoints, err = adapter.ListEndpoints(context.Background()); err != nil || len(endpoints) != 2 {
-		t.Fatalf("unrestrict must publish everything again, got %+v err=%v", endpoints, err)
-	}
-}
-
 // OpenCode publishes no stable caller identity in MCP metadata, so the adapter
 // answers only when it can do so without guessing.
 func TestResolveCallerRefusesToGuessBetweenSessions(t *testing.T) {
@@ -442,4 +408,23 @@ func TestResolveCallerRefusesToGuessBetweenSessions(t *testing.T) {
 	if _, err := adapter.ResolveCaller(context.Background(), agentbridge.CallerContext{}); err == nil {
 		t.Fatal("several sessions must not be guessed between")
 	}
+}
+
+// newFakeAppServerWithNoSessions serves an empty session list, standing in for an
+// OpenCode server that has not been used yet.
+func newFakeAppServerWithNoSessions(t *testing.T, reference *fakeOpenCode) string {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /session", func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte("[]"))
+	})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	server := &http.Server{Handler: mux}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	return "http://" + listener.Addr().String()
 }

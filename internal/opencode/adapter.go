@@ -2,7 +2,6 @@ package opencode
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -23,7 +22,6 @@ type Adapter struct {
 	baseURL   string
 	logger    *slog.Logger
 	mu        sync.RWMutex
-	restrict  bool
 	adopted   map[string]struct{}
 	watcher   context.CancelFunc
 	lastProbe time.Time
@@ -42,29 +40,6 @@ func New(nodeID string, client *Client, stderr io.Writer) *Adapter {
 }
 
 func (adapter *Adapter) Kind() agentbridge.AgentKind { return AgentKind }
-
-// Adopt restricts publication to specific sessions. It exists only for
-// operators who want a smaller surface; the default publishes every session the
-// shared server reports, because requiring per-session setup would make the
-// mesh unusable.
-func (adapter *Adapter) Adopt(sessionID string) error {
-	if sessionID == "" {
-		return errors.New("adopt opencode session: empty session id")
-	}
-	adapter.mu.Lock()
-	defer adapter.mu.Unlock()
-	adapter.restrict = true
-	adapter.adopted[sessionID] = struct{}{}
-	return nil
-}
-
-// Unrestrict returns the adapter to publishing every session.
-func (adapter *Adapter) Unrestrict() {
-	adapter.mu.Lock()
-	defer adapter.mu.Unlock()
-	adapter.restrict = false
-	adapter.adopted = make(map[string]struct{})
-}
 
 // ResolveCaller reports this node's OpenCode sessions when one of them acts as
 // a sender. OpenCode does not put a stable caller identity in MCP metadata, so
@@ -142,22 +117,6 @@ func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoi
 	if err != nil {
 		return nil, err
 	}
-	adapter.mu.RLock()
-	restrict, adopted := adapter.restrict, adapter.Adopted()
-	adapter.mu.RUnlock()
-	if restrict {
-		allowed := make(map[string]bool, len(adopted))
-		for _, sessionID := range adopted {
-			allowed[sessionID] = true
-		}
-		filtered := sessions[:0]
-		for _, session := range sessions {
-			if allowed[session.ID] {
-				filtered = append(filtered, session)
-			}
-		}
-		sessions = filtered
-	}
 	endpoints := make([]agentbridge.Endpoint, 0, len(sessions))
 	for _, session := range sessions {
 		sessionID := session.ID
@@ -182,16 +141,11 @@ func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoi
 }
 
 func (adapter *Adapter) Deliver(ctx context.Context, address agentbridge.Address, envelope agentbridge.MessageEnvelope) agentbridge.DeliveryResult {
+	// No ownership gate here. OpenCode sessions are globally listed and reachable
+	// through the one shared server, so gating delivery on a local registry would
+	// silently hide sessions from the mesh for no safety gain: a caller that can
+	// reach this endpoint can already address any session.
 	sessionID := address.EndpointID
-	adapter.mu.RLock()
-	_, known := adapter.adopted[sessionID]
-	adapter.mu.RUnlock()
-	if !known {
-		return agentbridge.DeliveryResult{
-			Code: agentbridge.ResultNotFound, NativeErrorClass: "ownership_unknown",
-			Detail: "opencode session is not adopted by this node",
-		}
-	}
 	marker := agentbridge.RenderIncomingText(envelope)
 	_, postErr := adapter.client.PostMessage(ctx, sessionID, marker)
 	if postErr != nil && !IsOutcomeUnknown(postErr) {

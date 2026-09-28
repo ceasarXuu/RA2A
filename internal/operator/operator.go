@@ -29,50 +29,9 @@ type Config struct {
 	// of a CLI thread cannot be read back from the host, so adoption is an
 	// explicit operator decision recorded here rather than a guess.
 	CLISessions []string `json:"cliSessions,omitempty"`
-	// OpenCodeSessions lists the OpenCode session IDs this node publishes, for
-	// the same reason: OpenCode exposes no per-client session ownership.
-	OpenCodeSessions []string `json:"opencodeSessions,omitempty"`
 	// OpenCodeURL is the shared OpenCode server both RA2A and the user's TUI
 	// attach to. It must stay on loopback.
 	OpenCodeURL string `json:"opencodeUrl,omitempty"`
-}
-
-// AdoptOpenCodeSession records an OpenCode session as published by this node.
-func AdoptOpenCodeSession(sessionID string) (Config, error) {
-	config, err := Load()
-	if err != nil {
-		return Config{}, err
-	}
-	for _, existing := range config.OpenCodeSessions {
-		if existing == sessionID {
-			return config, nil
-		}
-	}
-	config.OpenCodeSessions = append(config.OpenCodeSessions, sessionID)
-	sort.Strings(config.OpenCodeSessions)
-	if err := Save(config); err != nil {
-		return Config{}, err
-	}
-	return config, nil
-}
-
-// ReleaseOpenCodeSession stops publishing an OpenCode session.
-func ReleaseOpenCodeSession(sessionID string) (Config, error) {
-	config, err := Load()
-	if err != nil {
-		return Config{}, err
-	}
-	remaining := config.OpenCodeSessions[:0]
-	for _, existing := range config.OpenCodeSessions {
-		if existing != sessionID {
-			remaining = append(remaining, existing)
-		}
-	}
-	config.OpenCodeSessions = remaining
-	if err := Save(config); err != nil {
-		return Config{}, err
-	}
-	return config, nil
 }
 
 // AdoptCLISession records a Codex CLI thread ID as published by this node.

@@ -29,10 +29,6 @@ func main() {
 	adapter := opencode.New("probe-node", client, os.Stderr)
 	defer adapter.Close()
 	adapter.Watch(ctx)
-	if err := adapter.Adopt(*session); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 	endpoints, err := adapter.ListEndpoints(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "list:", err)

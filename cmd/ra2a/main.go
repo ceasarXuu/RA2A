@@ -136,7 +136,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return nil
 	case "mailbox":
 		return runMailbox(args[1:], output)
-	case "adopt-cli", "release-cli", "adopt-oc", "release-oc":
+	case "adopt-cli", "release-cli":
 		if len(args) != 2 || args[1] == "" {
 			return fmt.Errorf("%s requires an id", args[0])
 		}
@@ -144,12 +144,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		if err != nil {
 			return err
 		}
-		switch {
-		case strings.HasSuffix(args[0], "-cli"):
-			fmt.Fprintf(output, "cli-session=%s published=%d\n", args[1], len(config.CLISessions))
-		default:
-			fmt.Fprintf(output, "opencode-session=%s published=%d\n", args[1], len(config.OpenCodeSessions))
-		}
+		fmt.Fprintf(output, "cli-session=%s published=%d\n", args[1], len(config.CLISessions))
 		return nil
 	case "opencode":
 		return runOpencodeAttach(ctx, args[1:], output)
@@ -197,7 +192,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return run(ctx, []string{"serve", "--pin", config.PIN, "--id", config.NodeID, "--name", config.Name, "--codex", config.Codex, "--control-address", controlAddress}, output, startSource)
 	}
 	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
-		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|adopt-oc|release-oc|mailbox|opencode|selftest|serve|send> [options]")
+		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|mailbox|opencode|selftest|serve|send> [options]")
 	}
 
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
@@ -233,7 +228,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	if err != nil {
 		return err
 	}
-	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource, adopted, adoptedOpenCodeSessions())
+	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource, adopted)
 	if err != nil {
 		return err
 	}
@@ -381,10 +376,6 @@ func applySessionCommand(command, id string) (operator.Config, error) {
 		return operator.AdoptCLISession(id)
 	case "release-cli":
 		return operator.ReleaseCLISession(id)
-	case "adopt-oc":
-		return operator.AdoptOpenCodeSession(id)
-	case "release-oc":
-		return operator.ReleaseOpenCodeSession(id)
 	}
 	return operator.Config{}, fmt.Errorf("unknown session command %q", command)
 }
@@ -395,7 +386,7 @@ func applySessionCommand(command, id string) (operator.Config, error) {
 //
 // RA2A_DISABLE_OPENCODE turns the integration off entirely. Tests rely on it so
 // they never pick up the operator's real adopted sessions from ~/.config.
-func opencodeSettings() (url string, sessions []string) {
+func opencodeSettings() (url string, sessions []string) { //nolint:unparam // sessions kept for callers that narrow
 	if disabled, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("RA2A_DISABLE_OPENCODE"))); disabled {
 		return "", nil
 	}
@@ -403,11 +394,8 @@ func opencodeSettings() (url string, sessions []string) {
 	if override := strings.TrimSpace(os.Getenv("RA2A_OPENCODE_URL")); override != "" {
 		url = override
 	}
-	if config, err := operator.Load(); err == nil {
-		if config.OpenCodeURL != "" {
-			url = config.OpenCodeURL
-		}
-		sessions = config.OpenCodeSessions
+	if config, err := operator.Load(); err == nil && config.OpenCodeURL != "" {
+		url = config.OpenCodeURL
 	}
 	return url, sessions
 }
@@ -415,18 +403,13 @@ func opencodeSettings() (url string, sessions []string) {
 // startOpencodeAdapter attaches to the shared OpenCode server and subscribes to
 // its event stream. A missing or unreachable server leaves the other adapters
 // untouched: OpenCode is optional, and RA2A must still serve Codex.
-func startOpencodeAdapter(ctx context.Context, nodeID string, stderr io.Writer, adopted []string) (agentbridge.Adapter, error) {
+func startOpencodeAdapter(ctx context.Context, nodeID string, stderr io.Writer) (agentbridge.Adapter, error) {
 	url, _ := opencodeSettings()
 	if url == "" {
 		return nil, errOpenCodeDisabled
 	}
 	client := opencode.NewClient(opencode.Config{BaseURL: url, Stderr: stderr, ClientName: "ra2a"})
 	adapter := opencode.New(nodeID, client, stderr)
-	for _, sessionID := range adopted {
-		if err := adapter.Adopt(sessionID); err != nil {
-			fmt.Fprintf(stderr, "skip opencode session %q: %v\n", sessionID, err)
-		}
-	}
 	if !opencode.Reachable(ctx, url) {
 		return nil, fmt.Errorf("no OpenCode server at %s (start it with `opencode --ra2a`)", url)
 	}
@@ -484,17 +467,6 @@ func openMailboxStore() (*mailbox.Store, error) {
 	return store, nil
 }
 
-// adoptedOpenCodeSessions returns sessions the operator chose to restrict to.
-// Empty means publish everything the shared server reports, which is the
-// default: the requirement is that any session can reach any other.
-func adoptedOpenCodeSessions() []string {
-	config, err := operator.Load()
-	if err != nil {
-		return nil
-	}
-	return config.OpenCodeSessions
-}
-
 // adoptedCLISessions reads the operator-recorded CLI thread IDs. A missing or
 // unreadable config simply publishes nothing rather than failing daemon start.
 func adoptedCLISessions() ([]string, error) {
@@ -505,7 +477,7 @@ func adoptedCLISessions() ([]string, error) {
 	return config.CLISessions, nil
 }
 
-func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket string, stderr io.Writer, startSource sessionSourceFactory, cliSessions, opencodeSessions []string) (*agentbridge.Registry, error) {
+func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket string, stderr io.Writer, startSource sessionSourceFactory, cliSessions []string) (*agentbridge.Registry, error) {
 	source, err := startSource(ctx, codexPath, appServerSocket, stderr)
 	if err != nil {
 		return nil, fmt.Errorf("start managed Codex App Server: %w", err)
@@ -527,7 +499,7 @@ func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket strin
 		_ = source.Close()
 		return nil, err
 	}
-	opencodeAdapter, err := startOpencodeAdapter(ctx, nodeID, stderr, opencodeSessions)
+	opencodeAdapter, err := startOpencodeAdapter(ctx, nodeID, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "opencode integration unavailable: %v\n", err)
 	} else if err := registry.Register(opencodeAdapter); err != nil {
