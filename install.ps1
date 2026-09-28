@@ -8,6 +8,9 @@ param(
     # is blocked (--no-daemon, -c overrides, --profile, CODEX_EXEC_SERVER_URL,
     # the Bedrock first-run wizard, or an elevated terminal).
     [switch]$CodexWrapper,
+    # Installs the opencode launcher so `opencode --ra2a` attaches to the
+    # RA2A-supervised OpenCode server. Every other invocation passes through.
+    [switch]$OpenCodeWrapper,
     [switch]$Uninstall
 )
 
@@ -18,6 +21,9 @@ $BinaryPath = Join-Path $BinDir 'ra2a.exe'
 $WrapperPath = Join-Path $BinDir 'codex.exe'
 $WrapperCmdPath = Join-Path $BinDir 'codex.cmd'
 $WrapperMarker = Join-Path $BinDir '.ra2a-codex-wrapper'
+$OcWrapperPath = Join-Path $BinDir 'opencode.exe'
+$OcWrapperReal = Join-Path $BinDir 'opencode.real.exe'
+$OcWrapperMarker = Join-Path $BinDir '.ra2a-opencode-wrapper'
 $ConfigPath = Join-Path $HOME '.config\ra2a\config.json'
 $LegacyInstallRoot = Join-Path $env:LOCALAPPDATA 'RA2A'
 $LegacyConfigPath = Join-Path $LegacyInstallRoot 'config.json'
@@ -96,6 +102,30 @@ if ($CodexWrapper) {
     # Wrapper was previously installed but this run did not request it again;
     # keep the existing wrapper so the user's environment stays stable.
     Write-Output 'RA2A codex wrapper already installed (kept)'
+}
+
+if ($OpenCodeWrapper) {
+    if ((Test-Path -LiteralPath $OcWrapperPath) -and -not (Test-Path -LiteralPath $OcWrapperMarker)) {
+        throw "opencode.exe already exists at $OcWrapperPath without the RA2A marker; refusing to overwrite it"
+    }
+    $OcBuildPath = Join-Path $env:TEMP ("oc-wrapper-{0}.exe" -f ([Guid]::NewGuid().ToString('N')))
+    Push-Location $SourceRoot
+    try {
+        & go build -trimpath -ldflags '-s -w' -o $OcBuildPath ./cmd/oc-wrapper
+        if ($LASTEXITCODE -ne 0) { throw 'opencode wrapper build failed' }
+    } finally {
+        Pop-Location
+    }
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    if ((Test-Path -LiteralPath $OcWrapperPath) -or (Test-Path -LiteralPath $OcWrapperReal)) {
+        Move-Item -LiteralPath $OcWrapperPath -Destination $OcWrapperReal -Force
+    }
+    Move-Item -LiteralPath $OcBuildPath -Destination $OcWrapperPath -Force
+    New-Item -ItemType File -Path $OcWrapperMarker -Force | Out-Null
+    Write-Output 'RA2A opencode wrapper installed. Run `opencode --ra2a` to attach to the RA2A OpenCode server.'
+    Write-Output 'Every other opencode invocation is passed through unchanged.'
+} elseif (Test-Path -LiteralPath $OcWrapperMarker) {
+    Write-Output 'RA2A opencode wrapper already installed (kept)'
 }
 
 $SetupRequested = $PSBoundParameters.ContainsKey('Pin') -or $PSBoundParameters.ContainsKey('NodeId') -or $PSBoundParameters.ContainsKey('Name') -or $PSBoundParameters.ContainsKey('Codex')

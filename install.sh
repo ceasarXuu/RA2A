@@ -7,6 +7,7 @@ usage() {
 Usage: ./install.sh
        ./install.sh --pin ABC123 --node-id ID [--name NAME] [--codex PATH]
        ./install.sh --codex-wrapper
+       ./install.sh --opencode-wrapper
        ./install.sh --uninstall
 
 Without setup options, installs the command only. Run ra2a to finish setup.
@@ -25,6 +26,7 @@ NODE_ID=$(hostname 2>/dev/null || printf 'ra2a-node')
 NODE_NAME=
 CODEX_PATH=
 WRAPPER=0
+OC_WRAPPER=0
 SETUP=0
 UNINSTALL=0
 while [ "$#" -gt 0 ]; do
@@ -34,6 +36,7 @@ while [ "$#" -gt 0 ]; do
     --name) [ "$#" -ge 2 ] || fail '--name requires a value'; NODE_NAME=$2; SETUP=1; shift 2 ;;
     --codex) [ "$#" -ge 2 ] || fail '--codex requires a value'; CODEX_PATH=$2; SETUP=1; shift 2 ;;
     --codex-wrapper) WRAPPER=1; shift ;;
+    --opencode-wrapper) OC_WRAPPER=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) fail "unknown option: $1" ;;
@@ -45,6 +48,8 @@ BIN_DIR=$HOME/.local/bin
 BIN_PATH=$BIN_DIR/ra2a
 WRAPPER_PATH=$BIN_DIR/codex
 WRAPPER_MARKER=$BIN_DIR/.ra2a-codex-wrapper
+OC_WRAPPER_PATH=$BIN_DIR/opencode
+OC_WRAPPER_MARKER=$BIN_DIR/.ra2a-opencode-wrapper
 
 if [ "$UNINSTALL" -eq 1 ]; then
   MCP_CODEX=$CODEX_PATH
@@ -54,6 +59,10 @@ if [ "$UNINSTALL" -eq 1 ]; then
   if [ -f "$WRAPPER_MARKER" ]; then
     rm -f "$BIN_DIR/codex" "$WRAPPER_MARKER"
     printf 'RA2A codex wrapper removed; the native codex command is restored.\n'
+  fi
+  if [ -f "$OC_WRAPPER_MARKER" ]; then
+    rm -f "$OC_WRAPPER_PATH" "$OC_WRAPPER_MARKER"
+    printf 'RA2A opencode wrapper removed; the native opencode command is restored.\n'
   fi
   case "$OS_NAME" in
     Darwin)
@@ -94,6 +103,22 @@ if [ "$WRAPPER" -eq 1 ]; then
   mv -f "$WRAPPER_PATH.new" "$WRAPPER_PATH"
   : > "$WRAPPER_MARKER"
   printf 'RA2A codex wrapper installed (plain codex TUI sessions are proxied when RA2A is available)\n'
+fi
+
+if [ "$OC_WRAPPER" -eq 1 ]; then
+  if [ -e "$OC_WRAPPER_PATH" ] && [ ! -f "$OC_WRAPPER_MARKER" ]; then
+    fail "opencode already exists at $OC_WRAPPER_PATH without the RA2A marker; refusing to overwrite it"
+  fi
+  (cd "$SCRIPT_DIR" && go build -trimpath -ldflags '-s -w' -o "$BUILD_DIR/oc-wrapper" ./cmd/oc-wrapper)
+  if [ -e "$OC_WRAPPER_PATH" ] || [ -L "$OC_WRAPPER_PATH" ]; then
+    mv -f "$OC_WRAPPER_PATH" "$BIN_DIR/opencode.real"
+  fi
+  cp "$BUILD_DIR/oc-wrapper" "$OC_WRAPPER_PATH.new"
+  chmod 755 "$OC_WRAPPER_PATH.new"
+  mv -f "$OC_WRAPPER_PATH.new" "$OC_WRAPPER_PATH"
+  : > "$OC_WRAPPER_MARKER"
+  printf 'RA2A opencode wrapper installed. Run `opencode --ra2a` to attach to the RA2A OpenCode server;\n'
+  printf 'every other opencode invocation is passed through unchanged.\n'
 fi
 
 printf 'RA2A command installed\n'
