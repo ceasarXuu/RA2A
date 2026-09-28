@@ -329,13 +329,59 @@ func TestLegacySourceSessionIDStillResolves(t *testing.T) {
 	if registry.deliveries[0].SourceAddress != "ra2a://node-a/legacy-caller" {
 		t.Fatalf("source address must be normalised, got %+q", registry.deliveries[0].SourceAddress)
 	}
-	unknown := &stubRegistry{}
+	// A source this node does not publish must not be shown to the recipient as
+	// a reply address, but it must not stop the delivery either: attribution is
+	// best effort by design.
+	unknown := &stubRegistry{result: agentbridge.Delivered("turn-2")}
 	unknown.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "caller", agentbridge.AgentCodexApp)}
 	strict := NewAdapterCoordinator("node-a", &failingLAN{}, unknown)
-	err := strict.Send(context.Background(), SendRequest{
+	if err := strict.Send(context.Background(), SendRequest{
 		To: "ra2a://node-a/cli-1", Text: "hi", SourceSessionID: "not-published",
-	})
-	if err == nil || !strings.Contains(err.Error(), "CALLER_SESSION_UNKNOWN") {
-		t.Fatalf("an unpublished legacy caller must be refused, got %v", err)
+	}); err != nil {
+		t.Fatalf("an unattributable sender must still be delivered, got %v", err)
+	}
+	if len(unknown.deliveries) != 1 {
+		t.Fatalf("the delivery must happen, got %+v", unknown.deliveries)
+	}
+	if got := unknown.deliveries[0].SourceAddress; !strings.HasSuffix(got, "/anonymous") {
+		t.Fatalf("an unpublished source must be attributed as anonymous, got %q", got)
+	}
+}
+
+// A caller that identifies itself with an address this node publishes keeps its
+// attribution, so a recipient can reply.
+func TestDeclaredSourceIsKeptWhenPublished(t *testing.T) {
+	registry := &stubRegistry{
+		result: agentbridge.Delivered("turn-3"),
+		caller: agentbridge.Address{NodeID: "node-a", EndpointID: "caller-1"},
+	}
+	registry.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "caller-1", agentbridge.AgentCodexApp)}
+	coordinator := NewAdapterCoordinator("node-a", &failingLAN{}, registry)
+	if err := coordinator.Send(context.Background(), SendRequest{
+		To: "ra2a://node-a/cli-1", Text: "hi", From: "ra2a://node-a/caller-1",
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if got := registry.deliveries[0].SourceAddress; got != "ra2a://node-a/caller-1" {
+		t.Fatalf("a published declared source must be kept, got %q", got)
+	}
+}
+
+// No caller information at all must still deliver: refusing here would turn an
+// attribution gap into a delivery outage.
+func TestSendWithoutAnyCallerStillDelivers(t *testing.T) {
+	registry := &stubRegistry{result: agentbridge.Delivered("turn-4")}
+	registry.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "app-1", agentbridge.AgentCodexApp)}
+	coordinator := NewAdapterCoordinator("node-a", &failingLAN{}, registry)
+	if err := coordinator.Send(context.Background(), SendRequest{
+		To: "ra2a://node-a/app-1", Text: "hi",
+	}); err != nil {
+		t.Fatalf("an unattributed sender must still be delivered, got %v", err)
+	}
+	if len(registry.deliveries) != 1 {
+		t.Fatalf("delivery must happen, got %+v", registry.deliveries)
+	}
+	if got := registry.deliveries[0].SourceAddress; !strings.HasSuffix(got, "/anonymous") {
+		t.Fatalf("expected anonymous attribution, got %q", got)
 	}
 }

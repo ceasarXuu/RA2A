@@ -133,37 +133,40 @@ func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendReq
 	// The caller is resolved before the local/remote split so that a caller
 	// identified by an opaque address is honoured on the LAN path too, instead
 	// of being silently downgraded to the legacy session-id field.
+	// Attribution is best effort. A sender that cannot be identified still gets
+	// its message delivered: refusing to deliver because the caller is unknown
+	// buys no security (any harness that can reach this endpoint can already
+	// claim any address) and it turns an attribution gap into a delivery outage.
+	// It also cannot be made reliable by configuration: a process-level hint goes
+	// stale the moment the user starts a new session inside the same TUI, whereas
+	// a reply address travels inside the message and is therefore never stale.
 	sourceAddress := ""
 	sourceEndpoint := request.SourceSessionID
-	switch {
-	case request.From != "" || len(request.Meta) > 0:
-		// A caller that identifies itself with an address or with MCP metadata
-		// goes through the resolver, which validates the answer.
-		if coordinator.registry == nil {
-			return ErrCallerUnknown
-		}
-		sourceAddress, err = coordinator.resolveSource(ctx, request)
-		if err != nil {
-			return err
-		}
-		if address, parseErr := agentbridge.ParseAddress(sourceAddress); parseErr == nil {
+	if coordinator.registry == nil {
+		sourceAddress = "ra2a://" + coordinator.localID + "/anonymous"
+	}
+	if coordinator.registry != nil {
+		if address, err := coordinator.registry.ResolveCaller(ctx, agentbridge.CallerContext{
+			DeclaredAddress: request.From, Meta: request.Meta,
+		}); err == nil && address.Valid() && address.NodeID == coordinator.localID {
+			sourceAddress = address.String()
 			sourceEndpoint = address.EndpointID
 		}
-	case sourceEndpoint != "":
-		// A legacy caller that only set sourceSessionId keeps working, but the
-		// identity is still checked against what this node publishes.
-		sourceAddress = "ra2a://" + coordinator.localID + "/" + sourceEndpoint
-		if coordinator.registry != nil {
-			if _, _, lookupErr := coordinator.registry.Lookup(ctx,
-				agentbridge.Address{NodeID: coordinator.localID, EndpointID: sourceEndpoint}); lookupErr != nil {
-				return fmt.Errorf("%w: %v", ErrCallerUnknown, lookupErr)
-			}
+	}
+	// A declared or legacy source is used only when this node publishes it, so
+	// the recipient is never shown a reply address that cannot exist.
+	if sourceAddress == "" && sourceEndpoint != "" {
+		published := false
+		if _, _, err := coordinator.registry.Lookup(ctx,
+			agentbridge.Address{NodeID: coordinator.localID, EndpointID: sourceEndpoint}); err == nil {
+			published = true
 		}
-	default:
-		// A caller that supplies nothing must still be told what to do, or an
-		// agent will retry the same call forever.
-		return fmt.Errorf("%w: this call carried no caller identity; pass `from` "+
-			"with the calling endpoint's address from list_targets", ErrCallerUnknown)
+		if published {
+			sourceAddress = "ra2a://" + coordinator.localID + "/" + sourceEndpoint
+		}
+	}
+	if sourceAddress == "" {
+		sourceAddress = "ra2a://" + coordinator.localID + "/anonymous"
 	}
 	if nodeID != coordinator.localID || coordinator.registry == nil {
 		forwarded := request
@@ -214,25 +217,6 @@ func (coordinator *AdapterCoordinator) storeMailbox(recipient, source string, re
 	}
 	result, _ := DeliverMailbox(coordinator.mailbox, coordinator.localID, envelope)
 	return result
-}
-
-// resolveSource turns whatever the caller supplied into one published opaque
-// address. Callers are never trusted: an identity that this node does not
-// publish is refused rather than forwarded.
-func (coordinator *AdapterCoordinator) resolveSource(ctx context.Context, request SendRequest) (string, error) {
-	address, err := coordinator.registry.ResolveCaller(ctx, agentbridge.CallerContext{
-		DeclaredAddress: request.From, Meta: request.Meta,
-	})
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrCallerUnknown, err)
-	}
-	// A resolver answer is still an untrusted claim until this node confirms it
-	// publishes the endpoint, so an adapter cannot attribute mail to an address
-	// nobody can reply through.
-	if !address.Valid() || address.NodeID != coordinator.localID {
-		return "", fmt.Errorf("%w: resolved caller address %q is not served by this node", ErrCallerUnknown, address)
-	}
-	return address.String(), nil
 }
 
 // DeliveryConfirmed reports whether a success response for this target means
