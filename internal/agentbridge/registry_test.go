@@ -112,14 +112,14 @@ func TestEndpointsDropsDuplicateIDAcrossAdapters(t *testing.T) {
 	}
 }
 
-func TestEndpointsRejectsNotReadyAndMalformed(t *testing.T) {
+func TestEndpointsRejectsUnknownAndMalformed(t *testing.T) {
 	registry := NewRegistry("node-a")
-	notReady := readyEndpoint("node-a", "busy-1", AgentCodexApp, CapabilityReceiveText)
-	notReady.Status = EndpointBusy
+	unknown := readyEndpoint("node-a", "unknown-1", AgentCodexApp, CapabilityReceiveText)
+	unknown.Status = EndpointUnknown
 	noCapabilities := readyEndpoint("node-a", "bare-1", AgentCodexApp)
 	mismatched := readyEndpoint("node-a", "mismatch-1", AgentCodexApp, CapabilityReceiveText)
 	mismatched.Address = Address{NodeID: "node-a", EndpointID: "other"}
-	adapter := &fakeAdapter{kind: AgentCodexApp, health: Ready(), endpoints: []Endpoint{notReady, noCapabilities, mismatched}}
+	adapter := &fakeAdapter{kind: AgentCodexApp, health: Ready(), endpoints: []Endpoint{unknown, noCapabilities, mismatched}}
 	if err := registry.Register(adapter); err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +129,24 @@ func TestEndpointsRejectsNotReadyAndMalformed(t *testing.T) {
 	}
 	if len(problems) != 3 {
 		t.Fatalf("expected one problem per rejected endpoint, got %v", problems)
+	}
+}
+
+func TestBusyEndpointRemainsAddressableForSteering(t *testing.T) {
+	registry := NewRegistry("node-a")
+	busy := readyEndpoint("node-a", "busy-1", AgentCodexApp, CapabilityReceiveText, CapabilitySteerActiveTurn)
+	busy.Status = EndpointBusy
+	adapter := &fakeAdapter{kind: AgentCodexApp, health: Ready(), result: Delivered("turn-1"), endpoints: []Endpoint{busy}}
+	if err := registry.Register(adapter); err != nil {
+		t.Fatal(err)
+	}
+	endpoints, problems := registry.Endpoints(context.Background())
+	if len(problems) != 0 || len(endpoints) != 1 || endpoints[0].Status != EndpointBusy {
+		t.Fatalf("busy endpoint must remain published, got %+v, problems %v", endpoints, problems)
+	}
+	result := registry.Deliver(context.Background(), envelope("ra2a://node-a/busy-1", "follow-up"))
+	if !result.Delivered() || len(adapter.deliveries) != 1 {
+		t.Fatalf("busy endpoint must reach its adapter, got %+v, deliveries %+v", result, adapter.deliveries)
 	}
 }
 

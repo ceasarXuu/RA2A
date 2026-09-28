@@ -148,6 +148,20 @@ func TestListTargetsIncludesLocalNode(t *testing.T) {
 	}
 }
 
+func TestListTargetsReplacesDiscoveredLocalNode(t *testing.T) {
+	registry := &stubRegistry{endpoints: []agentbridge.Endpoint{
+		endpointFixture("node-a", "cli-1", agentbridge.AgentCodexCLI),
+	}}
+	coordinator := NewAdapterCoordinator("node-a", &selfLAN{}, registry)
+	targets, err := coordinator.ListTargets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 || targets[0].ID != "node-a" || len(targets[0].Sessions) != 1 || targets[0].Sessions[0].ID != "cli-1" {
+		t.Fatalf("discovered local node must be replaced by the registry view once, got %+v", targets)
+	}
+}
+
 func TestListTargetsDegradesWhenLocalListingFails(t *testing.T) {
 	registry := &stubRegistry{listErr: errors.New("host down")}
 	coordinator := NewAdapterCoordinator("node-a", &recordingLAN{}, registry)
@@ -178,6 +192,16 @@ func (lan *recordingLAN) SendMessage(_ context.Context, _ lannode.Peer, message 
 }
 
 type failingLAN struct{ recordingLAN }
+
+type selfLAN struct{ recordingLAN }
+
+func (lan *selfLAN) Peers() []lannode.Peer {
+	return []lannode.Peer{{ID: "node-a", Name: "node-a", Address: "127.0.0.1:1"}}
+}
+
+func (lan *selfLAN) ListSessions(context.Context, lannode.Peer) ([]lannode.Session, error) {
+	return []lannode.Session{{ID: "stale-local", Title: "stale"}}, nil
+}
 
 func (lan failingLAN) SendMessage(context.Context, lannode.Peer, lannode.Message) error {
 	return errors.New("local delivery must not use LAN")

@@ -77,7 +77,7 @@ func (endpoint Endpoint) Has(capability Capability) bool {
 }
 
 // Validate rejects endpoints that would break the router invariants: an
-// endpoint must carry a known agent kind, a ready status, a non-empty
+// endpoint must carry a known agent kind, an addressable status, a non-empty
 // capability set and an address that round-trips.
 func (endpoint Endpoint) Validate() error {
 	if endpoint.ID == "" {
@@ -86,7 +86,7 @@ func (endpoint Endpoint) Validate() error {
 	if !endpoint.Agent.Valid() {
 		return fmt.Errorf("unknown agent kind %q", endpoint.Agent)
 	}
-	if endpoint.Status != EndpointReady {
+	if endpoint.Status != EndpointReady && endpoint.Status != EndpointBusy {
 		return fmt.Errorf("endpoint %s has status %q", endpoint.ID, endpoint.Status)
 	}
 	if len(endpoint.Capabilities) == 0 {

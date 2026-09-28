@@ -50,10 +50,21 @@ func (coordinator *AdapterCoordinator) ListTargets(ctx context.Context) ([]Targe
 		return targets, nil
 	}
 	localSessions, localErr := coordinator.localSessions(ctx)
-	targets = append(targets, Target{
+	local := Target{
 		ID: coordinator.localID, Name: coordinator.localID,
 		Status: localStatus(localErr), Sessions: localSessions,
-	})
+	}
+	replaced := false
+	for index := range targets {
+		if targets[index].ID == coordinator.localID {
+			targets[index] = local
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		targets = append(targets, local)
+	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
 	return targets, nil
 }
