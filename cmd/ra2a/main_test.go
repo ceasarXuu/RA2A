@@ -441,7 +441,7 @@ func TestRunSendDiscoversPeerAndDeliversMessage(t *testing.T) {
 	var output bytes.Buffer
 	messages := make(chan deliveredMessage, 1)
 	factory := func(context.Context, string, string, io.Writer) (sessionSource, error) {
-		return &fakeSessionSource{messages: messages}, nil
+		return &fakeSessionSource{messages: messages, sessions: []lannode.Session{{ID: "thread-target", Status: "idle"}}}, nil
 	}
 
 	err := run(ctx, []string{
@@ -571,5 +571,28 @@ func TestSendWithDesktopPreferenceUsesManagedWhenDesktopIntegrationIsDisabled(t 
 	}, nil)
 	if err == nil || managedCalls != 0 || !strings.Contains(err.Error(), "start Codex Desktop") {
 		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
+	}
+}
+
+// Local delivery now goes through the adapter registry, so an address that the
+// node never published must be rejected instead of being forwarded blindly.
+func TestRunSendRejectsUnpublishedLocalTarget(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var output bytes.Buffer
+	factory := func(context.Context, string, string, io.Writer) (sessionSource, error) {
+		return &fakeSessionSource{}, nil
+	}
+
+	err := run(ctx, []string{
+		"send",
+		"--pin", "A2B3C4",
+		"--id", "cli-unpublished-node",
+		"--peer", "cli-unpublished-node",
+		"--session", "thread-not-listed",
+		"--message", "hello",
+	}, &output, factory)
+	if err == nil || !strings.Contains(err.Error(), "DELIVERY_UNKNOWN") {
+		t.Fatalf("unpublished local target must be refused, got %v", err)
 	}
 }

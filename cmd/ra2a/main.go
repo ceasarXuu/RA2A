@@ -9,10 +9,14 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/ceasarXuu/RA2A/internal/agentbridge"
+	"github.com/ceasarXuu/RA2A/internal/codexapp"
+	"github.com/ceasarXuu/RA2A/internal/codexcli"
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
 	"github.com/ceasarXuu/RA2A/internal/control"
 	"github.com/ceasarXuu/RA2A/internal/desktopipc"
@@ -33,6 +37,28 @@ type codexSessionSource struct {
 	host        *codexhost.Host
 	desktopSend desktopMessageSender
 }
+
+// codexAppBridge adapts the injected Codex App session source to the adapter
+// contract, keeping the existing source factory as the single injection point.
+type codexAppBridge struct{ source sessionSource }
+
+func (bridge codexAppBridge) ListSessions(ctx context.Context) ([]codexapp.Session, error) {
+	sessions, err := bridge.source.ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	converted := make([]codexapp.Session, 0, len(sessions))
+	for _, session := range sessions {
+		converted = append(converted, codexapp.Session{ID: session.ID, Title: session.Title, Status: session.Status})
+	}
+	return converted, nil
+}
+
+func (bridge codexAppBridge) SendMessage(ctx context.Context, target, prompt string) error {
+	return bridge.source.SendMessage(ctx, target, prompt)
+}
+
+func (bridge codexAppBridge) Close() error { return bridge.source.Close() }
 
 type messageSender func(context.Context, string, string) error
 type desktopMessageSender func(context.Context, string, string, desktopipc.StartModelResolver) error
@@ -175,15 +201,15 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		*name = *id
 	}
 
-	source, err := startSource(ctx, *codexPath, *appServerSocket, os.Stderr)
+	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource)
 	if err != nil {
-		return fmt.Errorf("start managed Codex App Server: %w", err)
+		return err
 	}
-	defer source.Close()
+	defer registry.Close()
 	node, err := lannode.Start(ctx, lannode.Config{
-		ID: *id, Name: *name, PIN: *pin, Sessions: source.ListSessions,
+		ID: *id, Name: *name, PIN: *pin, Sessions: registryAdapter{registry: registry}.ListSessions,
 		SendMessage: func(ctx context.Context, message lannode.Message) error {
-			return source.SendMessage(ctx, message.TargetSessionID, formatIncomingMessage(message))
+			return deliverOverLAN(ctx, *id, registry, message)
 		},
 	})
 	if err != nil {
@@ -192,7 +218,8 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	defer node.Close()
 
 	if args[0] == "serve" {
-		if err := control.Start(ctx, *controlAddress, control.NewCoordinator(*id, node)); err != nil {
+		coordinator := control.NewAdapterCoordinator(*id, node, registryAdapter{registry: registry})
+		if err := control.Start(ctx, *controlAddress, coordinator); err != nil {
 			return err
 		}
 		fmt.Fprintf(output, "node=ra2a://%s status=running\n", *id)
@@ -249,18 +276,89 @@ func commandValue(args []string, input io.Reader, output io.Writer) (string, err
 	return strings.TrimSpace(value), nil
 }
 
-func formatIncomingMessage(message lannode.Message) string {
-	var prompt strings.Builder
-	prompt.WriteString("[RA2A message]\n")
-	if message.Source != "" {
-		fmt.Fprintf(&prompt, "from: %s\n", message.Source)
+// buildRegistry wires one adapter per supported agent. Adding an agent means
+// registering one more adapter here; the router, LAN layer and MCP layer stay
+// unchanged.
+func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket string, stderr io.Writer, startSource sessionSourceFactory) (*agentbridge.Registry, error) {
+	source, err := startSource(ctx, codexPath, appServerSocket, stderr)
+	if err != nil {
+		return nil, fmt.Errorf("start managed Codex App Server: %w", err)
 	}
-	if message.MessageID != "" {
-		fmt.Fprintf(&prompt, "message-id: %s\n", message.MessageID)
+	registry := agentbridge.NewRegistry(nodeID)
+	appAdapter := codexapp.New(nodeID, codexAppBridge{source: source}, stderr)
+	if err := registry.Register(appAdapter); err != nil {
+		_ = source.Close()
+		return nil, err
 	}
-	prompt.WriteString("\n")
-	prompt.WriteString(message.Text)
-	return prompt.String()
+	cliAdapter := codexcli.New(nodeID, codexcli.Config{CodexPath: codexPath, Stderr: stderr})
+	if err := registry.Register(cliAdapter); err != nil {
+		_ = source.Close()
+		return nil, err
+	}
+	return registry, nil
+}
+
+type registryAdapter struct{ registry *agentbridge.Registry }
+
+// ListSessions renders the local registry as the LAN session view.
+func (wrapper registryAdapter) ListSessions(ctx context.Context) ([]lannode.Session, error) {
+	endpoints, err := wrapper.Endpoints(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessions := make([]lannode.Session, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		capabilities := make([]string, 0, len(endpoint.Capabilities))
+		for _, capability := range endpoint.Capabilities {
+			capabilities = append(capabilities, string(capability))
+		}
+		sessions = append(sessions, lannode.Session{
+			ID: endpoint.Address.EndpointID, Title: endpoint.Title,
+			Status: string(endpoint.Status), Agent: string(endpoint.Agent), Capabilities: capabilities,
+		})
+	}
+	return sessions, nil
+}
+
+func (wrapper registryAdapter) Endpoints(ctx context.Context) ([]agentbridge.Endpoint, error) {
+	endpoints, problems := wrapper.registry.Endpoints(ctx)
+	for _, problem := range problems {
+		fmt.Fprintf(os.Stderr, "endpoint problem: %v\n", problem)
+	}
+	return endpoints, nil
+}
+
+func (wrapper registryAdapter) Deliver(ctx context.Context, envelope agentbridge.MessageEnvelope) agentbridge.DeliveryResult {
+	return wrapper.registry.Deliver(ctx, envelope)
+}
+
+func (wrapper registryAdapter) Health(ctx context.Context) map[agentbridge.AgentKind]agentbridge.Health {
+	return wrapper.registry.Health(ctx)
+}
+
+// deliverOverLAN keeps the established wire format: an incoming LAN message is
+// turned into a unified envelope and routed through the same registry the local
+// control plane uses, so both paths share one delivery implementation.
+func deliverOverLAN(ctx context.Context, nodeID string, registry *agentbridge.Registry, message lannode.Message) error {
+	envelope := agentbridge.MessageEnvelope{
+		ID:              message.MessageID,
+		ProtocolVersion: agentbridge.ProtocolVersion,
+		SourceAddress:   message.Source,
+		TargetAddress:   "ra2a://" + nodeID + "/" + message.TargetSessionID,
+		Text:            message.Text,
+		CreatedAt:       time.Now().UTC(),
+	}
+	if envelope.ID == "" {
+		envelope.ID = message.TargetSessionID + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	result := registry.Deliver(ctx, envelope)
+	if result.Delivered() {
+		return nil
+	}
+	if result.Code == agentbridge.ResultStartRequired {
+		return fmt.Errorf("%w: %s", control.ErrStartRequired, result.Detail)
+	}
+	return fmt.Errorf("%w: %s", control.ErrDeliveryUnknown, result.Detail)
 }
 
 func defaultAppServerSocket() string {

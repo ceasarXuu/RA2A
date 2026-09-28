@@ -52,11 +52,18 @@ type Peer struct {
 	Address string
 }
 
+// Session is the LAN view of one endpoint. Agent and Capabilities are additive:
+// a v0.0.14 peer omits them and is read back as a legacy Codex App session, so
+// mixed-version nodes never mis-route or crash.
 type Session struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
+	ID           string   `json:"id"`
+	Title        string   `json:"title"`
+	Status       string   `json:"status"`
+	Agent        string   `json:"agent,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
+
+const ProtocolVersion = 1
 
 type Message struct {
 	TargetSessionID string `json:"targetSessionId"`
@@ -66,7 +73,8 @@ type Message struct {
 }
 
 type sessionsResponse struct {
-	Sessions []Session `json:"sessions"`
+	ProtocolVersion int       `json:"protocolVersion"`
+	Sessions        []Session `json:"sessions"`
 }
 
 type Node struct {
@@ -192,7 +200,7 @@ func (n *Node) handleSessions(w mux.ResponseWriter, request *mux.Message) {
 		_ = w.SetResponse(codes.InternalServerError, message.TextPlain, strings.NewReader(err.Error()))
 		return
 	}
-	payload, err := json.Marshal(sessionsResponse{Sessions: sessions})
+	payload, err := json.Marshal(sessionsResponse{ProtocolVersion: ProtocolVersion, Sessions: sessions})
 	if err == nil {
 		err = w.SetResponse(codes.Content, message.AppJSON, bytes.NewReader(payload))
 	}

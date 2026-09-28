@@ -42,6 +42,7 @@ type SendRequest struct {
 	To              string `json:"to"`
 	Text            string `json:"text"`
 	SourceSessionID string `json:"sourceSessionId"`
+	MessageID       string `json:"messageId,omitempty"`
 }
 
 type Backend interface {
