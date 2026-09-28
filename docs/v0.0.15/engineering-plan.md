@@ -172,7 +172,7 @@ v0.0.15 保持文本消息，候选字段：
 - **PD32 隔离成本下降**：`CODEX_HOME` 决定 daemon socket，独立 `CODEX_HOME` 即等于隔离 daemon、socket、session 存储三件事，不再需要 `-c ephemeral=true`（V6 已证明其无效）。
 - **剩余硬前置**：隔离环境的独立认证需用户参与；未认证时 `account/rateLimits/read` 返回 `codex account authentication required`，无法按 `runbooks/codex-account-usage-check.md` 核对 plan 桶用量，因此真实投递实验前必须先完成独立登录与用量门禁。
 
-Phase 0 冻结条件更新：V10 已通过；V8-R 剩余项（真实 TUI 投递、renderer 敏感字段、活跃回合 follow-up）与 V11（四方向端到端）需在独立认证后完成；三平台复现至少覆盖 Ubuntu 之外的 macOS 与 Windows。`0.158.0` 是当前唯一验证过的版本，`0.151.0` 在完成真实投递前只作为契约最低候选。
+Phase 0 冻结条件更新：V10 已通过；V8-R 剩余项（真实后端回合质量、plan 弹条行为）与 V11（CLI 作为发送端、三平台复现）可继续推进。**关键结论：配置本地 mock 模型端点后，PD31 准入验证不再被登录阻塞**——TUI 完整回合、向 TUI thread 注入并实时渲染、活跃回合 `turn/steer` follow-up 均已在无账号条件下真机通过。剩余阻塞只有三平台复现与真实后端行为。`0.158.0` 是当前唯一验证过的版本，`0.151.0` 在完成真实投递前只作为契约最低候选。
 
 2026-09-06 依据 Codex Desktop 开发沉淀（v0.0.10-v0.0.14）重审本计划：
 
@@ -200,8 +200,8 @@ Phase 0 冻结条件更新：V10 已通过；V8-R 剩余项（真实 TUI 投递�
 - 路线已定（V10）：CLI 侧消费官方 `codex app-server daemon`，RA2A 作为同 uid 第二客户端接入其控制 socket；不再自管 CLI 侧 App Server。需 Owner 确认 `internal/codexhost` 的最终边界（§12）。
 - 所有权：登记式接入边界仍为 Phase 3 硬约束。V10 已排除 `source` 与 `originator` 两条协议判别路径，因此登记表必须由 RA2A 侧记录本连接 create/resume 的 thread ID 来建立；未知归属端点不得标记为 ready。
 - 用独立 `CODEX_HOME`（连带隔离 daemon、socket、session 存储）与独立认证通过 PD32 门禁；独立认证需用户参与完成。
-- 完成 V8-R 剩余项：真实 TUI thread 上的 `turn/start` / `turn/steer` 投递、renderer 敏感字段、活跃回合 follow-up，并把确认项固定进契约测试。
-- 完成 V11：四方向端到端投递，含 TUI 实时显示、人工继续与 20+ 轮退化。
+- 完成 V8-R 剩余项：真实后端回合质量、plan 级 rate-limit 弹条行为；协议层与 TUI 层前置已由 V10 免登录验证关闭。
+- 完成 V11：四方向端到端投递，含 TUI 实时显示、人工继续与 20+ 轮退化。协议与 TUI 行为可用 mock 端点免登录验证。
 - 将实验结论映射到适配器最小接口。
 
 完成标准：技术路线满足受保护产品决策，并证明不会破坏活跃 TUI、人工继续交互和全交叉支持门槛。
@@ -251,7 +251,7 @@ Phase 0 冻结条件更新：V10 已通过；V8-R 剩余项（真实 TUI 投递�
 - **探测版本与能力**：从 `initialize.userAgent` 解析实际 app-server 版本并与 `daemon version` 的 `appServerVersion` 交叉校验；显式协商 `experimentalApi` 以使用 `canAcceptDirectInput` 门禁。注意 `initialize` 不返回协议版本号，版本门槛只能靠 daemon JSON 或实测探测。
 - **建立 thread 所有权登记**：记录本连接 create/resume 的 thread ID 作为归属证据；禁止用 `Thread.source`（实测恒为 `vscode`）或 `Thread.originator`（实测为 daemon 进程级全局值、first-writer-wins）推断类型。未知归属不得作为 ready 端点发布。
 - **管理 originator 副作用**：非 `codex_app_server_daemon` / `codex-backend` 的 `clientInfo.name` 会成为 daemon 进程级默认 originator，影响之后所有连接创建的 thread。适配器必须固定连接命名与连接顺序，并把该副作用写入可观测性事件。
-- **投递路径**：`thread/resume` 建立订阅 → 空闲用 `turn/start`、活跃用 `turn/steer`（必须带 `expectedTurnId`）。不使用 `thread/queue/*`（experimental 且要求 thread 已 loaded）。
+- **投递路径**：`thread/resume` 建立订阅 → 空闲用 `turn/start`、活跃用 `turn/steer`（必须带 `expectedTurnId`）。不使用 `thread/queue/*`（experimental 且要求 thread 已 loaded）。**必须等 `thread/resume` 响应后再发 `turn/start`**，否则调用方收不到任何回合通知，投递无法确认。
 - **投递确认**：以 `turn/completed` 为唯一成功判据，检查 `turn.status` 与 `turn.error`。`turn/start` 响应只用于取得 turn ID。宿主内置 5 次重连，确认窗口为秒级，窗口内不重试、不切换投递路径。
 - **写入前门禁**：thread 已 loaded（`thread/loaded/list`）、`canAcceptDirectInput` 为真、`threadId` 为合法 UUID、显式携带 `textElements: []`；前置不足时先拒绝不投递。
 - **订阅纪律**：不用即 `thread/unsubscribe`（订阅会钉住 thread 内存，最后一个订阅者离开后 thread 会被卸载并广播 `notLoaded` + `thread/closed`）；不代答审批类服务端请求（会 fan-out 给所有订阅者）；忽略与本次投递无关的 `error` / `warning` 通知。

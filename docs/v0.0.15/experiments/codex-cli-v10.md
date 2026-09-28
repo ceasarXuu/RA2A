@@ -237,11 +237,83 @@ TUI /proc/<tui_pid>/fd 包含 socket:[62014296]        # 与 daemon ESTAB 对端
 
 源码侧的对应条件（`codex-rs/tui/src/daemon_startup.rs:25-104`）：`--no-daemon`、`--oss`、workload identity、`CODEX_EXEC_SERVER_URL`、`--profile`、`-c/--enable/--disable/--search`、自定义 config loader、`--strict-config`、`--dangerously-bypass-hook-trust`、Bedrock 首次向导、Windows 非提升终端/`DetachedLaunchRestricted` 会被排除；`--remote` 显式指定时不探测。排除场景正是 wrapper 的兜底范围。
 
+## 7. 无需账号的验证路径（本地 mock 模型端点）
+
+前述 §4-§8 的结论全部在**无任何登录**的隔离环境取得。进一步验证发现：配置自定义 `model_providers` 指向本地 mock Responses 端点后，**协议层与 TUI 层的绝大部分验证都不需要账号**。
+
+### 7.1 配置方式
+
+隔离 `CODEX_HOME/config.toml`：
+
+```toml
+model = "mock-model"
+model_provider = "ra2a-mock"
+model_reasoning_effort = "none"
+
+[model_providers.ra2a-mock]
+name = "RA2A Mock"
+base_url = "http://127.0.0.1:8931/v1"
+wire_api = "responses"
+env_key = "RA2A_MOCK_KEY"
+requires_openai_auth = false
+```
+
+`env_key` 指向任意假值即可（实测请求头为 `Authorization: Bearer dummy`），`requires_openai_auth = false` 使其不经过 OpenAI 登录。**注意**：provider 的环境变量由 daemon 继承，因此必须在 `codex app-server daemon start` 之前导出该变量。
+
+### 7.2 mock 端点
+
+只需实现 `POST /v1/responses` 的 SSE 流，事件形状与 `codex-rs/core/tests/common/responses.rs`（`rust-v0.158.0`）一致：
+
+```text
+event: response.created            data: {"type":"response.created","response":{"id":"resp_1"}}
+event: response.output_item.done   data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","id":"msg_1","content":[{"type":"output_text","text":"MOCK-REPLY-1"}]}}
+event: response.completed          data: {"type":"response.completed","response":{"id":"resp_1","usage":{...}}}
+```
+
+### 7.3 免登录已验证的能力
+
+| 能力 | 实测结果 |
+| --- | --- |
+| TUI 越过登录门槛 | 屏幕出现完整 TUI：`OpenAI Codex (v0.1580)`、`mock-model`、cwd，无任何登录提示 |
+| TUI 自建 thread | 人为输入首条消息后创建自己的 thread |
+| TUI 完整回合 | 触发 mock 端点，渲染 `MOCK-REPLY-N` |
+| 外部客户端完整回合 | `thread/start` + `turn/start` → `turn/completed`，`status: completed`，items 含 `userMessage` + `agentMessage` |
+| **注入到 TUI 拥有的 thread** | RA2A 客户端 `thread/resume` + `turn/start` → TUI 屏幕实时出现 `RA2A-INJECTED-7731` 与 `MOCK-REPLY-12` |
+| **活跃回合 follow-up** | mock 置为 hang 模式使首回合持续 10s，`turn/steer`（带 `expectedTurnId`）注入 → 同一 thread 内先后两个 turn 各自 `completed`，各执行一次 |
+| 完整通知序列 | `thread/status/changed[active]` → `turn/started` → `item/started`/`item/completed` ×2 → `thread/tokenUsage/updated` → `account/rateLimits/updated` → `thread/status/changed[idle]` → `turn/completed` |
+
+### 7.4 新发现的时序约束（必须遵守）
+
+`thread/resume` 的响应到达之前就发 `turn/start`，调用方**收不到任何回合通知**（`turn/started` / `item/*` / `turn/completed` 全部丢失），导致无法确认投递。实测两次失败均因该顺序问题。适配器必须串行化：先 `thread/resume` 并等响应，再 `turn/start`。
+
+PTY 自动化注意：文本与回车必须在两次独立写入（中间至少 0.5s），一次性写入会导致 TUI 只填入输入框而不提交，实测未产生新 thread 与新回合。
+
+### 7.5 仍然需要账号的部分
+
+| 项 | 原因 |
+| --- | --- |
+| 真实模型行为 | mock 只覆盖协议形状，不覆盖真实模型的 tool call、长上下文、限流 |
+| 账号用量门禁 | `account/rateLimits/read` 在未认证时返回 `codex account authentication required`，无法按 `runbooks/codex-account-usage-check.md` 核对 plan 桶 |
+| plan 级 rate-limit 弹条行为 | 依赖真实账号的 `codex` 桶（阈值 90） |
+| 端到端成功率/延迟指标 | 需要真实后端才有意义 |
+
+## 8. 无账号条件下已可关闭的实验项
+
+| 实验项 | 状态 | 说明 |
+| --- | --- | --- |
+| V8-R 投递前置与失败形态 | **大部分关闭** | 同步错误形态、UUID 门禁、`canAcceptDirectInput`、`turn/completed` 唯一确认口径、活跃 follow-up 语义均已验证 |
+| V11 单向 App→CLI 投递 | **可关闭** | 注入 TUI thread 并实时渲染已验证 |
+| V11 CLI→App 方向 | 仍需 | 依赖 CLI 作为**发送端**（MCP 调用方身份），与模型后端无关，可在无账号下用 mock 验证 |
+| 三平台复现 | 仍需 | macOS / Windows 需各跑一遍同一流程 |
+| 真实账号门禁与 plan 弹条 | 仍需 | 需独立登录 |
+
+结论：**PD31 的准入验证不再被登录阻塞**，只被"三平台复现"和"真实后端行为"阻塞。这显著降低了实验成本与账号额度消耗。
+
 ## 9. 对实现的约束
 
 1. RA2A 作为**普通 app-server 客户端**接入官方 daemon socket，不再需要向用户 TUI 进程注入 `--remote`。
 2. 传输层实现 WebSocket over AF_UNIX（RA2A 已依赖 `gorilla/websocket`，可用 `NetDial` 挂 UDS）；`codex app-server proxy` 不能替代，它要求调用方自己说 WebSocket。
-3. 投递入口固定为 `thread/resume`（建立订阅）+ `turn/start`（空闲）/ `turn/steer`（活跃，需 `expectedTurnId`）。`thread/queue/*` 不进主路径。
+3. 投递入口固定为 `thread/resume`（**必须先等其响应**）+ `turn/start`（空闲）/ `turn/steer`（活跃，需 `expectedTurnId`）。`thread/queue/*` 不进主路径。
 4. **投递确认必须基于 `turn/completed`**；`turn/start` 响应只用于拿到 turn ID。任何 `DELIVERY_UNKNOWN` 一律不重试、不切路径。
 5. 写入前门禁：thread 已 loaded、`canAcceptDirectInput`、thread ID 为 UUID、`textElements: []` 显式携带、活跃回合用 `turn/steer` 并带 `expectedTurnId`。
 6. 端点归属只能由 RA2A 侧登记表建立（记录本连接 create/resume 的 thread ID）；`source` 与 `originator` 均不可用。未知归属 thread 不得发布为 ready。
@@ -253,11 +325,11 @@ TUI /proc/<tui_pid>/fd 包含 socket:[62014296]        # 与 daemon ESTAB 对端
 
 | 项 | 阻塞原因 | 解除方式 |
 | --- | --- | --- |
-| 真实 TUI thread 上的注入与实时显示 | 隔离环境无认证，TUI 停在登录页，未创建 thread | 用户在隔离 `CODEX_HOME` 完成独立登录 |
-| 真实回合的投递成功率与延迟 | 同上；且需按 `runbooks/codex-account-usage-check.md` 先核对 plan 桶用量 | 独立认证 + 用量门禁 |
-| 三平台（macOS/Windows）复现 | 本轮仅 Ubuntu | 各平台按本报告方法复跑 §4/§6/§8 |
-| RA2A 与官方 daemon 的 owner 归属 | 属架构决策，非实验问题 | Owner 决策：RA2A 是否改用官方 daemon 取代 `internal/codexhost` 的 app-server 所有权 |
-| RA2A 连接对 TUI 新建 thread 的 `originator` 污染 | 需 TUI 真实创建 thread | 独立认证后在同一 daemon 内对比 RA2A 先/后连接两种顺序 |
+| 三平台（macOS/Windows）复现 | 本轮仅 Ubuntu | 各平台按本报告方法复跑，并用 `runbooks/codex-cli-isolated-daemon-experiment.md` 的 mock 端点免登录复现 |
+| 真实后端回合质量、成功率与延迟 | mock 只覆盖协议形状 | 独立登录 + 用量门禁后补测 |
+| CLI 作为发送端（CLI→App） | 需 MCP 调用方身份，属 Phase 4 | 无需账号，可用 mock 端点验证 |
+| RA2A 与官方 daemon 的 owner 归属 | 属架构决策 | Owner 决策（见 `engineering-plan.md` §12 D1） |
+| RA2A 连接对 TUI 新建 thread 的 `originator` 污染 | 需在 TUI 建 thread 后对比连接顺序 | 可用 mock 端点在无账号下完成 |
 
 ## 11. 复现材料
 
@@ -268,8 +340,12 @@ TUI /proc/<tui_pid>/fd 包含 socket:[62014296]        # 与 daemon ESTAB 对端
 | `probe_ws.py` | 最小 WebSocket over AF_UNIX JSON-RPC 客户端（无第三方依赖） |
 | `probe_delivery.py` | 投递契约：能力字段、同步/异步失败、终态通知 |
 | `probe_ownership.py` | originator 全局污染 + 多订阅者 fan-out |
+| `probe_confirm.py` | 完整通知序列与 resume→turn/start 顺序约束 |
 | `probe_tui_attach.py` / `probe_tui2.py` / `probe_tui3.py` | TUI 零动作挂接（socket inode 比对、`ss -xap`） |
 | `probe_autostart.py` | daemon 不存在时的自动拉起时间线 |
-| `logs/01..19-*.json` | 各步骤原始输出 |
+| `mock_responses.py` | 本地 mock Responses 端点（fast / hang 模式） |
+| `probe_tui_inject.py` / `probe_tui_final.py` | 免登录下向 TUI thread 注入并验证实时渲染 |
+| `probe_steer.py` | 活跃回合 `turn/steer` follow-up |
+| `logs/01..28-*.json` | 各步骤原始输出 |
 
 复现步骤与隔离口径见 `runbooks/codex-cli-isolated-daemon-experiment.md`。

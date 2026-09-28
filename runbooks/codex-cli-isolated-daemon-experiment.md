@@ -118,14 +118,65 @@ PTY 注意事项：不设窗口大小时 TUI 可能只输出 splash；用 `fcntl
 
 **投递确认必须等 `turn/completed`**：`turn/start` 先返回 turn ID（`status: inProgress`、`error: null`），未认证时随后出现 5 次 `Reconnecting... N/5`，最终 `turn/completed` 为 `status: failed`。这与 Desktop 空 model 竞态同类，适配器不得把请求响应当成功。
 
-## 7. 需要认证才能验证的部分
+## 7. 免登录验证：本地 mock 模型端点
 
-真实 TUI thread、活跃回合 follow-up、人工继续、成功率与延迟，都要求隔离 `CODEX_HOME` 内完成**独立登录**。前置条件：
+配置自定义 `model_providers` 指向本地 mock 后，**协议层与 TUI 层的绝大部分验证都不需要账号**：
 
-1. 用户在隔离环境完成登录（不得复制正式版 `auth.json`）。
-2. 按 `runbooks/codex-account-usage-check.md` 核对 plan 桶用量；未认证时 `account/rateLimits/read` 返回 `codex account authentication required to read rate limits`，无法核对。
+```toml
+# $CODEX_HOME/config.toml
+model = "mock-model"
+model_provider = "ra2a-mock"
+model_reasoning_effort = "none"
 
-## 8. 收尾（必做）
+[model_providers.ra2a-mock]
+name = "RA2A Mock"
+base_url = "http://127.0.0.1:8931/v1"
+wire_api = "responses"
+env_key = "RA2A_MOCK_KEY"
+requires_openai_auth = false
+```
+
+- `env_key` 指向任意假值即可（请求头会带 `Authorization: Bearer <假值>`）。
+- `requires_openai_auth = false` 使其不经过 OpenAI 登录。
+- **provider 的环境变量由 daemon 继承**，必须在 `codex app-server daemon start` 之前导出 `RA2A_MOCK_KEY`，事后再导出无效。
+
+mock 端点只需实现 `POST /v1/responses` 的 SSE 流，事件形状见 `codex-rs/core/tests/common/responses.rs`（tag `rust-v0.158.0`）：
+
+```text
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_1"}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","id":"msg_1","content":[{"type":"output_text","text":"MOCK-REPLY-1"}]}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_1","usage":{...}}}
+```
+
+参考实现见 `.cache/v10/mock_responses.py`，支持 `MOCK_MODE=fast`（立即回复）与 `MOCK_MODE=hang`（`MOCK_HANG_SECONDS` 秒后回复，用于保持回合活跃以测 `turn/steer`）。
+
+免登录已验证：TUI 越过登录门槛并自建 thread、完成完整回合并渲染 `MOCK-REPLY-N`、外部客户端注入到 **TUI 拥有的 thread** 并被 TUI 实时渲染、活跃回合 `turn/steer` follow-up 在同一 thread 内各执行一次、完整通知序列（`turn/started` → `item/*` → `turn/completed`）。
+
+### 时序约束（踩过）
+
+`thread/resume` 的响应到达之前就发 `turn/start`，调用方**收不到任何回合通知**（`turn/started` / `item/*` / `turn/completed` 全部丢失），投递无法确认。必须串行：先 `thread/resume` 并等响应，再 `turn/start`。
+
+### PTY 自动化注意
+
+文本与回车必须**分两次写入**（中间至少 0.5s）。一次性写入 `text\r` 会让 TUI 只把文本填进输入框而不提交，实测不产生新 thread 与新回合。
+
+## 8. 仍需账号才能验证的部分
+
+| 项 | 原因 |
+| --- | --- |
+| 真实模型行为 | mock 只覆盖协议形状，不覆盖真实 tool call、长上下文、限流 |
+| 账号用量门禁 | `account/rateLimits/read` 未认证时返回 `codex account authentication required` |
+| plan 级 rate-limit 弹条 | 依赖真实账号 `codex` 桶（阈值 90） |
+| 端到端成功率与延迟 | 需要真实后端 |
+
+需要这些时：在隔离 `CODEX_HOME` 内由用户完成**独立登录**（不得复制正式版 `auth.json`），再按 `runbooks/codex-account-usage-check.md` 核对 plan 桶用量。
+
+## 9. 收尾（必做）
 
 ```sh
 "$CODEX_BIN" app-server daemon stop
@@ -138,13 +189,16 @@ pgrep -af "ra2a daemon"; ls -la ~/.codex/app-server-control/
 
 实验产物（脚本与日志）留在 `.cache/` 下，不入库；入库的只有脱敏后的结论文档。
 
-## 9. 已知踩坑
+## 10. 已知踩坑
 
 | 坑 | 表现 | 处理 |
 | --- | --- | --- |
 | 以为 socket 是 JSONL | 首次发送即 BrokenPipe，浪费一轮排查 | 直接上 WebSocket 客户端 |
 | 用 `proxy --sock` 当 JSONL 桥 | 完全无输出 | 记住它是字节中继 |
-| PTY 未设窗口大小 | TUI 只输出 splash，看不到登录页 | `TIOCSWINSZ` 设 50x200 |
+| PTY 未设窗口大小 | TUI 只输出 splash，看不到输入框 | `TIOCSWINSZ` 设 50x200 |
+| 文本与回车一次写入 | TUI 只填入输入框，不提交、不建 thread | 分两次写，中间 ≥0.5s |
+| `resume` 未等响应就 `turn/start` | 收不到任何回合通知，无法确认投递 | 串行：等 resume 响应再 start |
+| provider env 事后才导出 | daemon 已继承旧环境，`env_key` 取不到 | 在 `daemon start` 之前导出 |
 | `daemon version` 当状态查询 | 未运行时命令失败而非返回 JSON | 这正是 `start_required` 判据 |
 | 未关自动更新 | daemon 可能拉取新版本污染实验 | 预置 `settings.json` |
 | 长 `CODEX_HOME`（Windows） | 超过 AF_UNIX 108 字节静默回退 embedded server | 用短路径，必要时缩短 `CODEX_HOME` |

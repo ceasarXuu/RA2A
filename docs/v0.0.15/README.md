@@ -28,6 +28,6 @@ v0.0.15 的目标是加入 **Codex CLI** 支持，并将 RA2A 从“Codex App �
 - **所有权仍需自建登记**：`Thread.source` 恒为 `vscode`，`Thread.originator` 为 daemon 进程级全局值（first-writer-wins），协议层无可用判别字段。
 - **PD32 隔离成本下降**：独立 `CODEX_HOME` 即等于隔离 daemon、socket、session 存储。
 
-剩余阻塞：隔离环境的独立认证需用户参与（未认证时无法核对 plan 桶用量），因此真实 TUI 投递（V8-R 剩余项）与四方向端到端（V11）待执行；三平台需在 Ubuntu 之外复现 macOS 与 Windows。标准流程见 `runbooks/codex-cli-isolated-daemon-experiment.md`。
+剩余阻塞：配置本地 mock 模型端点后，**PD31 准入验证不再被登录阻塞**——TUI 完整回合、向 TUI 自有 thread 注入并实时渲染、活跃回合 `turn/steer` follow-up 均已在无账号条件下真机通过。剩余项为三平台复现（Ubuntu 之外需 macOS 与 Windows）与真实后端行为（模型回合质量、plan 桶用量门禁、rate-limit 弹条）。标准流程与免登录方法见 `runbooks/codex-cli-isolated-daemon-experiment.md`。
 
 另：`v0.0.15` 已于 2026-09-13 发布，但发布范围小于本计划范围（CLI 适配器未交付），承载版本待 Owner 决定，详见 [engineering-plan.md §0](./engineering-plan.md)。
