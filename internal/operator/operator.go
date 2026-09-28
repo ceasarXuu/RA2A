@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +25,48 @@ type Config struct {
 	Name   string `json:"name"`
 	PIN    string `json:"pin"`
 	Codex  string `json:"codex"`
+	// CLISessions lists the Codex CLI thread IDs this node publishes. Ownership
+	// of a CLI thread cannot be read back from the host, so adoption is an
+	// explicit operator decision recorded here rather than a guess.
+	CLISessions []string `json:"cliSessions,omitempty"`
+}
+
+// AdoptCLISession records a Codex CLI thread ID as published by this node.
+func AdoptCLISession(threadID string) (Config, error) {
+	config, err := Load()
+	if err != nil {
+		return Config{}, err
+	}
+	for _, existing := range config.CLISessions {
+		if existing == threadID {
+			return config, nil
+		}
+	}
+	config.CLISessions = append(config.CLISessions, threadID)
+	sort.Strings(config.CLISessions)
+	if err := Save(config); err != nil {
+		return Config{}, err
+	}
+	return config, nil
+}
+
+// ReleaseCLISession stops publishing a Codex CLI thread ID.
+func ReleaseCLISession(threadID string) (Config, error) {
+	config, err := Load()
+	if err != nil {
+		return Config{}, err
+	}
+	remaining := config.CLISessions[:0]
+	for _, existing := range config.CLISessions {
+		if existing != threadID {
+			remaining = append(remaining, existing)
+		}
+	}
+	config.CLISessions = remaining
+	if err := Save(config); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
 func ConfigPath() (string, error) {

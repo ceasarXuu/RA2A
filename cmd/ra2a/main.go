@@ -129,6 +129,22 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		}
 		fmt.Fprintf(output, "name: %s\nstatus: exited\n", config.Name)
 		return nil
+	case "adopt-cli", "release-cli":
+		if len(args) != 2 || args[1] == "" {
+			return fmt.Errorf("%s requires a thread id", args[0])
+		}
+		var config operator.Config
+		var err error
+		if args[0] == "adopt-cli" {
+			config, err = operator.AdoptCLISession(args[1])
+		} else {
+			config, err = operator.ReleaseCLISession(args[1])
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "cli-session=%s published=%d\n", args[1], len(config.CLISessions))
+		return nil
 	case "setup":
 		flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 		flags.SetOutput(io.Discard)
@@ -173,7 +189,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return run(ctx, []string{"serve", "--pin", config.PIN, "--id", config.NodeID, "--name", config.Name, "--codex", config.Codex, "--control-address", controlAddress}, output, startSource)
 	}
 	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
-		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|selftest|serve|send> [options]")
+		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|selftest|serve|send> [options]")
 	}
 
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
@@ -201,7 +217,11 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		*name = *id
 	}
 
-	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource)
+	adopted, err := adoptedCLISessions()
+	if err != nil {
+		return err
+	}
+	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource, adopted)
 	if err != nil {
 		return err
 	}
@@ -279,7 +299,17 @@ func commandValue(args []string, input io.Reader, output io.Writer) (string, err
 // buildRegistry wires one adapter per supported agent. Adding an agent means
 // registering one more adapter here; the router, LAN layer and MCP layer stay
 // unchanged.
-func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket string, stderr io.Writer, startSource sessionSourceFactory) (*agentbridge.Registry, error) {
+// adoptedCLISessions reads the operator-recorded CLI thread IDs. A missing or
+// unreadable config simply publishes nothing rather than failing daemon start.
+func adoptedCLISessions() ([]string, error) {
+	config, err := operator.Load()
+	if err != nil {
+		return nil, nil
+	}
+	return config.CLISessions, nil
+}
+
+func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket string, stderr io.Writer, startSource sessionSourceFactory, cliSessions []string) (*agentbridge.Registry, error) {
 	source, err := startSource(ctx, codexPath, appServerSocket, stderr)
 	if err != nil {
 		return nil, fmt.Errorf("start managed Codex App Server: %w", err)
@@ -291,6 +321,12 @@ func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket strin
 		return nil, err
 	}
 	cliAdapter := codexcli.New(nodeID, codexcli.Config{CodexPath: codexPath, Stderr: stderr})
+	for _, threadID := range cliSessions {
+		if err := cliAdapter.Register(threadID); err != nil {
+			fmt.Fprintf(stderr, "skip cli session %q: %v\n", threadID, err)
+			continue
+		}
+	}
 	if err := registry.Register(cliAdapter); err != nil {
 		_ = source.Close()
 		return nil, err
