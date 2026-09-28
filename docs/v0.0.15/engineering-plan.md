@@ -1,14 +1,27 @@
 # RA2A v0.0.15 工程实施计划
 
-- 状态：ready-for-execution
+- 状态：ready-for-execution（Phase 0 路线已由 V10 重定向，主体架构未开工）
 - 计划日期：2026-09-02
-- 最近修订：2026-09-06（依据 Codex Desktop 开发沉淀重审 Phase 0/Phase 3，见 §5 进度）
+- 最近修订：2026-09-28（依据 Codex CLI `0.158.0` 的 V10 实测重定向投递入口、wrapper 定位与所有权结论）
 - Product Authority Source：[prd.md](./prd.md)
 - Applicable Decisions：PD25、PD26、PD27、PD28、PD29、PD30、PD31、PD32
 
+## 0. 发布状态与范围偏差（需 Owner 确认）
+
+`v0.0.15` 已于 2026-09-13 发布（tag `v0.0.15`，GitHub Release 为 Latest），但**发布范围小于本计划范围**：实际交付为 Desktop 26.908 协议兼容修复、可选 codex wrapper 安装器、CLI 探针工具；Codex CLI 适配器与四方向交叉矩阵未交付，README 支持列表仍为"计划支持"。
+
+本计划其余部分（Phase 0 收尾 + Phase 1-6）继续有效，但需要 Owner 明确承载版本：
+
+| 选项 | 说明 |
+| --- | --- |
+| A：另立版本承载 CLI 适配器 | 本计划改为新版本号计划，`v0.0.15.md` 保留缩减范围说明 |
+| B：重开 v0.0.15 范围 | 承认发布内容与 PRD 不一致，需要补齐 CLI 能力与 README 更新 |
+
+在 Owner 决定前，本文件继续以 `v0.0.15` 为工作文档，不擅自改版本号。
+
 ## 1. 目标
 
-在保持现有 Codex App 能力的前提下，引入 Codex CLI，并建立“统一端点 + 统一消息 + Agent 适配器”的内部架构。路由复杂度应随 Agent 类型数量线性增长，而不是形成 N×N 的成对集成。
+在保持现有 Codex App 能力的前提下，引入 Codex CLI，并建立"统一端点 + 统一消息 + Agent 适配器"的内部架构。路由复杂度应随 Agent 类型数量线性增长，而不是形成 N×N 的成对集成。
 
 ## 2. 当前实现基线
 
@@ -22,6 +35,8 @@
 - `internal/codexhost/host.go` 直接管理 Codex App Server。
 
 v0.0.10-v0.0.14 的 Desktop 开发已把 `internal/codexhost` 打磨为三平台 native 验证过的共享托管基座：单 owner、每次启动独立 socket、PID/socket owner lease、daemon 首次探测与主动监督恢复已退出的受管 App Server、Linux 进程组收割与崩溃安全清理时序、stop/exit 明确控制生命周期。CLI 路线（单 App Server + remote TUI）直接消费该基座，Phase 3 不重复设计或验证 managed host 生命周期。
+
+**2026-09-28 新增事实（V10）**：Codex CLI `0.158.0` 已自带官方 app-server daemon（`codex app-server daemon {start,restart,stop,version,...}`，机器可读 JSON），并把 daemon 自挂接提升为默认开启的稳定特性（`Feature::DaemonAutoStart`，`Stage::Stable` + `default_enabled: true`）。普通 `codex` 零动作即挂接共享 daemon，RA2A 可作为第二个 app-server 客户端接入同一 socket。这带来一个必须由 Owner 决定的架构问题：**`internal/codexhost` 自管 App Server 与官方 daemon 争夺同一角色**。本计划暂按"RA2A 消费官方 daemon、不再自管 CLI 侧 App Server"推进，`codexhost` 保留给 RA2A 内部与 Desktop 路径；该选择的最终形态见 §12 待决项。
 
 结论：不能把 Codex CLI 作为现有 source 内的额外条件分支。应先把已有 Codex App 行为收口为适配器，再增加 CLI 适配器。
 
@@ -137,14 +152,27 @@ v0.0.15 保持文本消息，候选字段：
 | V5 | App Server 版本变化能否被探测和隔离 | 对当前与最低支持 Codex CLI 做契约测试 | 不兼容时明确报错，不污染路由层 | 增加适配器版本门槛 |
 | V6 | 同一节点 App 与 CLI 端点能否无冲突汇总 | 在独立 `CODEX_HOME` 下，通过登记式接入边界（连接级 `clientInfo` 关联 start/resume/turn）同时发现两类宿主，记录主/辅助 thread 的稳定区分规则 | 地址唯一、类型正确、投递到唯一目标；未知归属不展示为 ready；CLI 断开、重连与 resume 后登记关系不迁移 | 调整端点身份模型并复验；禁止用 `thread.source` 猜测类型；所有权路线未稳定前不进入 Phase 1 |
 | V7 | 单 App Server + remote TUI 能否安全接收 active-turn follow-up | 首条消息触发长时间 turn，在执行期间注入第二条消息并继续人工输入 | follow-up 在同一 thread 中精确执行一次、无重复、TUI 实时更新、人工输入正常 | 不进入 CLI 适配器实现，重新评估活跃 turn 投递入口 |
-| V8 | CLI 写入路径是否存在隐藏前置条件（等效 Desktop `text_elements` 缺失与空 model 竞态教训） | 在独立 `CODEX_HOME` 上，对 `thread/queue/add`、`thread/queue/start` 与 `thread/resume` 做真实投递，逐字段核对 TUI renderer 敏感项与 thread model/sessionId 前置 | 确认 queue/start 的前置字段集合与 renderer 契约；字段缺失时能探测并先置前置否则拒绝，不得先写后异步失败 | 把确认的前置字段固定进契约测试；若存在不可满足前置则重估 queue 投递入口 |
-| V9 | 「用户正常启动 codex 零动作接入」能否靠官方 daemon 自动挂接 | 安装 standalone codex 并启动官方 daemon，验证普通 `codex` 自动连上 daemon 且外部客户端可用 | TUI 自动挂接 daemon，RA2A 作为其客户端投递 | macOS 0.153.4 实测普通 TUI 未挂接（源码含该机制但未触发）；按 Owner 决策改用 wrapper 代传 `--remote` 路线，不再依赖自动挂接 |
+| V8 | CLI 写入路径是否存在隐藏前置条件（等效 Desktop `text_elements` 缺失与空 model 竞态教训） | **已重定向为 V8-R**：目标从 `thread/queue/*` 改为 `thread/resume` + `turn/start` / `turn/steer`。V10 已固定 UUID 格式、同步错误形态、`canAcceptDirectInput` 门禁、`turn/completed` 唯一确认口径；剩余真实 TUI 投递与 renderer 敏感项待独立认证后执行 | 确认投递前置条件集与失败形态并固定进契约测试；不得出现"先回 turn ID 再异步失败"的不可判定结果 | 回到计划评审调整投递入口，不得静默降级到 direct resume |
+| V9 | 「用户正常启动 codex 零动作接入」能否靠官方 daemon 自动挂接 | 安装 standalone codex 并启动官方 daemon，验证普通 `codex` 自动连上 daemon 且外部客户端可用 | TUI 自动挂接 daemon，RA2A 作为其客户端投递 | 已在 `0.158.0` 被 V10 取代：实测通过，wrapper 降级为兜底。`0.153.4` 的失败结论仅对该版本有效 |
+| V10 | `0.158.0` 上官方 daemon 自挂接、第三方接入方式与投递契约是否成立 | 隔离 `CODEX_HOME` 下真实启动 daemon 与 TUI，以 socket inode 比对 + `ss -xap` 验证挂接；WebSocket over AF_UNIX 客户端实测 `thread/*`、`turn/*` 契约、originator 全局污染、多订阅者 fan-out | 零动作挂接成立；同 uid 第二客户端可投递；投递确认口径唯一；所有权判别字段可用或明确不可用 | **已通过**（见 `experiments/codex-cli-v10.md`）。所有权字段实测不可用，改为 RA2A 侧自建登记 |
+| V11 | RA2A 作为官方 daemon 第二客户端的端到端投递（真实 TUI thread、活跃回合 follow-up、人工继续、20+ 轮） | 隔离环境完成独立认证后，按 V8-R 方法执行 | 四方向各通过，含 TUI 实时显示与人工继续 | 回到计划评审；PD31 准入未达成则不发布 CLI 支持 |
 
 实验输出写入 `docs/v0.0.15/experiments/`，记录命令、版本、平台、观察结果和结论。只有结论进入架构，原始日志不提交敏感信息。
 
 所有实验先通过 PD32 隔离门禁：使用独立的开发配置、运行目录、日志、控制地址、App Server socket、节点身份和测试会话；不得执行会安装、升级、停止、重启或重新配置本机正式版的命令。启动前检查与正式版的资源冲突，无法确认隔离时立即停止。
 
-当前进度：V1-V4 与 V7 已完成 macOS 首轮验证；V7 证明 CLI active turn 接收 follow-up 时采用同 thread 排队并在当前 turn 后执行的语义。V5 已完成 `0.151.0`/`0.152.1` 双版本 macOS 契约对比，两版均可从 `initialize.userAgent` 探测版本，且 `thread/queue/*` 需要显式 `experimentalApi` 能力。V6 macOS 首轮未通过：App Server 创建的测试 thread 与 remote TUI thread 都返回 `source: vscode`，原生 thread ID 虽可精确投递，却无法仅凭共享列表可靠判断 App/CLI 所有权。V6-R1 已证明透明接入代理可以用 `clientInfo=codex-tui` 关联 start/resume/turn 的原生 thread ID，但尚未稳定排除同连接上的辅助 thread；同时 `-c ephemeral=true` 实测仍产生 `ephemeral=false` 的持久 thread，PD32 隔离门禁未通过。下一步必须先建立工作区独立 `CODEX_HOME` 与独立认证，再继续主/辅助 thread 区分和双目标投递复验。V6 复验和三平台验证完成前 Phase 0 不冻结。`0.151.0` 在完成真实投递前只作为契约最低候选。
+当前进度：V1-V4 与 V7 已完成 macOS 首轮验证；V7 证明 CLI active turn 接收 follow-up 时采用同 thread 排队并在当前 turn 后执行的语义。V5 已完成 `0.151.0`/`0.152.1` 双版本 macOS 契约对比，两版均可从 `initialize.userAgent` 探测版本。V6 macOS 首轮未通过：App Server 创建的测试 thread 与 remote TUI thread 都返回 `source: vscode`，V10 在 `0.158.0` 上复现同一结论，且进一步证明 `originator` 是 daemon 进程级全局值、first-writer-wins，同样不可用作判别。V6-R1 已证明透明接入代理可以用 `clientInfo=codex-tui` 关联 start/resume/turn 的原生 thread ID。
+
+2026-09-28 依据 V10（`0.158.0`，Ubuntu native，隔离 `CODEX_HOME`）重排 Phase 0 结论：
+
+- **零动作路线成立，wrapper 降级**：`DaemonAutoStart` 已是默认开启的稳定特性。实测 daemon 不存在时普通 `codex` 约 5 秒内自行拉起 daemon 并建 socket，daemon 已存在时直接接入，socket inode 与 `ss -xap` 双向比对确认 TUI 与 daemon 之间 ESTABLISHED。V9 在 `0.153.4` 上的失败结论仅对该版本有效。`cmd/codex-wrapper` 保留为排除场景兜底（`--no-daemon`、`--oss`、`-c`/`--enable`/`--disable`/`--search`、`--profile`、自定义 config loader、`--strict-config`、`--dangerously-bypass-hook-trust`、workload identity、`CODEX_EXEC_SERVER_URL`、Bedrock 向导、Windows 非提升终端），不再是主路径。
+- **投递入口改为 stable 路径**：`thread/queue/*` 全部 experimental 且要求 thread 已 loaded，退出主路径；投递固定为 `thread/resume` 建立订阅 + `turn/start`（空闲）/ `turn/steer`（活跃，带 `expectedTurnId`）。`turn/start` 不受 `experimentalApi` 门禁。
+- **投递确认口径唯一**：`turn/start` 先返回 turn ID 且 `error: null`，失败在 5 次 `Reconnecting... N/5` 后由 `turn/completed`（`status: failed`）暴露。适配器必须以 `turn/completed` 为唯一成功判据，`DELIVERY_UNKNOWN` 不重试、不切路径。
+- **所有权仍需 RA2A 侧自建登记**：`Thread.source` 恒为 `vscode`；`Thread.originator` 为进程级全局值。服务端 `thread → connection` 映射为 `pub(crate)`，未映射到任何协议方法。未知归属 thread 不得发布为 ready。
+- **PD32 隔离成本下降**：`CODEX_HOME` 决定 daemon socket，独立 `CODEX_HOME` 即等于隔离 daemon、socket、session 存储三件事，不再需要 `-c ephemeral=true`（V6 已证明其无效）。
+- **剩余硬前置**：隔离环境的独立认证需用户参与；未认证时 `account/rateLimits/read` 返回 `codex account authentication required`，无法按 `runbooks/codex-account-usage-check.md` 核对 plan 桶用量，因此真实投递实验前必须先完成独立登录与用量门禁。
+
+Phase 0 冻结条件更新：V10 已通过；V8-R 剩余项（真实 TUI 投递、renderer 敏感字段、活跃回合 follow-up）与 V11（四方向端到端）需在独立认证后完成；三平台复现至少覆盖 Ubuntu 之外的 macOS 与 Windows。`0.158.0` 是当前唯一验证过的版本，`0.151.0` 在完成真实投递前只作为契约最低候选。
 
 2026-09-06 依据 Codex Desktop 开发沉淀（v0.0.10-v0.0.14）重审本计划：
 
@@ -164,15 +192,16 @@ v0.0.15 保持文本消息，候选字段：
 
 ### Phase 0：产品决策与可行性冻结
 
-依赖：通过 PD32 隔离门禁并完成 V1-V8。
+依赖：通过 PD32 隔离门禁并完成 V1-V8（V9 已被 V10 取代，V8 已重定向为 V8-R）。
 
 工作：
 
 - 以 PD29-PD31 作为启动行为、地址兼容和 Agent 支持门槛。
-- 选定满足这些决策的 Codex CLI 所有权路线；登记式接入边界（连接级 `clientInfo` 关联 attach/create/resume）为 Phase 3 硬约束，不是可选路线。
-- 通过 V6 复验证明所有权来自登记式接入边界，而非 `thread.source`；未知所有权端点不得标记为 ready，并确认主/辅助 thread 稳定区分规则。
-- 用独立 `CODEX_HOME`、认证、配置和 session 存储通过 PD32 门禁；独立认证需用户参与完成，命令行 `ephemeral` 覆盖不能替代存储隔离。
-- 完成 V8 写入前置条件探测，把确认的前置字段固定进契约测试。
+- 路线已定（V10）：CLI 侧消费官方 `codex app-server daemon`，RA2A 作为同 uid 第二客户端接入其控制 socket；不再自管 CLI 侧 App Server。需 Owner 确认 `internal/codexhost` 的最终边界（§12）。
+- 所有权：登记式接入边界仍为 Phase 3 硬约束。V10 已排除 `source` 与 `originator` 两条协议判别路径，因此登记表必须由 RA2A 侧记录本连接 create/resume 的 thread ID 来建立；未知归属端点不得标记为 ready。
+- 用独立 `CODEX_HOME`（连带隔离 daemon、socket、session 存储）与独立认证通过 PD32 门禁；独立认证需用户参与完成。
+- 完成 V8-R 剩余项：真实 TUI thread 上的 `turn/start` / `turn/steer` 投递、renderer 敏感字段、活跃回合 follow-up，并把确认项固定进契约测试。
+- 完成 V11：四方向端到端投递，含 TUI 实时显示、人工继续与 20+ 轮退化。
 - 将实验结论映射到适配器最小接口。
 
 完成标准：技术路线满足受保护产品决策，并证明不会破坏活跃 TUI、人工继续交互和全交叉支持门槛。
@@ -213,18 +242,20 @@ v0.0.15 保持文本消息，候选字段：
 
 ### Phase 3：Codex CLI 适配器
 
-主要位置：新增 `internal/codexcli/`，具体实现由 Phase 0 选定路线决定。
+主要位置：新增 `internal/codexcli/`，实现路径由 V10 结论确定。
 
 职责：
 
-- 直接复用已三平台验证的 `internal/codexhost` 托管 App Server 基座，作为 CLI TUI 与外部投递共享的 owner；不重复实现 managed host 生命周期（监督、收割、stop/exit 语义）。
-- 探测 Codex CLI 版本和支持能力：从实际 App Server 的 `initialize.userAgent` 读取版本，并显式协商、探测 `experimentalApi` queue 能力；不能只检查本机命令版本。
-- 通过登记式接入边界（连接级 `clientInfo` 关联 attach/create/resume）建立 thread 所有权，并落实主/辅助 thread 区分规则；不得用共享 `thread/list` 的 `source` 推断类型。
-- 发现或管理已明确归属的 CLI session；未知归属不得作为 ready 端点发布。
-- 将统一消息投递为一次 turn，使用 `thread/queue/add`/`thread/queue/start` 客户端；active 期间投递按宿主 queue 语义排队，在当前 turn 后精确执行一次，不 create 第二个 writer。
-- 按 V5/V8 结论在写入前满足并核验前置字段（版本、能力、thread model/sessionId 等网络 renderer 敏感项），前置不足时先拒绝不投递，不得先写后异步失败。
-- 处理活跃 writer、busy、超时和不确定结果：`DELIVERY_UNKNOWN` 不重试，不切换投递路径。
-- 确保投递后 TUI 可继续人工使用。
+- **接入官方 daemon**：用 `codex app-server daemon version` 判定 `start_required` 与可用状态（该命令在 daemon 不存在时失败并返回连接错误，不返回 JSON）；daemon 可用时以 WebSocket over AF_UNIX 连接 `$CODEX_HOME/app-server-control/app-server-control.sock`，作为普通 app-server 客户端。传输层可用已有的 `gorilla/websocket` + `NetDial` 挂 UDS；`codex app-server proxy` 不能替代（它是纯字节中继，要求调用方自己说 WebSocket）。
+- **不得自行拉起 daemon**：PD29 要求未运行时返回 `start_required` 并由调用 Agent 提示用户，不静默自动启动。
+- **探测版本与能力**：从 `initialize.userAgent` 解析实际 app-server 版本并与 `daemon version` 的 `appServerVersion` 交叉校验；显式协商 `experimentalApi` 以使用 `canAcceptDirectInput` 门禁。注意 `initialize` 不返回协议版本号，版本门槛只能靠 daemon JSON 或实测探测。
+- **建立 thread 所有权登记**：记录本连接 create/resume 的 thread ID 作为归属证据；禁止用 `Thread.source`（实测恒为 `vscode`）或 `Thread.originator`（实测为 daemon 进程级全局值、first-writer-wins）推断类型。未知归属不得作为 ready 端点发布。
+- **管理 originator 副作用**：非 `codex_app_server_daemon` / `codex-backend` 的 `clientInfo.name` 会成为 daemon 进程级默认 originator，影响之后所有连接创建的 thread。适配器必须固定连接命名与连接顺序，并把该副作用写入可观测性事件。
+- **投递路径**：`thread/resume` 建立订阅 → 空闲用 `turn/start`、活跃用 `turn/steer`（必须带 `expectedTurnId`）。不使用 `thread/queue/*`（experimental 且要求 thread 已 loaded）。
+- **投递确认**：以 `turn/completed` 为唯一成功判据，检查 `turn.status` 与 `turn.error`。`turn/start` 响应只用于取得 turn ID。宿主内置 5 次重连，确认窗口为秒级，窗口内不重试、不切换投递路径。
+- **写入前门禁**：thread 已 loaded（`thread/loaded/list`）、`canAcceptDirectInput` 为真、`threadId` 为合法 UUID、显式携带 `textElements: []`；前置不足时先拒绝不投递。
+- **订阅纪律**：不用即 `thread/unsubscribe`（订阅会钉住 thread 内存，最后一个订阅者离开后 thread 会被卸载并广播 `notLoaded` + `thread/closed`）；不代答审批类服务端请求（会 fan-out 给所有订阅者）；忽略与本次投递无关的 `error` / `warning` 通知。
+- **已知宿主约束**：注入的 turn 运行在 daemon 启动时的环境变量下，不是用户终端环境；Windows 需非提升终端且 `CODEX_HOME` 路径需满足 AF_UNIX 108 字节限制，否则静默回退到 embedded server。
 - App Server 实验接口变化只影响该适配器和契约测试。
 
 验证：单适配器测试、真实 CLI 冒烟测试、长时间多轮退化测试、TUI 实时显示与人工继续的真机验收。
@@ -236,6 +267,7 @@ v0.0.15 保持文本消息，候选字段：
 - `internal/mcpserver/`：通过适配器解析调用方身份，不再只读取 Codex App thread ID。
 - `internal/operator/` 与安装脚本：检测并注册 Codex App、Codex CLI；保持幂等安装、重启和更新。
 - 配置迁移：将单一 Codex 路径迁移为可扩展的适配器配置，同时兼容已有安装。
+- `codex wrapper` 定位调整：安装器保留 `--codex-wrapper` 选项，但文档与提示必须说明它是**排除场景兜底**（官方 daemon 自挂接被 `--no-daemon` / `-c` / `--profile` / `CODEX_EXEC_SERVER_URL` / Bedrock 向导 / Windows 非提升终端等阻断时才需要），不再作为 CLI 接入的正式路径。
 
 验证：全新安装、v0.0.x 升级、重复安装、卸载/重启，以及三平台路径差异。
 
@@ -285,9 +317,22 @@ v0.0.15 保持文本消息，候选字段：
 - `protocol_version`
 - `owner_mode`
 
-宿主级事件沿用并复用 codexhost 已有输出：`managed_codex_host_exited`、`managed_codex_host_reaped`、`managed_codex_host_reap_failed`。新增 CLI 适配器级事件：`cli_queue_added`（含 queued submission ID 作诊断依据）、`cli_capability_rejected`、`cli_caller_bound`、`cli_ownership_unknown`（未归属 thread 跳过发布时记录）。
+宿主级事件沿用并复用 codexhost 已有输出：`managed_codex_host_exited`、`managed_codex_host_reaped`、`managed_codex_host_reap_failed`。CLI 适配器级事件按 V10 结论调整：
 
-关键路径应能区分“LAN 未到达、远端路由失败、适配器拒绝、宿主结果未知”，避免统一表现为超时。
+| 事件 | 触发条件 | 诊断价值 |
+| --- | --- | --- |
+| `cli_daemon_state` | `daemon version` 判定结果（running / 不可达） | 区分 `start_required` 与宿主故障 |
+| `cli_capability_rejected` | `canAcceptDirectInput` 缺失或为假、thread 未 loaded、ID 非 UUID | 定位写入前门禁拒绝原因 |
+| `cli_caller_bound` | 本连接 create/resume thread 成功登记归属 | 所有权登记审计 |
+| `cli_ownership_unknown` | 发现未归属 thread 而跳过发布 | 解释端点缺失 |
+| `cli_originator_side_effect` | 本连接 `clientInfo.name` 成为 daemon 进程级默认 originator | 跨客户端污染取证 |
+| `cli_turn_accepted_unconfirmed` | `turn/start` 返回 turn ID 但确认窗口内未收到 `turn/completed` | 区分"已接受"与"已投递" |
+| `cli_turn_failed` | `turn/completed` 带 `status: failed` 与 `error` | 宿主终态失败分类 |
+| `cli_unsubscribed` | 主动 `thread/unsubscribe` | 防止 thread 内存被钉住 |
+
+原 `cli_queue_added` 随投递入口改到 `turn/*` 而退役。
+
+关键路径应能区分“LAN 未到达、远端路由失败、适配器拒绝、宿主结果未知”，避免统一表现为超时。特别地，`turn/start` 返回成功**不得**映射为 `delivered`，必须等 `turn/completed`。
 
 ## 9. Execution Contract
 
@@ -297,7 +342,8 @@ v0.0.15 保持文本消息，候选字段：
 - macOS、Linux、Windows 各至少一台真实设备用于宿主验证。
 - 测试固定记录 Codex CLI 版本；App Server 为 Experimental，不能只使用 mock 验收。
 - 本机正式版视为受保护的外部系统；开发实例使用独立配置、运行目录、日志、控制地址、socket、节点身份和测试会话。
-- Codex 宿主实验使用工作区内独立 `CODEX_HOME` 和独立认证；不得以未验证的 `ephemeral` 配置覆盖作为 session 隔离手段。
+- Codex 宿主实验使用工作区内独立 `CODEX_HOME`（连带隔离 daemon、socket、session 存储）和独立认证；不得以未验证的 `ephemeral` 配置覆盖作为 session 隔离手段。
+- 隔离实验标准流程见 `runbooks/codex-cli-isolated-daemon-experiment.md`。
 - 验证脚本必须在启动前检查资源归属和冲突，且只能清理本次开发实例创建的资源。
 - 不创建新分支，遵守仓库原子提交和推送约束。
 
@@ -305,7 +351,7 @@ v0.0.15 保持文本消息，候选字段：
 
 `Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6`
 
-Phase 0 完成并冻结 V1-V7 结论前不进入 Phase 1 主体架构重构。Phase 3 依赖 CLI 所有权路线验证通过。
+Phase 0 完成并冻结 V8-R / V10 / V11 结论前不进入 Phase 1 主体架构重构。Phase 3 依赖官方 daemon 路线与所有权登记路线验证通过。
 
 ### 停止条件
 
@@ -318,6 +364,7 @@ Phase 0 完成并冻结 V1-V7 结论前不进入 Phase 1 主体架构重构。Ph
 - 任一交叉方向无法达到 PD31 的准入门槛。
 - 开发实例无法与本机正式版的配置、进程、端口、socket、网络身份或宿主会话可靠隔离。
 - 单个手写生产代码阶段预计新增超过仓库约束，且没有更小方案。
+- 官方 daemon 与 RA2A 自管 host 出现 owner 冲突且无法用明确规则消解。
 
 ### 完成定义
 
@@ -332,13 +379,27 @@ Phase 0 完成并冻结 V1-V7 结论前不进入 Phase 1 主体架构重构。Ph
 
 | 决策范围 | 权威决策 | 工程约束 |
 | --- | --- | --- |
-| Codex CLI 未运行 | PD29 | 返回 `start_required` 和可操作说明；不得静默自动拉起 |
+| Codex CLI 未运行 | PD29 | 返回 `start_required` 和可操作说明；不得静默自动拉起。V10 已提供官方判定手段（`daemon version` 失败即不可达） |
 | 目标寻址 | PD30 | 地址由 `list_targets` 完整返回并视为不透明值 |
 | Agent 支持准入 | PD31 | 所有已支持 Agent 之间的双向矩阵必须全部通过，否则不发布该适配器 |
 | 开发环境隔离 | PD32 | 开发与实验不得变更、重启、停止或占用本机正式版资源；冲突时停止实验 |
 
 ## 11. Product Decision Delta
 
-当前无实现后的产品决策差异。
+| 差异 | 原确认结论 | 实现/实验后的事实 | 需要 Owner 决定 |
+| --- | --- | --- | --- |
+| CLI 接入路径 | V9：官方 daemon 自动挂接不可用，采用 wrapper 代传 `--remote` | `0.158.0` 实测零动作自挂接成立，wrapper 降级为排除场景兜底 | 是否接受路线变更（不改变 PD29/PD30/PD31 的产品行为） |
+| 投递确认语义 | 计划假定写入成功可由请求响应判定 | `turn/start` 响应不代表投递成功，终态只在 `turn/completed` | 是否确认 `delivered` 需等待终态（影响延迟指标与超时设定） |
+| 端点所有权来源 | 计划假定可用连接级 `clientInfo` 关联建立所有权 | `originator` 为进程级全局值、`source` 恒为 `vscode`，协议层无所有权字段 | 是否接受"RA2A 侧自建登记表 + 未知归属不发布"作为最终口径 |
+| host owner 归属 | 计划假定 RA2A 用 `internal/codexhost` 作为 CLI 侧共享 owner | 官方 daemon 提供同一角色且生命周期更完整 | `codexhost` 是否退位为 Desktop / RA2A 内部专用 |
+
+## 12. 待决项（阻塞 Phase 3）
+
+| ID | 待决项 | 阻塞范围 | 建议 |
+| --- | --- | --- | --- |
+| D1 | CLI 侧 App Server owner 用官方 daemon 还是 `internal/codexhost` | Phase 3 全部 | 用官方 daemon（生命周期、升级、`start_required` 判定均已官方化）；`codexhost` 保留 Desktop 与 RA2A 内部路径 |
+| D2 | RA2A 连接的 `clientInfo.name` 取值与连接顺序 | Phase 3 归属登记 | 固定名称 + 单连接长驻，避免污染 daemon 全局 originator；配合 `cli_originator_side_effect` 事件 |
+| D3 | `delivered` 是否必须等待 `turn/completed` | Phase 3 投递结果映射与超时 | 必须等待；确认窗口做成可配置超时，超时映射为 `DELIVERY_UNKNOWN` |
+| D4 | 承载版本号（见 §0） | Phase 6 发布 | 由 Owner 在选项 A / B 中选择 |
 
 执行过程中若发现原确认决策不可实现，必须记录：受影响 PD、证据、用户影响、建议选项和 Owner 决定。不得把工程限制静默改写为产品行为。
