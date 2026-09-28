@@ -153,7 +153,7 @@ func (registry *Registry) Deliver(ctx context.Context, envelope MessageEnvelope)
 	}
 	endpoint, adapter, err := registry.Lookup(ctx, address)
 	if err != nil {
-		return DeliveryResult{Code: ResultNotFound, Detail: err.Error()}
+		return registry.explainMiss(ctx, address, err)
 	}
 	if !endpoint.Has(CapabilityReceiveText) {
 		return DeliveryResult{
@@ -182,4 +182,29 @@ func (registry *Registry) Health(ctx context.Context) map[AgentKind]Health {
 		report[adapter.Kind()] = health
 	}
 	return report
+}
+
+// TargetShapeChecker is implemented by adapters whose endpoint IDs live in a
+// host-specific namespace. The router uses it only to turn a lookup miss into a
+// precise answer: an ID that is malformed for some adapter is unsupported,
+// while an ID that is well formed but unpublished is simply not found.
+type TargetShapeChecker interface {
+	CheckTargetID(endpointID string) error
+}
+
+func (registry *Registry) explainMiss(ctx context.Context, address Address, lookupErr error) DeliveryResult {
+	for _, adapter := range registry.Adapters() {
+		checker, ok := adapter.(TargetShapeChecker)
+		if !ok {
+			continue
+		}
+		if err := checker.CheckTargetID(address.EndpointID); err != nil {
+			return DeliveryResult{
+				Code: ResultUnsupported, NativeErrorClass: "malformed_target_id",
+				Detail: fmt.Sprintf("%s endpoint ids: %v", adapter.Kind(), err),
+			}
+		}
+	}
+	_ = ctx
+	return DeliveryResult{Code: ResultNotFound, Detail: lookupErr.Error()}
 }

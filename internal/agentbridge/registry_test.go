@@ -295,3 +295,37 @@ func (adapter *countingAdapter) Deliver(context.Context, Address, MessageEnvelop
 }
 func (adapter *countingAdapter) Health(context.Context) Health { return Ready() }
 func (adapter *countingAdapter) Close() error                  { adapter.closed++; return nil }
+
+type shapeAwareAdapter struct {
+	fakeAdapter
+	reject map[string]bool
+}
+
+func (adapter *shapeAwareAdapter) CheckTargetID(endpointID string) error {
+	if adapter.reject[endpointID] {
+		return errors.New("not a valid id for this host")
+	}
+	return nil
+}
+
+func TestDeliverDistinguishesMalformedFromUnpublishedTarget(t *testing.T) {
+	registry := NewRegistry("node-a")
+	cli := &shapeAwareAdapter{
+		fakeAdapter: fakeAdapter{kind: AgentCodexCLI, health: Ready()},
+		reject:      map[string]bool{"not-a-thread-id": true},
+	}
+	if err := registry.Register(cli); err != nil {
+		t.Fatal(err)
+	}
+	malformed := registry.Deliver(context.Background(), envelope("ra2a://node-a/not-a-thread-id", "hi"))
+	if malformed.Code != ResultUnsupported {
+		t.Fatalf("malformed id for a known host must be unsupported, got %+v", malformed)
+	}
+	if malformed.NativeErrorClass != "malformed_target_id" {
+		t.Fatalf("native class must identify the shape error, got %q", malformed.NativeErrorClass)
+	}
+	unpublished := registry.Deliver(context.Background(), envelope("ra2a://node-a/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "hi"))
+	if unpublished.Code != ResultNotFound {
+		t.Fatalf("well formed but unpublished id must be not_found, got %+v", unpublished)
+	}
+}

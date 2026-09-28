@@ -202,3 +202,12 @@ func (adapter *Adapter) unsubscribe(ctx context.Context, server *appServer, thre
 	}
 	adapter.logger.Info("cli_unsubscribed", "endpoint_id", threadID, "status", status)
 }
+
+// CheckTargetID implements agentbridge.TargetShapeChecker so the router can tell
+// a malformed Codex thread id apart from an unpublished one.
+func (adapter *Adapter) CheckTargetID(endpointID string) error {
+	if validThreadID(endpointID) {
+		return nil
+	}
+	return fmt.Errorf("expected a UUID or urn:uuid: thread id, got %q", endpointID)
+}
