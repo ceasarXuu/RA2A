@@ -154,6 +154,13 @@ func (adapter *Adapter) connect(ctx context.Context) (*appServer, error) {
 	}
 	server := &appServer{conn: conn}
 	conn.setNotificationHandler(adapter.onNotification)
+	// V10 measured that initialize writes clientInfo.name into the app-server
+	// process-wide default originator unless the name is allow-listed, so every
+	// thread created afterwards on this daemon records this client. The side
+	// effect is cross-client and permanent for the daemon's lifetime; it is
+	// logged once per connection so it can be traced during support work.
+	adapter.logger.Info("cli_originator_side_effect",
+		"client_name", adapterClientName, "app_server_version", version)
 
 	adapter.mu.Lock()
 	if adapter.closed {

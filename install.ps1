@@ -3,6 +3,10 @@ param(
     [string]$NodeId = $env:COMPUTERNAME,
     [string]$Name,
     [string]$Codex,
+    # Fallback only. Recent Codex CLI attaches to its own shared app-server
+    # daemon on its own, so this launcher is only needed when daemon attachment
+    # is blocked (--no-daemon, -c overrides, --profile, CODEX_EXEC_SERVER_URL,
+    # the Bedrock first-run wizard, or an elevated terminal).
     [switch]$CodexWrapper,
     [switch]$Uninstall
 )

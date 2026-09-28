@@ -11,8 +11,12 @@ Usage: ./install.sh
 
 Without setup options, installs the command only. Run ra2a to finish setup.
 With a PIN, performs an Agent-friendly non-interactive setup.
---codex-wrapper installs the codex launcher that proxies plain TUI sessions
-when RA2A is available and otherwise passes through the native codex.
+--codex-wrapper installs a fallback codex launcher. Recent Codex CLI attaches to
+its own shared app-server daemon on its own, so this wrapper is only needed when
+daemon attachment is blocked (--no-daemon, -c overrides, --profile,
+CODEX_EXEC_SERVER_URL, the Bedrock first-run wizard, or an elevated Windows
+terminal). It proxies plain TUI sessions when RA2A is available and otherwise
+passes through the native codex.
 EOF
 }
 
