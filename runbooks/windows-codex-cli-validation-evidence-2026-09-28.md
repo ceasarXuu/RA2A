@@ -7,7 +7,7 @@
 | W1 构建、自检 | PASS | Go 1.27.0/windows-amd64；`go build ./...`、`go test ./...` 全绿；隔离构建的 `ra2a selftest --pin <测试 PIN> --id win-node --name rog306` 返回 `selftest=ok`。Go 版本高于清单记载的 1.24.x。 |
 | W2 正式版 Desktop 回归 | 待验证 | 本轮未升级正式 RA2A 服务，也未从对端向专用 Desktop 测试 session 发送 marker。 |
 | W3 daemon/socket | PASS | daemon `version` 返回 `running`、`appServerVersion=0.158.0`；控制 socket 为 `C:\Users\77585\.ra2a-win-verify\app-server-control\app-server-control.sock`，74 字符；ACL 仅当前用户。 |
-| W4 零动作挂接 | 主路径 PASS，排除场景部分完成 | daemon 停止后，普通 `codex` 启动自动出现 daemon 与 socket；TUI 正常显示。`--no-daemon`、`-c model="x"` 分别启动后 daemon 仍缺席。`--profile` 与 `CODEX_EXEC_SERVER_URL` 未逐项运行。 |
+| W4 零动作挂接 | PASS | daemon 停止后，普通 `codex` 启动自动出现 daemon 与 socket；TUI 正常显示。`--no-daemon`、`-c model="x"`、`--profile p1`、设置 `CODEX_EXEC_SERVER_URL=ws://127.0.0.1:1` 分别启动后 daemon 均缺席；profile 使用隔离目录内的 `p1.config.toml`。 |
 | W5 免登录注入 | 本机适配器 PASS，LAN 待验证 | 隔离 TUI 自建 thread `01a0e872-95d4-78a2-83e4-a6ce84096c69`；手工首轮实时显示 `MOCK-REPLY-1`。第二客户端通过 `internal/codexcli.Adapter` 注入 `WINDOWS-CLI-INJECT-20260928-2238`，返回 `delivered`，TUI 实时显示 marker 与 `MOCK-REPLY-3`，日志有 `cli_turn_delivered`、`cli_unsubscribed`。未由另一台机器经 RA2A LAN 路径注入。 |
 | W6 活跃 follow-up | 本机适配器 PASS | 延迟 mock 下，`WINDOWS-CLI-HANG2-FIRST-20260928` 与 `WINDOWS-CLI-HANG2-FOLLOWUP-20260928` 均返回 `delivered`，日志分别为 `mode=start`、`mode=steer`；rollout 两条 user message 均属于 turn `01a0e878-46ab-76e3-a00c-e753f7a25e0d`，该 turn 只有一次 `task_complete`；TUI 显示两次回复并回到可输入状态。 |
 | W7 `START_REQUIRED` | 本机适配器 PASS | 停止隔离 daemon 后向已登记 thread 投递，返回 `code=start_required`；`daemon version` 仍无法连接，无新隔离 daemon 进程。LAN 调用方返回值未复验。 |
@@ -25,4 +25,4 @@
 
 - 使用当前 `main` 的正式 RA2A 服务及专用 Desktop 测试 session 完成 W2，并确认 UI 实时显示、空闲 start 一次、活跃 steer 一次。
 - 从另一台机器完成 W5/W6/W7 的 LAN 端返回值、`list_targets.agent=codex-cli` 与日志联验。
-- 补齐 W4 其余排除参数和 W8 真实网络/版本混用场景。
+- 补齐 W8 真实网络/版本混用场景。
