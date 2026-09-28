@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 const controlSocketRelative = "app-server-control/app-server-control.sock"
@@ -139,51 +141,20 @@ func daemonProbeDetail(runErr error, output []byte) string {
 // parseVersion extracts the app-server version from initialize.userAgent, which
 // is the only version-bearing field the handshake offers.
 func parseVersion(userAgent string) string {
-	fields := strings.Fields(userAgent)
-	if len(fields) == 0 {
-		return ""
+	for _, field := range strings.Fields(userAgent) {
+		if index := strings.LastIndex(field, "/"); index >= 0 {
+			candidate := field[index+1:]
+			if semver.IsValid("v" + candidate) {
+				return candidate
+			}
+		}
 	}
-	candidate := strings.TrimSuffix(fields[0], "/")
-	if index := strings.LastIndex(candidate, "/"); index >= 0 {
-		candidate = candidate[index+1:]
-	}
-	return candidate
+	return ""
 }
 
 func versionAtLeast(have, want string) bool {
-	if have == "" || want == "" {
-		return false
-	}
-	haveParts := strings.Split(have, ".")
-	wantParts := strings.Split(want, ".")
-	for index := 0; index < len(haveParts) && index < len(wantParts); index++ {
-		haveValue, haveErr := parseNumeric(haveParts[index])
-		wantValue, wantErr := parseNumeric(wantParts[index])
-		if haveErr != nil || wantErr != nil {
-			if haveParts[index] == wantParts[index] {
-				continue
-			}
-			return haveParts[index] > wantParts[index]
-		}
-		if haveValue != wantValue {
-			return haveValue > wantValue
-		}
-	}
-	return true
-}
-
-func parseNumeric(value string) (int, error) {
-	if value == "" {
-		return 0, errors.New("empty version segment")
-	}
-	result := 0
-	for _, char := range value {
-		if char < '0' || char > '9' {
-			return 0, fmt.Errorf("non numeric version segment %q", value)
-		}
-		result = result*10 + int(char-'0')
-	}
-	return result, nil
+	return semver.IsValid("v"+have) && semver.IsValid("v"+want) &&
+		semver.Compare("v"+have, "v"+want) >= 0
 }
 
 const probeTimeout = 10 * time.Second

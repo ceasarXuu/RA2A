@@ -364,9 +364,11 @@ echo '{"status":"running","socketPath":"` + socketPath + `","cliVersion":"0.157.
 
 func TestParseVersionAndOrdering(t *testing.T) {
 	cases := map[string]string{
-		"ra2a_codex_cli/0.158.0 (Ubuntu 24.4.0; x86_64)": "0.158.0",
-		"codex-tui/0.159.0-alpha.12 (macOS)":             "0.159.0-alpha.12",
-		"":                                               "",
+		"ra2a_codex_cli/0.158.0 (Ubuntu 24.4.0; x86_64)":                                  "0.158.0",
+		"Codex Desktop/0.158.0 (Windows 10.0.26200; x86_64) dumb (ra2a-win-probe; 0.0.0)": "0.158.0",
+		"codex-tui/0.159.0-alpha.12 (macOS)":                                              "0.159.0-alpha.12",
+		"Codex Desktop/unknown (Windows)":                                                 "",
+		"":                                                                                "",
 	}
 	for input, want := range cases {
 		if got := parseVersion(input); got != want {
@@ -376,7 +378,8 @@ func TestParseVersionAndOrdering(t *testing.T) {
 	if !versionAtLeast("0.158.0", "0.158.0") || !versionAtLeast("0.159.0", "0.158.0") {
 		t.Fatal("equal and newer versions must satisfy the minimum")
 	}
-	if versionAtLeast("0.157.9", "0.158.0") || versionAtLeast("", "0.158.0") {
+	if versionAtLeast("0.157.9", "0.158.0") || versionAtLeast("", "0.158.0") ||
+		versionAtLeast("Codex", "0.158.0") || versionAtLeast("0.158.0-alpha.1", "0.158.0") {
 		t.Fatal("older or unknown versions must not satisfy the minimum")
 	}
 }
