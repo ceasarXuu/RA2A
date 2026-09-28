@@ -455,6 +455,11 @@ func (wrapper registryAdapter) Health(ctx context.Context) map[agentbridge.Agent
 	return wrapper.registry.Health(ctx)
 }
 
+// Lookup exposes the registry's address resolution to the control plane.
+func (wrapper registryAdapter) Lookup(ctx context.Context, address agentbridge.Address) (agentbridge.Endpoint, agentbridge.Adapter, error) {
+	return wrapper.registry.Lookup(ctx, address)
+}
+
 // ResolveCaller delegates caller identity to the adapters, so the MCP layer
 // never needs to know which agent is calling.
 func (wrapper registryAdapter) ResolveCaller(ctx context.Context, caller agentbridge.CallerContext) (agentbridge.Address, error) {

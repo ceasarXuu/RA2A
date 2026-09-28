@@ -21,6 +21,7 @@ var ErrCallerUnknown = errors.New("CALLER_SESSION_UNKNOWN")
 // the local node in target listings; it never inspects a concrete host type.
 type LocalRegistry interface {
 	Endpoints(context.Context) ([]agentbridge.Endpoint, error)
+	Lookup(context.Context, agentbridge.Address) (agentbridge.Endpoint, agentbridge.Adapter, error)
 	Deliver(context.Context, agentbridge.MessageEnvelope) agentbridge.DeliveryResult
 	Health(context.Context) map[agentbridge.AgentKind]agentbridge.Health
 	ResolveCaller(context.Context, agentbridge.CallerContext) (agentbridge.Address, error)
@@ -125,36 +126,59 @@ func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendReq
 	if request.Text == "" {
 		return ErrInvalidRequest
 	}
-	// A mailbox address is not an endpoint address, so it is recognised before
-	// the strict endpoint parser runs.
-	if boxNode, recipient, isMailbox, boxErr := mailbox.ParseAddress(request.To); isMailbox {
-		if boxErr != nil {
-			return fmt.Errorf("TARGET_UNSUPPORTED: %v", boxErr)
-		}
-		if boxNode != coordinator.localID {
-			return fmt.Errorf("%w: mailbox %s lives on node %s", ErrTargetUnreachable, recipient, boxNode)
-		}
-		source, err := coordinator.resolveSource(ctx, request)
-		if err != nil {
-			return err
-		}
-		return resultError(coordinator.storeMailbox(recipient, source, request))
-	}
 	nodeID, _, err := parseTarget(request.To)
 	if err != nil {
 		return ErrInvalidRequest
 	}
-	if nodeID != coordinator.localID || coordinator.registry == nil {
-		return NewCoordinator(coordinator.localID, coordinator.lan).Send(ctx, request)
+	// The caller is resolved before the local/remote split so that a caller
+	// identified by an opaque address is honoured on the LAN path too, instead
+	// of being silently downgraded to the legacy session-id field.
+	sourceAddress := ""
+	sourceEndpoint := request.SourceSessionID
+	switch {
+	case request.From != "" || len(request.Meta) > 0:
+		// A caller that identifies itself with an address or with MCP metadata
+		// goes through the resolver, which validates the answer.
+		if coordinator.registry == nil {
+			return ErrCallerUnknown
+		}
+		sourceAddress, err = coordinator.resolveSource(ctx, request)
+		if err != nil {
+			return err
+		}
+		if address, parseErr := agentbridge.ParseAddress(sourceAddress); parseErr == nil {
+			sourceEndpoint = address.EndpointID
+		}
+	case sourceEndpoint != "":
+		// A legacy caller that only set sourceSessionId keeps working, but the
+		// identity is still checked against what this node publishes.
+		sourceAddress = "ra2a://" + coordinator.localID + "/" + sourceEndpoint
+		if coordinator.registry != nil {
+			if _, _, lookupErr := coordinator.registry.Lookup(ctx,
+				agentbridge.Address{NodeID: coordinator.localID, EndpointID: sourceEndpoint}); lookupErr != nil {
+				return fmt.Errorf("%w: %v", ErrCallerUnknown, lookupErr)
+			}
+		}
+	default:
+		return ErrCallerUnknown
 	}
-	source, err := coordinator.resolveSource(ctx, request)
-	if err != nil {
-		return err
+	if nodeID != coordinator.localID || coordinator.registry == nil {
+		forwarded := request
+		forwarded.From = sourceAddress
+		forwarded.SourceSessionID = sourceEndpoint
+		return NewCoordinator(coordinator.localID, coordinator.lan).Send(ctx, forwarded)
+	}
+	// A mailbox on this node is stored here and never reaches an adapter.
+	if _, recipient, isMailbox, boxErr := mailbox.ParseAddress(request.To); isMailbox {
+		if boxErr != nil {
+			return fmt.Errorf("TARGET_UNSUPPORTED: %v", boxErr)
+		}
+		return resultError(coordinator.storeMailbox(recipient, sourceAddress, request))
 	}
 	envelope := agentbridge.MessageEnvelope{
 		ID:              request.MessageID,
 		ProtocolVersion: agentbridge.ProtocolVersion,
-		SourceAddress:   source,
+		SourceAddress:   sourceAddress,
 		TargetAddress:   request.To,
 		Text:            request.Text,
 		CreatedAt:       time.Now().UTC(),
@@ -165,9 +189,6 @@ func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendReq
 			return genErr
 		}
 		envelope.ID = generated
-	}
-	if result, handled := coordinator.deliverLocal(ctx, envelope, coordinator.mailbox); handled {
-		return resultError(result)
 	}
 	result := coordinator.registry.Deliver(ctx, envelope)
 	return resultError(result)
@@ -190,13 +211,6 @@ func (coordinator *AdapterCoordinator) storeMailbox(recipient, source string, re
 	}
 	result, _ := DeliverMailbox(coordinator.mailbox, coordinator.localID, envelope)
 	return result
-}
-
-// deliverLocal routes a local envelope. A mailbox address is handled before any
-// adapter lookup, because a mailbox is not a conversation endpoint and must
-// never reach an agent.
-func (coordinator *AdapterCoordinator) deliverLocal(ctx context.Context, envelope agentbridge.MessageEnvelope, store *mailbox.Store) (agentbridge.DeliveryResult, bool) {
-	return DeliverMailbox(store, coordinator.localID, envelope)
 }
 
 // resolveSource turns whatever the caller supplied into one published opaque

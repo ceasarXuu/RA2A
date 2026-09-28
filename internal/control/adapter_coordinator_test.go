@@ -19,6 +19,15 @@ type stubRegistry struct {
 	callerErr  error
 }
 
+func (registry *stubRegistry) Lookup(_ context.Context, address agentbridge.Address) (agentbridge.Endpoint, agentbridge.Adapter, error) {
+	for _, endpoint := range registry.endpoints {
+		if endpoint.Address == address {
+			return endpoint, nil, nil
+		}
+	}
+	return agentbridge.Endpoint{}, nil, errors.New("endpoint not found")
+}
+
 func (registry *stubRegistry) ResolveCaller(context.Context, agentbridge.CallerContext) (agentbridge.Address, error) {
 	if registry.callerErr != nil {
 		return agentbridge.Address{}, registry.callerErr

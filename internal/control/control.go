@@ -184,16 +184,25 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 	return err
 }
 
+// parseTarget accepts two address shapes: a two-segment endpoint address, and a
+// three-segment mailbox address whose remaining path is carried verbatim so the
+// mailbox namespace survives a LAN hop. Nothing else is addressable.
 func parseTarget(target string) (string, string, error) {
 	parsed, err := url.Parse(target)
 	if err != nil || parsed.Scheme != "ra2a" || parsed.Host == "" {
 		return "", "", ErrInvalidRequest
 	}
-	sessionID := strings.TrimPrefix(parsed.Path, "/")
-	if sessionID == "" || strings.Contains(sessionID, "/") {
+	path := strings.TrimPrefix(parsed.Path, "/")
+	if path == "" {
 		return "", "", ErrInvalidRequest
 	}
-	return parsed.Host, sessionID, nil
+	if !strings.Contains(path, "/") {
+		return parsed.Host, path, nil
+	}
+	if _, recipient, ok, err := mailbox.ParseAddress(target); ok && err == nil {
+		return parsed.Host, mailbox.Segment + "/" + recipient, nil
+	}
+	return "", "", ErrInvalidRequest
 }
 
 func newMessageID() (string, error) {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -273,5 +274,68 @@ func TestDeliverMailboxIgnoresEndpointAddresses(t *testing.T) {
 		TargetAddress: mailbox.Address("node-a", "harness-1"), Text: "x",
 	}); handled {
 		t.Fatal("without a store the envelope must fall through to endpoint routing")
+	}
+}
+
+// A mailbox on a peer must be forwarded so the peer stores it, not refused as
+// unreachable. This is what makes the channel cross-node.
+func TestRemoteMailboxIsForwardedNotRefused(t *testing.T) {
+	registry := &stubRegistry{
+		result: agentbridge.Delivered("turn-1"),
+		caller: agentbridge.Address{NodeID: "node-a", EndpointID: "caller-1"},
+	}
+	registry.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "caller-1", agentbridge.AgentCodexApp)}
+	lan := &recordingLAN{}
+	store, err := mailbox.OpenStore(filepath.Join(t.TempDir(), "mailbox"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinator := NewAdapterCoordinator("node-a", lan, registry).WithMailbox(store)
+	if err := coordinator.Send(context.Background(), SendRequest{
+		To: "ra2a://node-b/mailbox/harness", Text: "hello", From: "ra2a://node-a/caller-1",
+	}); err != nil {
+		t.Fatalf("a remote mailbox must be forwarded, got %v", err)
+	}
+	if len(lan.sent) != 1 {
+		t.Fatalf("forwarding must go over LAN, got %+v", lan.sent)
+	}
+	if lan.sent[0].TargetSessionID != "mailbox/harness" {
+		t.Fatalf("the mailbox path must survive the LAN hop, got %+v", lan.sent[0])
+	}
+	if len(registry.deliveries) != 0 {
+		t.Fatalf("a remote mailbox must not touch a local adapter, got %+v", registry.deliveries)
+	}
+	if messages, _, _ := store.Read("harness", 10, true); len(messages) != 0 {
+		t.Fatal("a remote mailbox must not be stored locally")
+	}
+}
+
+// A legacy caller that only sets sourceSessionId must keep working.
+func TestLegacySourceSessionIDStillResolves(t *testing.T) {
+	registry := &stubRegistry{
+		result: agentbridge.Delivered("turn-1"),
+		caller: agentbridge.Address{NodeID: "node-a", EndpointID: "legacy-caller"},
+	}
+	registry.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "legacy-caller", agentbridge.AgentCodexApp)}
+	coordinator := NewAdapterCoordinator("node-a", &failingLAN{}, registry)
+	if err := coordinator.Send(context.Background(), SendRequest{
+		To: "ra2a://node-a/cli-1", Text: "hi", SourceSessionID: "legacy-caller",
+	}); err != nil {
+		t.Fatalf("legacy caller must still be accepted, got %v", err)
+	}
+	if len(registry.deliveries) != 1 {
+		t.Fatalf("delivery must still reach the adapter, got %+v", registry.deliveries)
+	}
+	if registry.deliveries[0].SourceAddress != "ra2a://node-a/legacy-caller" {
+		t.Fatalf("source address must be normalised, got %+q", registry.deliveries[0].SourceAddress)
+	}
+	unknown := &stubRegistry{}
+	unknown.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "caller", agentbridge.AgentCodexApp)}
+	strict := NewAdapterCoordinator("node-a", &failingLAN{}, unknown)
+	err := strict.Send(context.Background(), SendRequest{
+		To: "ra2a://node-a/cli-1", Text: "hi", SourceSessionID: "not-published",
+	})
+	if err == nil || !strings.Contains(err.Error(), "CALLER_SESSION_UNKNOWN") {
+		t.Fatalf("an unpublished legacy caller must be refused, got %v", err)
 	}
 }
