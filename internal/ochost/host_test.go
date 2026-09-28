@@ -6,9 +6,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -206,4 +208,59 @@ func TestCloseIsIdempotentAndClearsTheOwnerRecord(t *testing.T) {
 	if _, err := os.Stat(ownerPath); !os.IsNotExist(err) {
 		t.Fatalf("owner record must be cleared, got %v", err)
 	}
+}
+
+// The server is a shared resource: RA2A and every attached TUI depend on it, so
+// closing one client must not take it down for the others.
+func TestServerOutlivesTheClientThatStartedIt(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("no shell available")
+	}
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3 available")
+	}
+	port := freePort(t)
+	directory := t.TempDir()
+	server := filepath.Join(directory, "server.py")
+	if err := os.WriteFile(server, []byte(fakeServerSource), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(directory, "fake-opencode")
+	body := "#!/bin/sh\nexec " + python + " " + server + " " + strconv.Itoa(port) + "\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ownerPath := filepath.Join(directory, "owner.json")
+	clientCtx, cancelClient := context.WithCancel(context.Background())
+	host, err := Start(clientCtx, Config{
+		Executable: script, URL: "http://127.0.0.1:" + strconv.Itoa(port),
+		RestartDelay: 50 * time.Millisecond, ReadinessTimeout: 10 * time.Second,
+		OwnerPath: ownerPath,
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	// The client that started it goes away, exactly like a TUI being closed.
+	cancelClient()
+	host.mu.Lock()
+	process := host.cmd.Process
+	host.mu.Unlock()
+	if process == nil {
+		t.Fatal("no supervised process")
+	}
+	_ = process.Signal(syscall.SIGTERM)
+	_ = process.Signal(syscall.SIGINT)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if Reachable(context.Background(), "http://127.0.0.1:"+strconv.Itoa(port)) {
+			// Still serving: the shared server must have survived the client.
+			_ = host.Close()
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = host.Close()
+	t.Fatal("the shared server must not die with the client that started it")
 }

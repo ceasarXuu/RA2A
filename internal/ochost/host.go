@@ -152,11 +152,19 @@ func (host *Host) spawn(ctx context.Context) error {
 		return fmt.Errorf("%w: port %d cannot be bound", ErrBusy, port)
 	}
 	_ = probe.Close()
-	superviseCtx, cancel := context.WithCancel(ctx)
-	command := exec.CommandContext(superviseCtx, host.config.Executable, "serve",
+	// The server is deliberately detached from the caller's lifetime. It is a
+	// shared resource: RA2A and every attached TUI depend on it, so tying it to
+	// whichever TUI happened to start it would let one user closing a TUI break
+	// every other client. Its lifetime is bounded by explicit Close, which the
+	// RA2A daemon calls on stop/exit.
+	superviseCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	command := exec.Command(host.config.Executable, "serve",
 		"--port", strconv.Itoa(port), "--hostname", "127.0.0.1")
 	command.Stderr = host.config.Stderr
 	command.Stdout = host.config.Stderr
+	// A new process group keeps a terminal signal aimed at the caller's TUI from
+	// reaching the shared server.
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		cancel()
 		return fmt.Errorf("start opencode server: %w", err)
