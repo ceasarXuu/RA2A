@@ -221,3 +221,34 @@ func (lan *selfLAN) ListSessions(context.Context, lannode.Peer) ([]lannode.Sessi
 func (lan failingLAN) SendMessage(context.Context, lannode.Peer, lannode.Message) error {
 	return errors.New("local delivery must not use LAN")
 }
+
+func TestDeliveryConfirmedDistinguishesLocalFromRemote(t *testing.T) {
+	registry := &stubRegistry{result: agentbridge.Delivered("turn-1")}
+	coordinator := NewAdapterCoordinator("node-a", &recordingLAN{}, registry)
+	if !coordinator.DeliveryConfirmed("ra2a://node-a/cli-1") {
+		t.Fatal("a local target must be reported as confirmed by the adapter")
+	}
+	if coordinator.DeliveryConfirmed("ra2a://node-b/cli-1") {
+		t.Fatal("a cross-node target must not be reported as confirmed")
+	}
+	if coordinator.DeliveryConfirmed("garbage") {
+		t.Fatal("a malformed target must not be reported as confirmed")
+	}
+}
+
+// The legacy LAN coordinator does not implement DeliveryConfirmer, so the
+// handler must never claim a confirmed delivery through it.
+func TestCoordinatorWithoutConfirmerIsNeverConfirmed(t *testing.T) {
+	legacy := NewCoordinator("node-a", &recordingLAN{})
+	if got := deliveryConfirmation(legacy, "ra2a://node-a/x"); got != "handed_to_transport" {
+		t.Fatalf("a backend without DeliveryConfirmer must never confirm, got %q", got)
+	}
+	registry := &stubRegistry{result: agentbridge.Delivered("turn-1")}
+	adapter := NewAdapterCoordinator("node-a", &recordingLAN{}, registry)
+	if got := deliveryConfirmation(adapter, "ra2a://node-a/x"); got != "confirmed" {
+		t.Fatalf("local target must be confirmed, got %q", got)
+	}
+	if got := deliveryConfirmation(adapter, "ra2a://node-b/x"); got != "handed_to_transport" {
+		t.Fatalf("cross-node target must not be confirmed, got %q", got)
+	}
+}

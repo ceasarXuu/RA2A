@@ -236,9 +236,28 @@ func NewHandler(backend Backend) http.Handler {
 			writeError(writer, status, err)
 			return
 		}
-		writeJSON(writer, http.StatusOK, map[string]string{"status": "accepted"})
+		// Local deliveries are confirmed by the adapter result before this point;
+		// LAN deliveries are only handed to the transport. Reporting the difference
+		// keeps "accepted" from reading as "delivered" for cross-node sends.
+		writeJSON(writer, http.StatusOK, map[string]string{
+			"status": "accepted", "delivery": deliveryConfirmation(backend, sendRequest.To),
+		})
 	})
 	return mux
+}
+
+// DeliveryConfirmer is implemented by backends that know whether a success
+// response means the target confirmed the delivery, or only that the message was
+// handed to a transport.
+type DeliveryConfirmer interface {
+	DeliveryConfirmed(target string) bool
+}
+
+func deliveryConfirmation(backend Backend, target string) string {
+	if confirmer, ok := backend.(DeliveryConfirmer); ok && confirmer.DeliveryConfirmed(target) {
+		return "confirmed"
+	}
+	return "handed_to_transport"
 }
 
 func Start(ctx context.Context, address string, backend Backend) error {

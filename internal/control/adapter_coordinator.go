@@ -153,6 +153,14 @@ func (coordinator *AdapterCoordinator) resolveSource(ctx context.Context, reques
 	return address.String(), nil
 }
 
+// DeliveryConfirmed reports whether a success response for this target means
+// the adapter confirmed it. Local deliveries are confirmed before the control
+// plane answers; cross-node sends are only handed to the LAN transport.
+func (coordinator *AdapterCoordinator) DeliveryConfirmed(target string) bool {
+	nodeID, _, err := parseTarget(target)
+	return err == nil && nodeID == coordinator.localID
+}
+
 // resultError maps the unified result codes onto the control-plane error set so
 // HTTP status and MCP error codes stay stable for existing callers.
 func resultError(result agentbridge.DeliveryResult) error {
