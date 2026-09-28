@@ -329,3 +329,97 @@ func TestDeliverDistinguishesMalformedFromUnpublishedTarget(t *testing.T) {
 		t.Fatalf("well formed but unpublished id must be not_found, got %+v", unpublished)
 	}
 }
+
+type callerAwareAdapter struct {
+	fakeAdapter
+	address Address
+	err     error
+	seen    []CallerContext
+}
+
+func (adapter *callerAwareAdapter) ResolveCaller(_ context.Context, caller CallerContext) (Address, error) {
+	adapter.seen = append(adapter.seen, caller)
+	return adapter.address, adapter.err
+}
+
+func TestResolveCallerPrefersDeclaredAddress(t *testing.T) {
+	registry := NewRegistry("node-a")
+	app := &callerAwareAdapter{
+		fakeAdapter: fakeAdapter{kind: AgentCodexApp, health: Ready()},
+		address:     Address{NodeID: "node-a", EndpointID: "app-1"},
+	}
+	app.endpoints = []Endpoint{readyEndpoint("node-a", "app-1", AgentCodexApp, CapabilityReceiveText)}
+	if err := registry.Register(app); err != nil {
+		t.Fatal(err)
+	}
+	address, err := registry.ResolveCaller(context.Background(), CallerContext{
+		DeclaredAddress: "ra2a://node-a/app-1",
+		Meta:            map[string]any{"threadId": "app-1"},
+	})
+	if err != nil || address.EndpointID != "app-1" {
+		t.Fatalf("declared address must resolve, got %+v %v", address, err)
+	}
+	if len(app.seen) != 0 {
+		t.Fatalf("a declared address must not be second-guessed by adapters, got %+v", app.seen)
+	}
+}
+
+func TestResolveCallerRejectsUntrustedDeclaredAddress(t *testing.T) {
+	registry := NewRegistry("node-a")
+	app := &callerAwareAdapter{
+		fakeAdapter: fakeAdapter{kind: AgentCodexApp, health: Ready()},
+		address:     Address{NodeID: "node-a", EndpointID: "app-1"},
+	}
+	app.endpoints = []Endpoint{readyEndpoint("node-a", "app-1", AgentCodexApp, CapabilityReceiveText)}
+	if err := registry.Register(app); err != nil {
+		t.Fatal(err)
+	}
+	for _, declared := range []string{"ra2a://node-a/not-published", "ra2a://node-b/app-1", "garbage"} {
+		if _, err := registry.ResolveCaller(context.Background(), CallerContext{DeclaredAddress: declared}); err == nil {
+			t.Fatalf("declared address %q must be refused", declared)
+		}
+	}
+}
+
+func TestResolveCallerFallsBackToAdapters(t *testing.T) {
+	registry := NewRegistry("node-a")
+	app := &callerAwareAdapter{
+		fakeAdapter: fakeAdapter{kind: AgentCodexApp, health: Ready()},
+		address:     Address{NodeID: "node-a", EndpointID: "app-1"},
+	}
+	app.endpoints = []Endpoint{readyEndpoint("node-a", "app-1", AgentCodexApp, CapabilityReceiveText)}
+	cli := &callerAwareAdapter{
+		fakeAdapter: fakeAdapter{kind: AgentCodexCLI, health: Ready()},
+		err:         CallerHint("no stable caller identity"),
+	}
+	if err := registry.Register(app); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(cli); err != nil {
+		t.Fatal(err)
+	}
+	address, err := registry.ResolveCaller(context.Background(), CallerContext{
+		Meta: map[string]any{"threadId": "app-1"},
+	})
+	if err != nil || address.EndpointID != "app-1" {
+		t.Fatalf("adapter-resolved caller must be accepted, got %+v %v", address, err)
+	}
+	if len(app.seen) != 1 || app.seen[0].Meta["threadId"] != "app-1" {
+		t.Fatalf("adapter must receive the raw metadata, got %+v", app.seen)
+	}
+}
+
+func TestResolveCallerRefusesUnpublishedAdapterGuess(t *testing.T) {
+	registry := NewRegistry("node-a")
+	guesser := &callerAwareAdapter{
+		fakeAdapter: fakeAdapter{kind: AgentCodexCLI, health: Ready()},
+		address:     Address{NodeID: "node-a", EndpointID: "never-published"},
+	}
+	if err := registry.Register(guesser); err != nil {
+		t.Fatal(err)
+	}
+	_, err := registry.ResolveCaller(context.Background(), CallerContext{})
+	if err == nil || !strings.Contains(err.Error(), "from") {
+		t.Fatalf("an unpublished guess must be refused with actionable guidance, got %v", err)
+	}
+}

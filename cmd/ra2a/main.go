@@ -372,6 +372,12 @@ func (wrapper registryAdapter) Health(ctx context.Context) map[agentbridge.Agent
 	return wrapper.registry.Health(ctx)
 }
 
+// ResolveCaller delegates caller identity to the adapters, so the MCP layer
+// never needs to know which agent is calling.
+func (wrapper registryAdapter) ResolveCaller(ctx context.Context, caller agentbridge.CallerContext) (agentbridge.Address, error) {
+	return wrapper.registry.ResolveCaller(ctx, caller)
+}
+
 // deliverOverLAN keeps the established wire format: an incoming LAN message is
 // turned into a unified envelope and routed through the same registry the local
 // control plane uses, so both paths share one delivery implementation.

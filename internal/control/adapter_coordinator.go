@@ -13,6 +13,7 @@ import (
 )
 
 var ErrStartRequired = errors.New("START_REQUIRED")
+var ErrCallerUnknown = errors.New("CALLER_SESSION_UNKNOWN")
 
 // LocalRegistry is the daemon-side view of the adapters that own endpoints on
 // this node. The coordinator uses it to answer local deliveries and to describe
@@ -21,6 +22,7 @@ type LocalRegistry interface {
 	Endpoints(context.Context) ([]agentbridge.Endpoint, error)
 	Deliver(context.Context, agentbridge.MessageEnvelope) agentbridge.DeliveryResult
 	Health(context.Context) map[agentbridge.AgentKind]agentbridge.Health
+	ResolveCaller(context.Context, agentbridge.CallerContext) (agentbridge.Address, error)
 }
 
 type EndpointLister interface {
@@ -109,16 +111,20 @@ func (coordinator *AdapterCoordinator) localSessions(ctx context.Context) ([]lan
 // keeps the established LAN path unchanged.
 func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendRequest) error {
 	nodeID, _, err := parseTarget(request.To)
-	if err != nil || request.Text == "" || request.SourceSessionID == "" {
+	if err != nil || request.Text == "" {
 		return ErrInvalidRequest
 	}
 	if nodeID != coordinator.localID || coordinator.registry == nil {
 		return NewCoordinator(coordinator.localID, coordinator.lan).Send(ctx, request)
 	}
+	source, err := coordinator.resolveSource(ctx, request)
+	if err != nil {
+		return err
+	}
 	envelope := agentbridge.MessageEnvelope{
 		ID:              request.MessageID,
 		ProtocolVersion: agentbridge.ProtocolVersion,
-		SourceAddress:   "ra2a://" + coordinator.localID + "/" + request.SourceSessionID,
+		SourceAddress:   source,
 		TargetAddress:   request.To,
 		Text:            request.Text,
 		CreatedAt:       time.Now().UTC(),
@@ -132,6 +138,19 @@ func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendReq
 	}
 	result := coordinator.registry.Deliver(ctx, envelope)
 	return resultError(result)
+}
+
+// resolveSource turns whatever the caller supplied into one published opaque
+// address. Callers are never trusted: an identity that this node does not
+// publish is refused rather than forwarded.
+func (coordinator *AdapterCoordinator) resolveSource(ctx context.Context, request SendRequest) (string, error) {
+	address, err := coordinator.registry.ResolveCaller(ctx, agentbridge.CallerContext{
+		DeclaredAddress: request.From, Meta: request.Meta,
+	})
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrCallerUnknown, err)
+	}
+	return address.String(), nil
 }
 
 // resultError maps the unified result codes onto the control-plane error set so

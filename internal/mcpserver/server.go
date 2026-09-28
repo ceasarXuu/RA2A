@@ -117,16 +117,17 @@ func callTool(ctx context.Context, backend Backend, params callParams) any {
 		var arguments struct {
 			To   string `json:"to"`
 			Text string `json:"text"`
+			From string `json:"from"`
+			Meta map[string]any
 		}
 		if err := json.Unmarshal(params.Arguments, &arguments); err != nil || arguments.To == "" || arguments.Text == "" {
 			return toolError("INVALID_REQUEST", errors.New("to and text are required"))
 		}
-		threadID, _ := params.Meta["threadId"].(string)
-		if threadID == "" {
-			return toolError("CALLER_SESSION_UNKNOWN", errors.New("MCP call metadata did not include threadId"))
+		if _, present := params.Meta["threadId"]; present {
+			arguments.Meta = params.Meta
 		}
 		err := backend.Send(ctx, control.SendRequest{
-			To: arguments.To, Text: arguments.Text, SourceSessionID: threadID,
+			To: arguments.To, Text: arguments.Text, From: arguments.From, Meta: arguments.Meta,
 		})
 		if err != nil {
 			return toolError(errorCode(err), err)
@@ -158,7 +159,7 @@ func toolError(code string, err error) map[string]any {
 
 func errorCode(err error) string {
 	for _, code := range []string{
-		"SESSION_BUSY", "DELIVERY_UNKNOWN", "DESKTOP_OWNER_UNAVAILABLE", "TARGET_NOT_FOUND", "TARGET_UNSUPPORTED", "START_REQUIRED", "INVALID_REQUEST", "DAEMON_UNAVAILABLE",
+		"SESSION_BUSY", "DELIVERY_UNKNOWN", "DESKTOP_OWNER_UNAVAILABLE", "TARGET_NOT_FOUND", "TARGET_UNSUPPORTED", "START_REQUIRED", "INVALID_REQUEST", "DAEMON_UNAVAILABLE", "CALLER_SESSION_UNKNOWN",
 	} {
 		if strings.Contains(err.Error(), code) {
 			return code

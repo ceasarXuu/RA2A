@@ -235,7 +235,7 @@ func TestHTTPClientRoundTripsTargetsAndSend(t *testing.T) {
 	if err := client.Send(context.Background(), request); err != nil {
 		t.Fatal(err)
 	}
-	if backend.sent != request {
+	if backend.sent.To != request.To || backend.sent.Text != request.Text {
 		t.Fatalf("sent=%#v", backend.sent)
 	}
 }

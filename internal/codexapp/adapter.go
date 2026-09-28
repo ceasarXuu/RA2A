@@ -103,3 +103,13 @@ func mapHostError(err error) agentbridge.DeliveryResult {
 func (adapter *Adapter) Health(context.Context) agentbridge.Health { return agentbridge.Ready() }
 
 func (adapter *Adapter) Close() error { return adapter.source.Close() }
+
+// ResolveCaller recognises Codex Desktop MCP calls, which carry the calling
+// thread in `_meta`. The identity is accepted only when this node publishes it.
+func (adapter *Adapter) ResolveCaller(_ context.Context, caller agentbridge.CallerContext) (agentbridge.Address, error) {
+	threadID, _ := caller.Meta["threadId"].(string)
+	if threadID == "" {
+		return agentbridge.Address{}, agentbridge.CallerHint("Codex Desktop call metadata did not include threadId")
+	}
+	return agentbridge.Address{NodeID: adapter.nodeID, EndpointID: threadID}, nil
+}

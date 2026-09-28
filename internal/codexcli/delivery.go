@@ -211,3 +211,12 @@ func (adapter *Adapter) CheckTargetID(endpointID string) error {
 	}
 	return fmt.Errorf("expected a UUID or urn:uuid: thread id, got %q", endpointID)
 }
+
+// ResolveCaller intentionally does not guess. The Codex CLI MCP client has not
+// been observed to publish a stable caller identity, and inferring one from the
+// loaded thread set would silently attribute messages to the wrong thread. The
+// caller must therefore declare its own address.
+func (adapter *Adapter) ResolveCaller(context.Context, agentbridge.CallerContext) (agentbridge.Address, error) {
+	return agentbridge.Address{}, agentbridge.CallerHint(
+		"Codex CLI does not publish a stable caller identity in MCP metadata; pass `from` with this thread's address")
+}

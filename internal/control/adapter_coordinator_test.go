@@ -15,6 +15,15 @@ type stubRegistry struct {
 	listErr    error
 	deliveries []agentbridge.MessageEnvelope
 	result     agentbridge.DeliveryResult
+	caller     agentbridge.Address
+	callerErr  error
+}
+
+func (registry *stubRegistry) ResolveCaller(context.Context, agentbridge.CallerContext) (agentbridge.Address, error) {
+	if registry.callerErr != nil {
+		return agentbridge.Address{}, registry.callerErr
+	}
+	return registry.caller, nil
 }
 
 func (registry *stubRegistry) Endpoints(context.Context) ([]agentbridge.Endpoint, error) {
@@ -64,7 +73,10 @@ func TestLocalSessionsCarryAgentTypeAndCapabilities(t *testing.T) {
 }
 
 func TestLocalSendRoutesThroughRegistry(t *testing.T) {
-	registry := &stubRegistry{result: agentbridge.Delivered("turn-1")}
+	registry := &stubRegistry{
+		result: agentbridge.Delivered("turn-1"),
+		caller: agentbridge.Address{NodeID: "node-a", EndpointID: "caller-1"},
+	}
 	coordinator := NewAdapterCoordinator("node-a", &failingLAN{}, registry)
 	err := coordinator.Send(context.Background(), SendRequest{
 		To: "ra2a://node-a/cli-1", Text: "hello", SourceSessionID: "caller-1",
@@ -88,7 +100,10 @@ func TestLocalSendRoutesThroughRegistry(t *testing.T) {
 }
 
 func TestLocalSendFallsBackToLANForRemoteNodes(t *testing.T) {
-	registry := &stubRegistry{result: agentbridge.Delivered("turn-1")}
+	registry := &stubRegistry{
+		result: agentbridge.Delivered("turn-1"),
+		caller: agentbridge.Address{NodeID: "node-a", EndpointID: "caller-1"},
+	}
 	lan := &recordingLAN{}
 	coordinator := NewAdapterCoordinator("node-a", lan, registry)
 	if err := coordinator.Send(context.Background(), SendRequest{

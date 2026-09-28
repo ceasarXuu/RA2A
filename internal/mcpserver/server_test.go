@@ -66,8 +66,11 @@ func TestSendMessageUsesCallingThreadFromMetadata(t *testing.T) {
 	responses := serveRequests(t, backend,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello"},"_meta":{"threadId":"thread-a"}}}`,
 	)
-	if backend.sent.To != "ra2a://node-b/thread-b" || backend.sent.Text != "hello" || backend.sent.SourceSessionID != "thread-a" {
+	if backend.sent.To != "ra2a://node-b/thread-b" || backend.sent.Text != "hello" {
 		t.Fatalf("sent = %#v", backend.sent)
+	}
+	if backend.sent.Meta["threadId"] != "thread-a" {
+		t.Fatalf("caller metadata must be forwarded to the resolver, got %#v", backend.sent.Meta)
 	}
 	result := responses[0]["result"].(map[string]any)
 	if result["isError"] != false || result["structuredContent"].(map[string]any)["status"] != "accepted" {
@@ -75,17 +78,44 @@ func TestSendMessageUsesCallingThreadFromMetadata(t *testing.T) {
 	}
 }
 
-func TestSendMessageRejectsMissingCallingThread(t *testing.T) {
+// The MCP layer forwards whatever the host provided; whether that is enough to
+// identify the caller is the resolver's decision, reported through the backend.
+func TestSendMessageForwardsCallerMetadataToResolver(t *testing.T) {
 	backend := &fakeBackend{}
 	responses := serveRequests(t, backend,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello"},"_meta":{}}}`,
 	)
 	result := responses[0]["result"].(map[string]any)
-	if result["isError"] != true || !strings.Contains(result["content"].([]any)[0].(map[string]any)["text"].(string), "CALLER_SESSION_UNKNOWN") {
+	if result["isError"] != false {
 		t.Fatalf("result = %#v", result)
 	}
-	if backend.sent != (control.SendRequest{}) {
-		t.Fatalf("unexpected send = %#v", backend.sent)
+	if backend.sent.Meta != nil {
+		t.Fatalf("absent caller metadata must stay absent, got %#v", backend.sent.Meta)
+	}
+}
+
+func TestSendMessageSurfacesCallerResolutionFailure(t *testing.T) {
+	backend := &fakeBackend{sendErr: errors.New("CALLER_SESSION_UNKNOWN: caller identity could not be resolved")}
+	responses := serveRequests(t, backend,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello"},"_meta":{}}}`,
+	)
+	result := responses[0]["result"].(map[string]any)
+	if result["isError"] != true || result["structuredContent"].(map[string]any)["error"] != "CALLER_SESSION_UNKNOWN" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestSendMessageAcceptsDeclaredCallerAddress(t *testing.T) {
+	backend := &fakeBackend{}
+	responses := serveRequests(t, backend,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello","from":"ra2a://node-a/cli-1"},"_meta":{}}}`,
+	)
+	result := responses[0]["result"].(map[string]any)
+	if result["isError"] != false {
+		t.Fatalf("result = %#v", result)
+	}
+	if backend.sent.From != "ra2a://node-a/cli-1" {
+		t.Fatalf("declared caller address must be forwarded, got %#v", backend.sent.From)
 	}
 }
 

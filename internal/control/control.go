@@ -39,9 +39,13 @@ type Target struct {
 }
 
 type SendRequest struct {
-	To              string `json:"to"`
-	Text            string `json:"text"`
-	SourceSessionID string `json:"sourceSessionId"`
+	To   string         `json:"to"`
+	Text string         `json:"text"`
+	From string         `json:"from,omitempty"`
+	Meta map[string]any `json:"meta,omitempty"`
+	// SourceSessionID is the legacy caller field. It is still accepted so an
+	// older local MCP client keeps working, but new callers send From.
+	SourceSessionID string `json:"sourceSessionId,omitempty"`
 	MessageID       string `json:"messageId,omitempty"`
 }
 
