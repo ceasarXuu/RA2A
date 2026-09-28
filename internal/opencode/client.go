@@ -131,6 +131,9 @@ func NewClient(config Config) *Client {
 	}
 }
 
+// BaseURL reports the server this client talks to.
+func (client *Client) BaseURL() string { return client.baseURL }
+
 func (client *Client) ListSessions(ctx context.Context) ([]Session, error) {
 	body, err := client.get(ctx, "/session")
 	if err != nil {

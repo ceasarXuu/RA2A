@@ -92,7 +92,7 @@ func productionTools() []any {
 		},
 		map[string]any{
 			"name":        "send_message",
-			"description": "Send a text message to a ra2a://node/endpoint address exactly as returned by list_targets. If the target reports START_REQUIRED, ask the user to start that agent and retry.",
+			"description": "Send a text message to a ra2a://node/endpoint address exactly as returned by list_targets. Pass `from` with your own address from list_targets when the host does not identify you; a call without a resolvable caller is rejected with CALLER_SESSION_UNKNOWN. If the target reports START_REQUIRED, ask the user to start that agent and retry.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{

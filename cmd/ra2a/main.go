@@ -373,6 +373,8 @@ func runMailbox(args []string, output io.Writer) error {
 	}
 }
 
+var errOpenCodeDisabled = errors.New("opencode integration is disabled")
+
 func applySessionCommand(command, id string) (operator.Config, error) {
 	switch command {
 	case "adopt-cli":
@@ -390,7 +392,13 @@ func applySessionCommand(command, id string) (operator.Config, error) {
 // opencodeSettings resolves the shared OpenCode server URL. It is deliberately
 // overridable so a self-hosted OpenCode instance can be adopted without a
 // rebuild, but the default stays on loopback.
+//
+// RA2A_DISABLE_OPENCODE turns the integration off entirely. Tests rely on it so
+// they never pick up the operator's real adopted sessions from ~/.config.
 func opencodeSettings() (url string, sessions []string) {
+	if disabled, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("RA2A_DISABLE_OPENCODE"))); disabled {
+		return "", nil
+	}
 	url = "http://127.0.0.1:4099"
 	if override := strings.TrimSpace(os.Getenv("RA2A_OPENCODE_URL")); override != "" {
 		url = override
@@ -409,6 +417,9 @@ func opencodeSettings() (url string, sessions []string) {
 // untouched: OpenCode is optional, and RA2A must still serve Codex.
 func startOpencodeAdapter(ctx context.Context, nodeID string, stderr io.Writer) (agentbridge.Adapter, error) {
 	url, adopted := opencodeSettings()
+	if url == "" {
+		return nil, errOpenCodeDisabled
+	}
 	client := opencode.NewClient(opencode.Config{BaseURL: url, Stderr: stderr, ClientName: "ra2a"})
 	adapter := opencode.New(nodeID, client, stderr)
 	for _, sessionID := range adopted {

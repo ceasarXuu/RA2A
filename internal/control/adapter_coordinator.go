@@ -160,7 +160,10 @@ func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendReq
 			}
 		}
 	default:
-		return ErrCallerUnknown
+		// A caller that supplies nothing must still be told what to do, or an
+		// agent will retry the same call forever.
+		return fmt.Errorf("%w: this call carried no caller identity; pass `from` "+
+			"with the calling endpoint's address from list_targets", ErrCallerUnknown)
 	}
 	if nodeID != coordinator.localID || coordinator.registry == nil {
 		forwarded := request

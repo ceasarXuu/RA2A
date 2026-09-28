@@ -18,13 +18,15 @@ import (
 const AgentKind = agentbridge.AgentOpenCode
 
 type Adapter struct {
-	nodeID  string
-	client  *Client
-	logger  *slog.Logger
-	mu      sync.RWMutex
-	adopted map[string]struct{}
-	watcher context.CancelFunc
-	ready   bool
+	nodeID    string
+	client    *Client
+	baseURL   string
+	logger    *slog.Logger
+	mu        sync.RWMutex
+	adopted   map[string]struct{}
+	watcher   context.CancelFunc
+	lastProbe time.Time
+	reachable bool
 }
 
 func New(nodeID string, client *Client, stderr io.Writer) *Adapter {
@@ -32,7 +34,7 @@ func New(nodeID string, client *Client, stderr io.Writer) *Adapter {
 		stderr = io.Discard
 	}
 	return &Adapter{
-		nodeID: nodeID, client: client,
+		nodeID: nodeID, client: client, baseURL: client.BaseURL(),
 		logger:  slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
 		adopted: make(map[string]struct{}),
 	}
@@ -51,6 +53,23 @@ func (adapter *Adapter) Adopt(sessionID string) error {
 	defer adapter.mu.Unlock()
 	adapter.adopted[sessionID] = struct{}{}
 	return nil
+}
+
+// ResolveCaller recognises this adapter's own sessions when they act as a
+// sender. OpenCode does not put a stable caller identity in MCP metadata, so the
+// only sound answer is the session the adapter already adopted; guessing from
+// the loaded-session set would attribute messages to the wrong conversation.
+func (adapter *Adapter) ResolveCaller(_ context.Context, caller agentbridge.CallerContext) (agentbridge.Address, error) {
+	adopted := adapter.Adopted()
+	if len(adopted) == 0 {
+		return agentbridge.Address{}, agentbridge.CallerHint(
+			"no OpenCode session is adopted by this node; run `ra2a adopt-oc <session>` first")
+	}
+	if len(adopted) == 1 {
+		return agentbridge.Address{NodeID: adapter.nodeID, EndpointID: adopted[0]}, nil
+	}
+	return agentbridge.Address{}, agentbridge.CallerHint(
+		"this node publishes %d OpenCode sessions; pass `from` with this session's address from list_targets", len(adopted))
 }
 
 // Reachable reports whether an OpenCode server answers at the URL. The adapter
@@ -200,12 +219,29 @@ func (adapter *Adapter) Deliver(ctx context.Context, address agentbridge.Address
 	return agentbridge.Delivered(final.SessionID)
 }
 
-func (adapter *Adapter) Health(context.Context) agentbridge.Health {
+// healthProbeInterval keeps a health check from turning into a request per
+// delivery; the answer only changes when the user's server does.
+const healthProbeInterval = 5 * time.Second
+
+// Health reports live reachability rather than a remembered flag: OpenCode is an
+// optional dependency that the user may stop at any moment, and a stale "ready"
+// would let the router believe messages are deliverable.
+func (adapter *Adapter) Health(ctx context.Context) agentbridge.Health {
 	adapter.mu.RLock()
-	ready := adapter.ready
+	cached, probedAt := adapter.reachable, adapter.lastProbe
 	adapter.mu.RUnlock()
-	if !ready {
-		return agentbridge.Unhealthy(agentbridge.ResultUnknown, "opencode server has not answered yet")
+	if time.Since(probedAt) < healthProbeInterval {
+		if cached {
+			return agentbridge.Ready()
+		}
+		return agentbridge.Unhealthy(agentbridge.ResultUnreachable, "OpenCode server is not answering")
+	}
+	reachable := Reachable(ctx, adapter.baseURL)
+	adapter.mu.Lock()
+	adapter.reachable, adapter.lastProbe = reachable, time.Now()
+	adapter.mu.Unlock()
+	if !reachable {
+		return agentbridge.Unhealthy(agentbridge.ResultUnreachable, "OpenCode server is not answering")
 	}
 	return agentbridge.Ready()
 }

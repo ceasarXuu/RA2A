@@ -596,3 +596,11 @@ func TestRunSendRejectsUnpublishedLocalTarget(t *testing.T) {
 		t.Fatalf("unpublished local target must be refused, got %v", err)
 	}
 }
+
+// TestMain keeps the suite hermetic: without this the tests would adopt the
+// operator's real OpenCode sessions and depend on whether a real OpenCode server
+// happens to be running on this machine.
+func TestMain(m *testing.M) {
+	os.Setenv("RA2A_DISABLE_OPENCODE", "1")
+	os.Exit(m.Run())
+}

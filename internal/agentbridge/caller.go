@@ -72,6 +72,9 @@ func (registry *Registry) ResolveCaller(ctx context.Context, caller CallerContex
 // CallerHint lets an adapter explain what a caller must supply without
 // inventing a default.
 func CallerHint(format string, args ...any) error {
+	if len(args) == 0 {
+		return &callerUnresolved{Detail: format}
+	}
 	return &callerUnresolved{Detail: fmt.Sprintf(format, args...)}
 }
 
