@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -162,12 +163,16 @@ func TestRealCodexPrefersSiblingBinary(t *testing.T) {
 
 func TestRealCodexFallsBackToPathExcludingWrapper(t *testing.T) {
 	dir := t.TempDir()
-	wrapper := filepath.Join(dir, "codex")
+	name := "codex"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	wrapper := filepath.Join(dir, name)
 	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	realDir := t.TempDir()
-	real := filepath.Join(realDir, "codex")
+	real := filepath.Join(realDir, name)
 	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

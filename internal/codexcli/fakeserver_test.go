@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ type fakeThread struct {
 
 func newFakeAppServer(t *testing.T) *fakeAppServer {
 	t.Helper()
-	directory := t.TempDir()
+	directory := shortTestDir(t)
 	socketPath := filepath.Join(directory, "app-server-control.sock")
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
 		t.Fatalf("create socket dir: %v", err)
@@ -85,6 +86,14 @@ func newFakeAppServer(t *testing.T) *fakeAppServer {
 func writeFakeCodex(t *testing.T, socketPath string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "codex")
+	if runtime.GOOS == "windows" {
+		path += ".cmd"
+		payload := fmt.Sprintf("@echo off\r\necho {\"status\":\"running\",\"socketPath\":%q,\"cliVersion\":\"0.158.0\",\"appServerVersion\":\"0.158.0\"}\r\n", socketPath)
+		if err := os.WriteFile(path, []byte(payload), 0o700); err != nil {
+			t.Fatalf("write fake codex: %v", err)
+		}
+		return path
+	}
 	payload := fmt.Sprintf(
 		`#!/bin/sh
 cat <<'JSON'
@@ -95,6 +104,16 @@ JSON
 		t.Fatalf("write fake codex: %v", err)
 	}
 	return path
+}
+
+func shortTestDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "cc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 func (server *fakeAppServer) addThread(id string, active, canAccept bool) *fakeThread {

@@ -199,7 +199,12 @@ func TestDeliverMapsResumeRejectionToNotFound(t *testing.T) {
 
 func TestDeliverReportsStartRequiredWhenDaemonAbsent(t *testing.T) {
 	offline := filepath.Join(t.TempDir(), "codex-offline")
-	if err := os.WriteFile(offline, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+	payload := []byte("#!/bin/sh\nexit 1\n")
+	if runtime.GOOS == "windows" {
+		offline += ".cmd"
+		payload = []byte("@echo off\r\nexit /b 1\r\n")
+	}
+	if err := os.WriteFile(offline, payload, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	adapter := New("node-a", Config{CodexPath: offline, Stderr: os.Stderr, CallTimeout: time.Second})
@@ -301,7 +306,7 @@ func TestRegisterRejectsInvalidThreadID(t *testing.T) {
 }
 
 func TestAdapterRejectsAppServerBelowMinimumVersion(t *testing.T) {
-	directory := t.TempDir()
+	directory := shortTestDir(t)
 	socketPath := filepath.Join(directory, "app-server-control.sock")
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -341,6 +346,11 @@ func TestAdapterRejectsAppServerBelowMinimumVersion(t *testing.T) {
 	payload := `#!/bin/sh
 echo '{"status":"running","socketPath":"` + socketPath + `","cliVersion":"0.157.0","appServerVersion":"0.157.0"}'
 `
+	if runtime.GOOS == "windows" {
+		codexPath += ".cmd"
+		encodedPath, _ := json.Marshal(socketPath)
+		payload = "@echo off\r\necho {\"status\":\"running\",\"socketPath\":" + string(encodedPath) + ",\"cliVersion\":\"0.157.0\",\"appServerVersion\":\"0.157.0\"}\r\n"
+	}
 	if err := os.WriteFile(codexPath, []byte(payload), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +395,7 @@ func TestSocketPathProblem(t *testing.T) {
 
 func socketPathPath(t *testing.T, name string) string {
 	t.Helper()
-	directory := t.TempDir()
+	directory := filepath.Join(shortTestDir(t), name)
 	path := filepath.Join(directory, controlSocketRelative)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
