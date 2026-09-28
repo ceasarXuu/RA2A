@@ -30,4 +30,20 @@ v0.0.15 的目标是加入 **Codex CLI** 支持，并将 RA2A 从“Codex App �
 
 剩余阻塞：配置本地 mock 模型端点后，**PD31 准入验证不再被登录阻塞**——TUI 完整回合、向 TUI 自有 thread 注入并实时渲染、活跃回合 `turn/steer` follow-up 均已在无账号条件下真机通过。剩余项为三平台复现（Ubuntu 之外需 macOS 与 Windows）与真实后端行为（模型回合质量、plan 桶用量门禁、rate-limit 弹条）。标准流程与免登录方法见 `runbooks/codex-cli-isolated-daemon-experiment.md`。
 
+## 实现状态（2026-09-28）
+
+| 阶段 | 状态 |
+| --- | --- |
+| Phase 1 宿主无关核心 | 已落地：`internal/agentbridge`（统一端点/信封/投递结果/注册表）、`internal/codexapp`（Codex App 收口为适配器）、daemon 同时加载两个适配器 |
+| Phase 2 端点协议 | 已落地：`lannode.Session` 增量字段 `agent`/`capabilities` + `protocolVersion`，旧节点缺字段按 Codex App 读取 |
+| Phase 3 CLI 适配器 | 已落地：`internal/codexcli`，WebSocket over AF_UNIX 接入官方 daemon，投递契约与 V10 实测一致，16 个契约测试钉死 |
+| 归属登记 | 已落地：`ra2a adopt-cli <thread-id>` 显式登记，未登记 thread 不发布 |
+| Phase 4 MCP 来源识别 / 配置迁移 | 未完成 |
+| Phase 5 交叉矩阵 | 未完成（CLI→App 方向、三平台、20+ 轮） |
+| Phase 6 文档与发布 | 未完成 |
+
+行为变更：本地投递现在要求目标已由本节点发布过，未发布地址返回 `DELIVERY_UNKNOWN` 而不再盲发。
+
+Windows 侧验证清单见 `runbooks/windows-codex-cli-validation-checklist.md`，其中 W4（零动作挂接）是唯一已知可行性风险点。
+
 另：`v0.0.15` 已于 2026-09-13 发布，但发布范围小于本计划范围（CLI 适配器未交付），承载版本待 Owner 决定，详见 [engineering-plan.md §0](./engineering-plan.md)。

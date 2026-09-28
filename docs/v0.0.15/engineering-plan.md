@@ -1,8 +1,8 @@
 # RA2A v0.0.15 工程实施计划
 
-- 状态：ready-for-execution（Phase 0 路线已由 V10 重定向，主体架构未开工）
+- 状态：executing（Phase 1-3 主体已落地并测试通过；Phase 4-6 与 CLI→App 方向待办）
 - 计划日期：2026-09-02
-- 最近修订：2026-09-28（依据 Codex CLI `0.158.0` 的 V10 实测重定向投递入口、wrapper 定位与所有权结论）
+- 最近修订：2026-09-28（依据 Codex CLI `0.158.0` 的 V10 实测重定向投递入口、wrapper 定位与所有权结论；同日落地 Phase 1-3 主体与归属登记）
 - Product Authority Source：[prd.md](./prd.md)
 - Applicable Decisions：PD25、PD26、PD27、PD28、PD29、PD30、PD31、PD32
 
@@ -179,7 +179,7 @@ Phase 0 冻结条件更新：V10 已通过；V8-R 剩余项（真实后端回合
 - **托管基座已前置完成**：managed Codex App Server 生命周期（单 owner、独立 socket、owner lease、首次探测恢复、主动监督重启、Linux 进程组收割、崩溃安全清理、stop/exit 语义）已在 macOS/Linux/Windows 三平台 native 验证，成为 CLI 路线复用基座。Phase 3 只实现 CLI 消费方，不再设计与验证该生命周期。
 - **写入前置条件仍空白**：Desktop 经验证明宿主写入存在隐藏前置（`text_elements` 缺失导致 renderer error boundary；空 model 让 Desktop 先回 turn ID 再异步失败，须启动前解析 thread/rollout 原始模型）。V5 只 pin 了 schema 参数/必填，未排查此类前置；新增 V8 在独立环境探索 `thread/queue/*` 与 `thread/resume` 的等价风险。
 - **所有权沿用登记式接入边界**：V6-R1 的「连接级 `clientInfo` 关联」升级为 Phase 3 架构硬约束；跨连接扫描 `thread.source` 不可靠这一结论，被 Desktop 的 per-process owner/writer 经验再次印证。
-- **PD32 独立环境是唯一硬前置**：独立 `CODEX_HOME` 与独立认证需用户参与完成；`ephemeral` 覆盖不能替代。V6/V7/V8 与三平台验证都在独立环境真机执行。
+- **PD32 独立环境不再是硬前置**：独立 `CODEX_HOME` 与独立认证需用户参与完成；`ephemeral` 覆盖不能替代。V6/V7/V8 与三平台验证都在独立环境真机执行。
 - **TUI 真机验证不可替代**：后台 write/read、rollout 或 schema 契约均不能证明投递成功；三平台验证聚焦 TUI 实时显示与人工继续交互。
 
 2026-09-06 追加（路线决策，V9 记录见 `experiments/codex-cli-v9.md`）：
