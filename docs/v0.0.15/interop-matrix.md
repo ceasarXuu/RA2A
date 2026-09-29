@@ -57,6 +57,37 @@ server → 用户 TUI，且 `delivery: confirmed`（适配器等到了 `session.
 
 因此这条链路的**产品缺口**是：调用方身份在 opencode 侧不可自动获得。
 
+## 三节点验收记录（2026-09-30）
+
+| 方向 | marker | 结果 |
+| --- | --- | --- |
+| macmini-m4 → ubuntu407 opencode | `MACMINI-PONG-040921` | 到达 |
+| ubuntu407 opencode → rog306 | `FINAL-034633` | 到达 |
+| rog306 → ubuntu407 opencode | `FINAL-034633` | 到达（14s 往返） |
+| macmini-m4 → ubuntu407 opencode（新构建） | `FINAL-MACMINI-20260930-042216` | 到达 |
+
+### 发送方返回值：LAN 成功时只报 `handed_to_transport`
+
+三个节点发送跨机消息时，发送方拿到的都是：
+
+```json
+{"delivery":"handed_to_transport","status":"accepted"}
+```
+
+这与 `confirmed` 不同。当前实现按目标节点是否为本地来决定（`adapter_coordinator.go`
+的 `DeliveryConfirmed`），并有测试断言「跨节点目标不得报 confirmed」。
+
+**但这个判断是保守过头了**：LAN 发送是同步 CoAP 往返，`deliverOverLAN` 只在远端
+适配器返回 `Delivered` 时才返回成功，因此**跨机发送若成功返回，远端其实已经确认**，
+报 `confirmed` 才是准确的。现有断言来自「跨节点结果不可信」的年代——那时接收端
+要等整个 turn，超时后结论回不来（见 §11.5），所以只能保守表述。
+
+修完投递耗时之后这个前提已经不成立。是否收紧为 `confirmed` 属于投递结果契约的
+产品决策，尚未执行；文档中也没有记录过必须报 `handed_to_transport`。
+
+记录当前事实：**`accepted`/`handed_to_transport` 表示链路成功但未声明已确认**，
+可据此判断链路可用，不能据此判断目标适配器已确认。
+
 ## 节点升级记录：macmini-m4
 
 - 2026-09-30 升级到 `e2ff3dd`，成为完整参与者：21 个会话全部发布
