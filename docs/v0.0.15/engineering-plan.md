@@ -407,51 +407,90 @@ Phase 0 完成并冻结 V8-R / V10 / V11 结论前不进入 Phase 1 主体架构
 | 端点所有权来源 | 计划假定可用连接级 `clientInfo` 关联建立所有权 | `originator` 为进程级全局值、`source` 恒为 `vscode`，协议层无所有权字段 | 是否接受"RA2A 侧自建登记表 + 未知归属不发布"作为最终口径 |
 | host owner 归属 | 计划假定 RA2A 用 `internal/codexhost` 作为 CLI 侧共享 owner | 官方 daemon 提供同一角色且生命周期更完整 | `codexhost` 是否退位为 Desktop / RA2A 内部专用 |
 
-## 11.5 已知未完成缺陷：opencode 忙闲投递的假失败
+## 11.5 已修复缺陷：opencode 忙闲投递的假失败
 
 - 发现日期：2026-09-29
-- 状态：**未修复**，阻塞「任意 session 都能互相投递」的实际可用性
+- 修复日期：2026-09-29
+- 状态：**代码已修复并部署**；本机忙碌会话实测通过（0.14s），跨设备闭环因
+  rog306 的 Codex Desktop 未运行而待对方恢复后确认。
 - 证据：rog306 的 Codex 会话向 ubuntu407 的 opencode 会话投递时收到
   `DELIVERY_UNKNOWN`，而该消息确实存在于目标会话的用户消息序列中
   （`ses_f18969b8…` index 704/710，`role: user`，`completed: false`，排队态）。
 
-### 根因
+### 真实根因：用错了端点
 
-opencode 的投递入口是 `POST /session/{id}/message`，它**同步阻塞到整个 turn 结束**。
-Codex 侧不同：`turn/start` 立即返回 turn ID、异步推进，因此有 `turn/completed` 终态
-可等。适配器在 opencode 侧照搬了 Codex 的确认形状（等 `session.idle`），但没有照搬
-语义 —— opencode 并不存在与 `turn/completed` 等价的、属于单条消息的终态事件。
+适配器用 `POST /session/{id}/message` 投递。该端点的 OpenAPI 契约是
+**"Create and send a new message to a session, streaming the AI response."**，
+响应体是 `AssistantMessage`。也就是说，它的语义是「发消息**并等 AI 答完，把答案
+给我**」，耗时等于接收方整个 turn。
 
-于是向**忙碌**会话注入时：
+对活跃 agent 会话，一个 turn 是几分钟。任何承载投递结论的传输都不可能等这么久。
+实测日志：
 
-1. POST 阻塞至调用超时（实测 45 秒以上仍可能未返回），落入结果不明分支；
-2. 对账查「marker 是否已出现在用户消息里」；
-3. 消息是**排队**写入的，短期内未必出现在该序列，对账查不到；
-4. 对账预算是固定的短窗口，而该 turn 可能还要跑很久；
-5. 预算耗尽 → 报 `DELIVERY_UNKNOWN`。
+```
+17:45:47.9  POST 开始
+17:46:17.9  opencode_delivery_reconciled   ← 恰好 30s，callTimeout 到期
+            post_error="context deadline exceeded"
+```
 
-结论：**这不是偶发，而是对活跃会话注入必然误报。**
+opencode 提供了语义正确的端点：
 
-### 语义修正
+```
+POST /session/{id}/prompt_async
+  "Create and send a new message to a session asynchronously,
+   starting the session if needed and returning immediately."
+  → 204 No Content
+```
 
-排队即投递成功。宿主已接收、已持久化、会执行，收信方屏幕上可见 queued。
-把「等 turn 跑完」当作投递确认，在忙碌会话上必然误判。
+`204` 是宿主自己的受理确认，**这才是投递判据**。turn 是否跑完属于收信方，
+与投递是否成立无关。
 
-正确判据是「消息已进入该会话的用户消息序列」，而不是「turn 结束」。
+### 前一轮分析错在哪（须记账）
 
-### 为什么 V10 没发现
+第一轮修复把确认改成「轮询会话历史看消息是否落库」，并把预算设为 25s。
+该修复**逻辑上更正确，但全局更糟**：它让接收端耗时变成
+`callTimeout(30s) + 轮询(25s) = 最多 55s`，而接收端 CoAP blockwise session
+的上限恰好是 30s。**修复扩大了超时暴露面。**
 
-V10 的全部投递实验都在**空闲**会话上进行，POST 立即返回，该路径从未被触发。
-这是实验覆盖的漏洞，不是实现细节的疏漏。
+当时的错误解释是「超时预算配比失衡」，据此推出的方案是「调参」或「投递/确认
+异步解耦」。方向错了：不是预算没配好，是**在等一个不该等的东西**。换端点后
+耗时从 30s+ 降到 0.14s，整条超时链自动消失，无需任何调参。
 
-### 待做
+### 修复内容
 
-- 重写 `internal/codexcli`（opencode 适配器）的确认路径：以消息进入会话历史为
-  投递确认，不等 turn 终态；仅当消息连会话历史都进不去才判失败。
-- 区分「投递到空闲会话」与「投递到忙碌会话」两条语义，前者可继续等终态以获取
-  回合结果，后者以后者为准。
-- 补忙碌会话下的真机验证：起一个长 turn，注入，确认发送方拿到 `delivered`
-  而非 `DELIVERY_UNKNOWN`。
+- `PostMessage` 改走 `prompt_async`，只返回 error；204 即送达。
+- `Deliver` 在 204 时立即判 `delivered`：不等历史、不等 idle、不读回合结果。
+  回合失败不再能把已投递改判为失败。
+- 仅当确认本身丢失（deadline 先于 204 到期）才查历史对账，此时才用
+  `landedBudget`，默认由 25s 降为 8s —— 它是对账窗口，不是正常路径。
+- 删除 `awaitTurnReply`：回合结果不再是投递判据。
+- 测试假服务改为 `prompt_async` + 204；新增回归测试
+  `TestDeliverReturnsWithoutWaitingForTheQueuedMessage`（宿主确认后即使队列
+  消息 3s 后才进历史，投递也须在 1s 内返回）；并注册阻塞端点为 500，
+  使回归立刻显式失败而非静默重现超时。
+
+### 实测
+
+| 场景 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 本机 → 忙碌 opencode 会话 | 30s+ 后 `DELIVERY_UNKNOWN` | **0.14s `confirmed`** |
+| 日志事件 | `opencode_turn_delivered` / `reconciled` | `opencode_delivery_accepted` |
+
+### 教训（同类错误当晚出现三次）
+
+1. `oc-wrapper` 写完提交但从未安装；
+2. 二进制换了但 daemon 没重启；
+3. 本轮：只验本机路径就宣布修复（本机路径无 CoAP 约束，跨设备路径有）。
+
+三者根因相同：**用「代码写完 + 测试通过」或「我能测的路径」代替「实际会走的
+路径 / 真正在跑的东西」。** 部署后必须核实运行进程的 `/proc/<pid>/exe`；
+验证必须覆盖实际承载约束的那条路径。
+
+### 仍未闭环
+
+跨设备确认依赖对方节点恢复：rog306 的 Codex Desktop 当前未运行
+（`DESKTOP_OWNER_UNAVAILABLE: no-client-found`），无法从本端唤起。
+对方恢复并回消息后即可确认发送方拿到 `delivered`。
 
 ## 12. 待决项（阻塞 Phase 3）
 
@@ -459,7 +498,7 @@ V10 的全部投递实验都在**空闲**会话上进行，POST 立即返回，�
 | --- | --- | --- | --- |
 | D1 | CLI 侧 App Server owner 用官方 daemon 还是 `internal/codexhost` | Phase 3 全部 | 用官方 daemon（生命周期、升级、`start_required` 判定均已官方化）；`codexhost` 保留 Desktop 与 RA2A 内部路径 |
 | D2 | RA2A 连接的 `clientInfo.name` 取值与连接顺序 | Phase 3 归属登记 | 固定名称 + 单连接长驻，避免污染 daemon 全局 originator；配合 `cli_originator_side_effect` 事件 |
-| D3 | `delivered` 是否必须等待 `turn/completed` | Phase 3 投递结果映射与超时 | 必须等待；确认窗口做成可配置超时，超时映射为 `DELIVERY_UNKNOWN` |
+| D3 | `delivered` 是否必须等待 `turn/completed` | Phase 3 投递结果映射与超时 | **按宿主分别判定**：Codex CLI 的 `turn/start` 异步且每条 turn 有终态，`turn/completed` 是权威判据；opencode 的 `prompt_async` 受理即回 204，**204 即判据，绝不等 turn**（见 §11.5：等待 turn 会使投递耗时等于收信方工作量，必然超时） |
 | D4 | 承载版本号（见 §0） | Phase 6 发布 | 由 Owner 在选项 A / B 中选择 |
 
 执行过程中若发现原确认决策不可实现，必须记录：受影响 PD、证据、用户影响、建议选项和 Owner 决定。不得把工程限制静默改写为产品行为。

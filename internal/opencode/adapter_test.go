@@ -128,6 +128,15 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 		}
 		writer.WriteHeader(http.StatusNoContent)
 	})
+	// The blocking endpoint must never be used for delivery. It streams the
+	// assistant's answer, so a delivery through it would take as long as the
+	// recipient's turn and blow every transport budget that carries the answer.
+	// Registering it here turns a regression into a loud failure instead of a
+	// silent reappearance of the timeout.
+	mux.HandleFunc("POST /session/{id}/message", func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = writer.Write([]byte(`{"name":"BlockingEndpointUsedForDelivery"}`))
+	})
 	mux.HandleFunc("GET /event", fake.serveEvents)
 	fake.server = httptest.NewServer(mux)
 	t.Cleanup(fake.server.Close)
