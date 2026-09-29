@@ -1,6 +1,6 @@
 # 适配器互通矩阵
 
-- 更新日期：2026-09-29
+- 更新日期：2026-09-30
 - 要求（项目硬约束）：**任何已适配的 harness 之间必须双向互通**。未通过的组合不得列为支持。
 - **正式路径：session 直投。** 地址取自 `list_targets`，投递即在目标会话里产生一个
   turn，与 codex↔codex 同构。信箱是实现期的临时测试手段，不构成互通证据。
@@ -11,9 +11,9 @@
 
 | 发送端 ＼ 接收端 | codex-app | codex-cli | opencode |
 | --- | --- | --- | --- |
-| **codex-app** | ✅ 长期回归，Windows/Ubuntu/macOS | ⚠️ Windows 本机通过，LAN 未验 | ✅ **用户目视确认**（`RA2A-FULLCHAIN-024937` 实时出现在 attach 的 TUI 中） |
+| **codex-app** | ✅ 长期回归，Windows/Ubuntu/macOS | ⚠️ Windows 本机通过，LAN 未验 | ✅ 用户目视确认实时渲染 + 跨机往返（`FINAL-034633`） |
 | **codex-cli** | ⚠️ 同上，反向 | ⚠️ Windows 本机通过，LAN 未验 | — |
-| **opencode** | ⚠️ 工具可达，模型未稳定选用（见下） | — | ✅ RA2A 投递侧通 |
+| **opencode** | ✅ 跨机往返（`FINAL-034633`，rog306 回） | — | ✅ RA2A 投递侧通，排队消息会被执行 |
 
 ## 接收方向：零配置已达成
 
@@ -56,6 +56,22 @@ server → 用户 TUI，且 `delivery: confirmed`（适配器等到了 `session.
    必须显式传 `from`，而 agent 并不知道自己的地址。这与「用户无感」冲突。
 
 因此这条链路的**产品缺口**是：调用方身份在 opencode 侧不可自动获得。
+
+## 节点升级记录：macmini-m4
+
+- 2026-09-30 升级到 `e2ff3dd`，成为完整参与者：21 个会话全部发布
+  `agent=codex-app`（升级前**完全无 `agent` 字段**，只能被当作旧节点）。
+- 三节点同口径：macmini-m4 21 / rog306 287 / ubuntu407 333（codex-app 316 +
+  opencode 17），全部 `ready`。
+
+升级过程中遇到的四个问题，均已解决，记录备查：
+
+| 问题 | 现象 | 处理 |
+| --- | --- | --- |
+| 本地分支严重落后 | `main` ahead 5 / behind 52，`git pull --no-rebase` 产生 7 个冲突（`cmd/ra2a/main.go`、`internal/agentbridge/registry.go`、`internal/codexapp/adapter.go`、`internal/control/control.go`、`internal/lannode/node.go`、`internal/mcpserver/server.go` 等） | `git merge --abort` 放弃合并，改用 `origin/main` 快照构建二进制，不覆盖本地提交 |
+| Codex MCP 注册失败 | `register Codex MCP: fork/exec /Applications/ChatGPT.app/Contents/Resources/codex: no such file or directory` | 更新本机 config 里的 codex 路径为已安装的原生 codex 后重启成功 |
+| macOS 没有 `/proc` | 无法用 `readlink /proc/<pid>/exe` 核实二进制是否被替换 | 改用运行进程的 inode/size 与磁盘二进制比对 |
+| `go build` 不退出 | 二进制已生成但进程无输出、不退出，持续 7 分钟后被 SIGTERM（退出码 143） | 未定位根因；二进制本身经 version/sha256/inode/agent 字段四项验证可用 |
 
 ## 顺带确认的两个运行时事实
 
