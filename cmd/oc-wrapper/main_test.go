@@ -120,33 +120,46 @@ func TestNativeExecutableSkipsTheWrapperItselfInPath(t *testing.T) {
 	}
 }
 
-// The TUI is launched through the top-level command pointed at the supervised
-// server, not through `attach`: attach rejects flags such as --yolo, so
-// `opencode --yolo --ra2a` failed with a yargs help dump.
-func TestLaunchArgsKeepsUserFlagsAndTargetsTheSharedServer(t *testing.T) {
-	got, err := launchArgs("http://127.0.0.1:4099", []string{"--yolo"})
+// --yolo/--auto have no attach equivalent, so they are translated into the
+// attach client's permission policy rather than forwarded. Forwarding them made
+// `opencode --yolo --ra2a` die on a yargs argument dump.
+func TestTranslateAttachArgsMovesYoloIntoThePermissionPolicy(t *testing.T) {
+	kept, permission, err := translateAttachArgs([]string{"--yolo", "--continue"})
 	if err != nil {
-		t.Fatalf("launchArgs: %v", err)
+		t.Fatalf("translate: %v", err)
 	}
-	want := []string{"--port", "4099", "--hostname", "127.0.0.1", "--yolo"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
+	if !reflect.DeepEqual(kept, []string{"--continue"}) {
+		t.Fatalf("the flag must not be forwarded to attach, got %v", kept)
+	}
+	if permission != allowAllPermission {
+		t.Fatalf("yolo must become the allow-all policy, got %q", permission)
+	}
+	if _, permission, _ := translateAttachArgs([]string{"--auto=false"}); permission != "" {
+		t.Fatal("an explicit --auto=false must not enable the policy")
 	}
 }
 
-// Flags that would move the TUI to a different server must be refused rather
-// than silently accepted: RA2A delivers into the supervised server only, so
-// quiet redirection would break live rendering with no visible cause.
-func TestLaunchArgsRefusesFlagsThatMoveTheServer(t *testing.T) {
+// Flags that would move the TUI to a different server are refused rather than
+// silently accepted: RA2A delivers into the supervised server only.
+func TestTranslateAttachArgsRefusesFlagsThatMoveTheServer(t *testing.T) {
 	for _, arg := range []string{"--port", "--hostname", "--mdns", "--mdns-domain"} {
-		if _, err := launchArgs("http://127.0.0.1:4099", []string{arg, "5000"}); err == nil {
+		if _, _, err := translateAttachArgs([]string{arg, "5000"}); err == nil {
 			t.Fatalf("%s must be refused together with --ra2a", arg)
 		}
 	}
 }
 
-func TestLaunchArgsRequiresAnExplicitPort(t *testing.T) {
-	if _, err := launchArgs("http://127.0.0.1", nil); err == nil {
-		t.Fatal("a server URL without a port must be refused")
+// Arguments attach does understand must survive untouched.
+func TestTranslateAttachArgsKeepsSupportedFlags(t *testing.T) {
+	kept, permission, err := translateAttachArgs([]string{"--continue", "--session", "ses_x", "--mini"})
+	if err != nil {
+		t.Fatalf("translate: %v", err)
+	}
+	want := []string{"--continue", "--session", "ses_x", "--mini"}
+	if !reflect.DeepEqual(kept, want) {
+		t.Fatalf("got %v, want %v", kept, want)
+	}
+	if permission != "" {
+		t.Fatal("no policy must be set when the user did not ask for one")
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -35,9 +34,10 @@ const usage = `opencode [options] --ra2a
            RA2A then appear live, and RA2A can see whether this session is busy
            so it never interrupts a turn in progress.
 
-  Every other flag is passed through unchanged, so --yolo, --model, --agent and
-  the rest keep working: opencode --yolo --ra2a is valid. --port, --hostname and
-  --mdns are refused because they would move the TUI off the shared server.
+  --yolo and --auto keep working: they are translated into the attach client's
+  permission policy, because attach itself has no permission flag. --port,
+  --hostname and --mdns are refused because they would move the TUI off the
+  shared server.
 
   Any invocation without --ra2a runs the native opencode untouched.
 `
@@ -47,7 +47,8 @@ type config struct {
 	executable string
 	timeout    time.Duration
 	ownerPath  string
-	launch     []string
+	attachArgs []string
+	permission string
 }
 
 func main() {
@@ -79,11 +80,11 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 		timeout:    25 * time.Second,
 		ownerPath:  ownerPath(),
 	}
-	launch, err := launchArgs(settings.serverURL, withoutRA2A(args))
+	attach, permission, err := translateAttachArgs(withoutRA2A(args))
 	if err != nil {
 		return err
 	}
-	settings.launch = launch
+	settings.attachArgs, settings.permission = attach, permission
 
 	host, err := ochost.Start(ctx, ochost.Config{
 		Executable:       settings.executable,
@@ -100,44 +101,53 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 	}
 	defer func() { _ = host.Close() }()
 
-	command := exec.Command(settings.executable, settings.launch...)
+	command := exec.Command(settings.executable, append([]string{"attach", settings.serverURL}, settings.attachArgs...)...)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
+	if settings.permission != "" {
+		// The attach client decides how to answer permission prompts and reads
+		// that policy from here; there is no attach flag for it.
+		command.Env = append(os.Environ(), "OPENCODE_PERMISSION="+settings.permission)
+	}
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("opencode: %w", err)
+		return fmt.Errorf("opencode attach %s: %w", settings.serverURL, err)
 	}
 	return nil
 }
 
-// launchArgs builds the native command line that puts the TUI on the supervised
-// server.
+// allowAllPermission is the ruleset behind --yolo/--auto: every permission
+// request is answered with allow unless the user's own configuration denies it.
+const allowAllPermission = `[{"permission":"*","pattern":"*","action":"allow"}]`
+
+// translateAttachArgs splits the user's arguments into what `attach` accepts and
+// the top-level-only flags the wrapper has to translate.
 //
-// The top-level command is used rather than `attach`, because `attach` has a far
-// smaller flag set: it rejects `--yolo`/`--auto` and `--model`, `--agent`,
-// `--prompt` and every other flag that only the top-level command understands.
-// Pointing the top-level command at the supervised server's host and port makes
-// it reuse that server instead of starting another one -- the listener count is
-// unchanged -- so the user keeps every flag they passed and still shares the one
-// server RA2A delivers into.
-func launchArgs(serverURL string, args []string) ([]string, error) {
-	parsed, err := url.Parse(serverURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse server URL %q: %w", serverURL, err)
-	}
-	host, port := parsed.Hostname(), parsed.Port()
-	if host == "" || port == "" {
-		return nil, fmt.Errorf("server URL %q must carry a host and a port", serverURL)
-	}
+// `attach` exposes a far smaller flag set than the top-level command: it has no
+// permission flag at all, so `opencode --yolo --ra2a` used to die on an argument
+// dump from the yargs parser. The attach client takes its permission policy from
+// OPENCODE_PERMISSION, so the flag is translated into that variable and removed
+// from the arguments instead of being forwarded.
+func translateAttachArgs(args []string) (kept []string, permission string, err error) {
+	kept = make([]string, 0, len(args))
 	for _, arg := range args {
-		switch strings.SplitN(arg, "=", 2)[0] {
+		name, value, hasValue := strings.Cut(arg, "=")
+		negative := hasValue && (value == "false" || value == "0")
+		switch name {
+		case "--yolo", "--auto":
+			if !negative {
+				permission = allowAllPermission
+			}
 		case "--port", "--hostname", "--mdns", "--mdns-domain":
-			// Letting these through would silently point the TUI at a different
-			// server, and messages RA2A delivers would stop appearing in it.
-			return nil, fmt.Errorf("%s cannot be combined with %s: the shared server address is fixed", strings.SplitN(arg, "=", 2)[0], ra2aFlag)
+			// Letting these through would point the TUI at a different server,
+			// and messages RA2A delivers would stop appearing in it with no
+			// visible cause.
+			return nil, "", fmt.Errorf("%s cannot be combined with %s: the shared server address is fixed", name, ra2aFlag)
+		default:
+			kept = append(kept, arg)
 		}
 	}
-	return append([]string{"--port", port, "--hostname", host}, args...), nil
+	return kept, permission, nil
 }
 
 func containsRA2A(args []string) bool {
