@@ -34,6 +34,10 @@ type Config struct {
 	CallTimeout time.Duration
 	IdleWait    time.Duration
 	Stderr      io.Writer
+	// LandedBudget and LandedPoll tune how long a delivery waits for a queued
+	// message to appear in the session history.
+	LandedBudget time.Duration
+	LandedPoll   time.Duration
 }
 
 type Session struct {
@@ -418,3 +422,41 @@ func IsUnreachable(err error) bool { return errors.Is(err, ErrUnreachable) }
 
 // IsOutcomeUnknown reports that the request may or may not have been applied.
 func IsOutcomeUnknown(err error) bool { return errors.Is(err, ErrOutcomeUnknown) }
+
+// WaitForLanded polls the session history until the marker appears or the
+// budget is exhausted.
+//
+// A single check is not enough: a message injected into a busy session is
+// queued, so it can be accepted by the host before it shows up in the history.
+// Declaring the outcome unknown on the first miss is therefore a false failure,
+// and the miss is the normal case rather than the exceptional one.
+func (client *Client) WaitForLanded(ctx context.Context, sessionID, marker string, budget, interval time.Duration) (bool, error) {
+	if budget <= 0 {
+		budget = 20 * time.Second
+	}
+	if interval <= 0 {
+		interval = 400 * time.Millisecond
+	}
+	deadline := time.Now().Add(budget)
+	var lastErr error
+	for {
+		landed, err := client.ConfirmsLanded(ctx, sessionID, marker)
+		if err == nil && landed {
+			return true, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		if !time.Now().Before(deadline) {
+			if lastErr != nil && ctx.Err() == nil {
+				return false, lastErr
+			}
+			return false, nil
+		}
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}

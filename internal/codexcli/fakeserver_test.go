@@ -27,6 +27,11 @@ type fakeAppServer struct {
 	socketPath string
 	codexPath  string
 
+	// writeMu serialises websocket writes: gorilla permits one concurrent
+	// writer, and the fake writes a response and a later notification from
+	// different goroutines.
+	writeMu sync.Mutex
+
 	mu                sync.Mutex
 	calls             []string
 	resumeSeen        map[string]bool
@@ -157,6 +162,8 @@ func (server *fakeAppServer) writeJSON(conn *websocket.Conn, value any) {
 	if err != nil {
 		return
 	}
+	server.writeMu.Lock()
+	defer server.writeMu.Unlock()
 	_ = conn.WriteMessage(websocket.TextMessage, payload)
 }
 
@@ -297,7 +304,9 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 					"id": turnID, "status": completed.Status, "error": completed.Error,
 				}},
 			})
+			server.writeMu.Lock()
 			_ = conn.WriteMessage(websocket.TextMessage, payload)
+			server.writeMu.Unlock()
 		}()
 	case "thread/unsubscribe":
 		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": map[string]any{"status": "unsubscribed"}})

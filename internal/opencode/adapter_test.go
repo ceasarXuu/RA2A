@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,13 +18,17 @@ import (
 // fakeOpenCode reproduces the real server surface: session listing, message
 // posting, and an SSE event stream that publishes busy/idle.
 type fakeOpenCode struct {
-	server     *httptest.Server
-	messages   chan string
-	turnCount  int
-	postErr    int
-	slowPost   time.Duration
-	dropPost   bool
-	lastPosted string
+	server        *httptest.Server
+	messages      chan string
+	mu            sync.Mutex
+	turnCount     int
+	postErr       int
+	slowPost      time.Duration
+	dropPost      bool
+	neverRecord   bool
+	delayedRecord time.Duration
+	lastPosted    string
+	recorded      bool
 }
 
 func newFakeOpenCode(t *testing.T) *fakeOpenCode {
@@ -47,10 +52,12 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 	})
 	mux.HandleFunc("GET /session/{id}/message", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		userText := fake.lastPosted
-		if userText == "" {
-			userText = "unrelated earlier message"
+		fake.mu.Lock()
+		userText := "unrelated earlier message"
+		if fake.lastPosted != "" && fake.recorded {
+			userText = fake.lastPosted
 		}
+		fake.mu.Unlock()
 		_ = json.NewEncoder(writer).Encode([]map[string]any{
 			{"info": map[string]any{"sessionID": request.PathValue("id"), "role": "user",
 				"time": map[string]any{"completed": float64(1)}},
@@ -61,8 +68,13 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 		})
 	})
 	mux.HandleFunc("POST /session/{id}/message", func(writer http.ResponseWriter, request *http.Request) {
-		if fake.postErr > 0 {
+		fake.mu.Lock()
+		reject := fake.postErr > 0
+		if reject {
 			fake.postErr--
+		}
+		fake.mu.Unlock()
+		if reject {
 			writer.WriteHeader(http.StatusBadRequest)
 			_, _ = writer.Write([]byte(`{"name":"BadRequest"}`))
 			return
@@ -78,14 +90,19 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 			_, _ = writer.Write([]byte(`{"name":"BadRequest","data":{"message":"Missing key"}}`))
 			return
 		}
+		fake.mu.Lock()
 		if len(payload.Parts) > 0 {
 			fake.lastPosted = payload.Parts[0].Text
 		}
 		fake.turnCount++
-		if fake.dropPost {
+		dropPost, neverRecord := fake.dropPost, fake.neverRecord
+		fake.mu.Unlock()
+		if dropPost && !neverRecord {
 			// Simulate a request whose response never reaches the client and
 			// which left no trace in the session.
+			fake.mu.Lock()
 			fake.lastPosted = ""
+			fake.mu.Unlock()
 			if fake.slowPost > 0 {
 				time.Sleep(fake.slowPost)
 			}
@@ -94,6 +111,31 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 		if fake.slowPost > 0 {
 			time.Sleep(fake.slowPost)
 		}
+		if neverRecord {
+			writer.WriteHeader(http.StatusOK)
+			_, _ = writer.Write([]byte(`{"info":{"sessionID":"ses_1","role":"assistant"},"parts":[]}`))
+			return
+		}
+		// A queued message becomes visible in the history some time after the
+		// host accepted it, which is what a busy session looks like.
+		record := func() {
+			fake.mu.Lock()
+			fake.recorded = true
+			fake.mu.Unlock()
+		}
+		fake.mu.Lock()
+		firstTurn := fake.turnCount == 1
+		dropPostNow := dropPost
+		delayed := fake.delayedRecord
+		fake.mu.Unlock()
+		if delayed > 0 {
+			go func() {
+				time.Sleep(delayed)
+				record()
+			}()
+		} else {
+			record()
+		}
 		// Real OpenCode answers with an in-progress assistant message.
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(map[string]any{
@@ -101,7 +143,7 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 				"time": map[string]any{"completed": nil}, "error": nil},
 			"parts": []map[string]any{{"type": "step-start"}, {"type": "text", "text": "working"}},
 		})
-		if fake.turnCount == 1 && !fake.dropPost {
+		if firstTurn && !dropPostNow {
 			fake.push(t, map[string]any{"type": "session.status",
 				"properties": map[string]any{"sessionID": request.PathValue("id"),
 					"status": map[string]any{"type": "busy"}}})
@@ -159,9 +201,8 @@ func (fake *fakeOpenCode) serveEvents(writer http.ResponseWriter, request *http.
 
 func newTestAdapter(t *testing.T, fake *fakeOpenCode) *Adapter {
 	t.Helper()
-	client := NewClient(Config{BaseURL: fake.server.URL, CallTimeout: 3 * time.Second,
-		IdleWait: 3 * time.Second, Stderr: nil})
-	adapter := New("node-a", client, nil)
+	adapter := New("node-a", Config{BaseURL: fake.server.URL, CallTimeout: 3 * time.Second,
+		IdleWait: 3 * time.Second}, nil)
 	t.Cleanup(func() { _ = adapter.Close() })
 	return adapter
 }
@@ -200,7 +241,7 @@ func TestListEndpointsPublishesEveryReportedSession(t *testing.T) {
 func TestListEndpointsIsEmptyWhenServerHasNoSessions(t *testing.T) {
 	fake := newFakeOpenCode(t)
 	empty := newFakeAppServerWithNoSessions(t, fake)
-	adapter := New("node-a", NewClient(Config{BaseURL: empty, CallTimeout: 2 * time.Second}), nil)
+	adapter := New("node-a", Config{BaseURL: empty, CallTimeout: 2 * time.Second}, nil)
 	defer adapter.Close()
 	endpoints, err := adapter.ListEndpoints(context.Background())
 	if err != nil {
@@ -223,8 +264,8 @@ func TestDeliverConfirmsOnSessionIdle(t *testing.T) {
 	if !result.Delivered() {
 		t.Fatalf("delivery must confirm on session.idle, got %+v", result)
 	}
-	if fake.turnCount != 1 {
-		t.Fatalf("exactly one turn must be started, got %d", fake.turnCount)
+	if total := fake.turnTotal(); total != 1 {
+		t.Fatalf("exactly one turn must be started, got %d", total)
 	}
 }
 
@@ -254,7 +295,7 @@ func TestDeliverReportsUnreachableServer(t *testing.T) {
 
 func TestDeliverReportsPostRejection(t *testing.T) {
 	fake := newFakeOpenCode(t)
-	fake.postErr = 1
+	fake.configure(func(f *fakeOpenCode) { f.postErr = 1 })
 	adapter := newTestAdapter(t, fake)
 	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
 	if result.Code != agentbridge.ResultUnknown {
@@ -264,8 +305,11 @@ func TestDeliverReportsPostRejection(t *testing.T) {
 
 func TestEventStreamDrivesBusyState(t *testing.T) {
 	fake := newFakeOpenCode(t)
-	client := NewClient(Config{BaseURL: fake.server.URL, CallTimeout: time.Second})
-	adapter := New("node-a", client, nil)
+	adapter := New("node-a", Config{BaseURL: fake.server.URL, CallTimeout: 3 * time.Second,
+		IdleWait: 3 * time.Second}, nil)
+	// The adapter owns the client that subscribes to the event stream, so the
+	// busy assertions must read that one rather than a second connection.
+	client := adapter.client
 	defer adapter.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -328,36 +372,34 @@ func TestUnreachableClassification(t *testing.T) {
 // delivered, never retried and never reported as a failure.
 func TestDeliverReconcilesAmbiguousPost(t *testing.T) {
 	fake := newFakeOpenCode(t)
-	client := NewClient(Config{BaseURL: fake.server.URL, CallTimeout: 80 * time.Millisecond,
-		IdleWait: 3 * time.Second})
-	adapter := New("node-a", client, nil)
+	adapter := New("node-a", Config{BaseURL: fake.server.URL, CallTimeout: 80 * time.Millisecond,
+		IdleWait: 3 * time.Second, LandedBudget: 2 * time.Second, LandedPoll: 50 * time.Millisecond}, nil)
 	defer adapter.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	adapter.Watch(ctx)
 	// The fake records the user message, then answers slowly enough to blow the
 	// client deadline, then publishes idle.
-	fake.slowPost = 250 * time.Millisecond
+	fake.configure(func(f *fakeOpenCode) { f.slowPost = 250 * time.Millisecond })
 	message := envelope()
 	message.ID = "msg-reconcile"
 	result := adapter.Deliver(context.Background(), address("ses_1"), message)
 	if !result.Delivered() {
 		t.Fatalf("an ambiguous post that landed must be delivered, got %+v", result)
 	}
-	if fake.turnCount != 1 {
-		t.Fatalf("an ambiguous delivery must never be retried, got %d turns", fake.turnCount)
+	if total := fake.turnTotal(); total != 1 {
+		t.Fatalf("an ambiguous delivery must never be retried, got %d turns", total)
 	}
 }
 
 // A POST that times out and left no trace must stay unknown.
 func TestDeliverKeepsUnknownWhenAmbiguousPostDidNotLand(t *testing.T) {
 	fake := newFakeOpenCode(t)
-	client := NewClient(Config{BaseURL: fake.server.URL, CallTimeout: 60 * time.Millisecond,
-		IdleWait: 150 * time.Millisecond})
-	adapter := New("node-a", client, nil)
+	adapter := New("node-a", Config{BaseURL: fake.server.URL, CallTimeout: 60 * time.Millisecond,
+		IdleWait: 150 * time.Millisecond, LandedBudget: 400 * time.Millisecond,
+		LandedPoll: 50 * time.Millisecond}, nil)
 	defer adapter.Close()
-	fake.dropPost = true
-	fake.slowPost = 200 * time.Millisecond
+	fake.configure(func(f *fakeOpenCode) { f.dropPost, f.slowPost = true, 200*time.Millisecond })
 	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
 	if result.Delivered() {
 		t.Fatalf("a post that never landed must not be delivered, got %+v", result)
@@ -427,4 +469,64 @@ func newFakeAppServerWithNoSessions(t *testing.T, reference *fakeOpenCode) strin
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
 	return "http://" + listener.Addr().String()
+}
+
+// A message accepted by a busy session is written to history *after* the POST
+// deadline expires. Declaring the outcome unknown on the first history miss is
+// therefore a false failure, and the miss is the normal case rather than the
+// exceptional one. The message must be reported as delivered once it appears.
+func TestDeliverWaitsForAQueuedMessageToAppear(t *testing.T) {
+	fake := newFakeOpenCode(t)
+	// The host records the message well after the client deadline, which is what
+	// a queued message looks like to the sender.
+	fake.configure(func(f *fakeOpenCode) { f.delayedRecord = 900 * time.Millisecond })
+	adapter := New("node-a", Config{
+		BaseURL: fake.server.URL, CallTimeout: 60 * time.Millisecond,
+		IdleWait: 150 * time.Millisecond, LandedBudget: 3 * time.Second,
+		LandedPoll: 50 * time.Millisecond,
+	}, nil)
+	defer adapter.Close()
+	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
+	if !result.Delivered() {
+		t.Fatalf("a queued message that lands later must be reported delivered, got %+v", result)
+	}
+	if total := fake.turnTotal(); total != 1 {
+		t.Fatalf("the message must never be re-posted, got %d posts", total)
+	}
+}
+
+// If the host neither accepted the message nor records it, the delivery really
+// did fail and must not be reported as success.
+func TestDeliverFailsWhenAQueuedMessageNeverLands(t *testing.T) {
+	fake := newFakeOpenCode(t)
+	fake.configure(func(f *fakeOpenCode) {
+		f.dropPost, f.neverRecord, f.slowPost = true, true, 300*time.Millisecond
+	})
+	adapter := New("node-a", Config{
+		BaseURL: fake.server.URL, CallTimeout: 60 * time.Millisecond,
+		IdleWait: 150 * time.Millisecond, LandedBudget: 500 * time.Millisecond,
+		LandedPoll: 50 * time.Millisecond,
+	}, nil)
+	defer adapter.Close()
+	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
+	if result.Delivered() {
+		t.Fatalf("a message that never lands must not be reported delivered, got %+v", result)
+	}
+	if result.NativeErrorClass != "not_accepted" {
+		t.Fatalf("the failure must be classified as not_accepted, got %q", result.NativeErrorClass)
+	}
+}
+
+func (fake *fakeOpenCode) turnTotal() int {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	return fake.turnCount
+}
+
+// configure mutates the fake under its lock. Tests must use it instead of
+// writing fields directly, because the HTTP handlers read them concurrently.
+func (fake *fakeOpenCode) configure(apply func(*fakeOpenCode)) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	apply(fake)
 }

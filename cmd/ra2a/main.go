@@ -408,8 +408,7 @@ func startOpencodeAdapter(ctx context.Context, nodeID string, stderr io.Writer) 
 	if url == "" {
 		return nil, errOpenCodeDisabled
 	}
-	client := opencode.NewClient(opencode.Config{BaseURL: url, Stderr: stderr, ClientName: "ra2a"})
-	adapter := opencode.New(nodeID, client, stderr)
+	adapter := opencode.New(nodeID, opencode.Config{BaseURL: url, Stderr: stderr, ClientName: "ra2a"}, stderr)
 	if !opencode.Reachable(ctx, url) {
 		return nil, fmt.Errorf("no OpenCode server at %s (start it with `opencode --ra2a`)", url)
 	}

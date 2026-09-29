@@ -24,9 +24,8 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
-	client := opencode.NewClient(opencode.Config{BaseURL: *base, Stderr: os.Stderr,
-		CallTimeout: 20 * time.Second, IdleWait: 90 * time.Second})
-	adapter := opencode.New("probe-node", client, os.Stderr)
+	adapter := opencode.New("probe-node", opencode.Config{BaseURL: *base, Stderr: os.Stderr,
+		CallTimeout: 30 * time.Second, IdleWait: 90 * time.Second}, os.Stderr)
 	defer adapter.Close()
 	adapter.Watch(ctx)
 	endpoints, err := adapter.ListEndpoints(ctx)
