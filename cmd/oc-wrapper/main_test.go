@@ -119,3 +119,34 @@ func TestNativeExecutableSkipsTheWrapperItselfInPath(t *testing.T) {
 		t.Fatalf("expected the real binary %q, got %q", real, got)
 	}
 }
+
+// The TUI is launched through the top-level command pointed at the supervised
+// server, not through `attach`: attach rejects flags such as --yolo, so
+// `opencode --yolo --ra2a` failed with a yargs help dump.
+func TestLaunchArgsKeepsUserFlagsAndTargetsTheSharedServer(t *testing.T) {
+	got, err := launchArgs("http://127.0.0.1:4099", []string{"--yolo"})
+	if err != nil {
+		t.Fatalf("launchArgs: %v", err)
+	}
+	want := []string{"--port", "4099", "--hostname", "127.0.0.1", "--yolo"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+// Flags that would move the TUI to a different server must be refused rather
+// than silently accepted: RA2A delivers into the supervised server only, so
+// quiet redirection would break live rendering with no visible cause.
+func TestLaunchArgsRefusesFlagsThatMoveTheServer(t *testing.T) {
+	for _, arg := range []string{"--port", "--hostname", "--mdns", "--mdns-domain"} {
+		if _, err := launchArgs("http://127.0.0.1:4099", []string{arg, "5000"}); err == nil {
+			t.Fatalf("%s must be refused together with --ra2a", arg)
+		}
+	}
+}
+
+func TestLaunchArgsRequiresAnExplicitPort(t *testing.T) {
+	if _, err := launchArgs("http://127.0.0.1", nil); err == nil {
+		t.Fatal("a server URL without a port must be refused")
+	}
+}

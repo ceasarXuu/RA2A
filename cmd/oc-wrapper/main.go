@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -28,13 +29,17 @@ import (
 
 const ra2aFlag = "--ra2a"
 
-const usage = `opencode --ra2a
+const usage = `opencode [options] --ra2a
 
-  --ra2a   attach the TUI to the RA2A-supervised OpenCode server. Messages sent
-           by RA2A then appear live, and RA2A can see whether this session is
-           busy so it never interrupts a turn in progress.
+  --ra2a   run the TUI on the RA2A-supervised OpenCode server. Messages sent by
+           RA2A then appear live, and RA2A can see whether this session is busy
+           so it never interrupts a turn in progress.
 
-  Any other invocation runs the native opencode unchanged.
+  Every other flag is passed through unchanged, so --yolo, --model, --agent and
+  the rest keep working: opencode --yolo --ra2a is valid. --port, --hostname and
+  --mdns are refused because they would move the TUI off the shared server.
+
+  Any invocation without --ra2a runs the native opencode untouched.
 `
 
 type config struct {
@@ -42,7 +47,7 @@ type config struct {
 	executable string
 	timeout    time.Duration
 	ownerPath  string
-	attachArgs []string
+	launch     []string
 }
 
 func main() {
@@ -55,11 +60,13 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
+	// The RA2A help is asked for by combining the two, in either order, so the
+	// check cannot depend on the flag being first.
+	if containsRA2A(args) && (containsHelp(args)) {
+		fmt.Fprint(stdout, usage)
+		return nil
+	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		if containsRA2A(args) {
-			fmt.Fprint(stdout, usage)
-			return nil
-		}
 		return passthrough(args, stdout, stderr)
 	}
 	if !containsRA2A(args) {
@@ -72,7 +79,11 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 		timeout:    25 * time.Second,
 		ownerPath:  ownerPath(),
 	}
-	settings.attachArgs = withoutRA2A(args)
+	launch, err := launchArgs(settings.serverURL, withoutRA2A(args))
+	if err != nil {
+		return err
+	}
+	settings.launch = launch
 
 	host, err := ochost.Start(ctx, ochost.Config{
 		Executable:       settings.executable,
@@ -89,19 +100,58 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 	}
 	defer func() { _ = host.Close() }()
 
-	command := exec.Command(settings.executable, append([]string{"attach", settings.serverURL}, settings.attachArgs...)...)
+	command := exec.Command(settings.executable, settings.launch...)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("opencode attach %s: %w", settings.serverURL, err)
+		return fmt.Errorf("opencode: %w", err)
 	}
 	return nil
+}
+
+// launchArgs builds the native command line that puts the TUI on the supervised
+// server.
+//
+// The top-level command is used rather than `attach`, because `attach` has a far
+// smaller flag set: it rejects `--yolo`/`--auto` and `--model`, `--agent`,
+// `--prompt` and every other flag that only the top-level command understands.
+// Pointing the top-level command at the supervised server's host and port makes
+// it reuse that server instead of starting another one -- the listener count is
+// unchanged -- so the user keeps every flag they passed and still shares the one
+// server RA2A delivers into.
+func launchArgs(serverURL string, args []string) ([]string, error) {
+	parsed, err := url.Parse(serverURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse server URL %q: %w", serverURL, err)
+	}
+	host, port := parsed.Hostname(), parsed.Port()
+	if host == "" || port == "" {
+		return nil, fmt.Errorf("server URL %q must carry a host and a port", serverURL)
+	}
+	for _, arg := range args {
+		switch strings.SplitN(arg, "=", 2)[0] {
+		case "--port", "--hostname", "--mdns", "--mdns-domain":
+			// Letting these through would silently point the TUI at a different
+			// server, and messages RA2A delivers would stop appearing in it.
+			return nil, fmt.Errorf("%s cannot be combined with %s: the shared server address is fixed", strings.SplitN(arg, "=", 2)[0], ra2aFlag)
+		}
+	}
+	return append([]string{"--port", port, "--hostname", host}, args...), nil
 }
 
 func containsRA2A(args []string) bool {
 	for _, arg := range args {
 		if arg == ra2aFlag {
+			return true
+		}
+	}
+	return false
+}
+
+func containsHelp(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
 			return true
 		}
 	}
