@@ -2,7 +2,6 @@ package opencode
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -154,95 +153,55 @@ func (adapter *Adapter) Deliver(ctx context.Context, address agentbridge.Address
 	// reach this endpoint can already address any session.
 	sessionID := address.EndpointID
 	marker := agentbridge.RenderIncomingText(envelope)
-	_, postErr := adapter.client.PostMessage(ctx, sessionID, marker)
-	if postErr != nil && !IsOutcomeUnknown(postErr) {
-		if IsUnreachable(postErr) {
-			return agentbridge.DeliveryResult{
-				Code: agentbridge.ResultUnreachable, NativeErrorClass: "server_unreachable", Detail: postErr.Error(),
-			}
+	postErr := adapter.client.PostMessage(ctx, sessionID, marker)
+	if postErr == nil {
+		// The host acknowledged the message. prompt_async answers as soon as it
+		// has taken the message, and that acknowledgement is the delivery
+		// verdict: the turn it starts may run for minutes on an active agent
+		// session, which must never be mistaken for the message not arriving.
+		adapter.logger.Info("opencode_delivery_accepted", "endpoint_id", sessionID, "message_id", envelope.ID)
+		return agentbridge.Delivered(sessionID)
+	}
+	if IsUnreachable(postErr) {
+		return agentbridge.DeliveryResult{
+			Code: agentbridge.ResultUnreachable, NativeErrorClass: "server_unreachable", Detail: postErr.Error(),
 		}
+	}
+	if !IsOutcomeUnknown(postErr) {
 		return agentbridge.DeliveryResult{
 			Code: agentbridge.ResultUnknown, NativeErrorClass: "post_failed", Detail: postErr.Error(),
 		}
 	}
-	// OpenCode's message POST blocks for the whole turn, and it exposes no
-	// per-message terminal event the way Codex's turn/completed does. Waiting for
-	// session.idle to decide delivery is therefore wrong: on a busy session the
-	// message is queued and the session stays busy until the queue drains, which
-	// can be many minutes. The sender would be told the delivery failed while the
-	// message is in fact accepted and visible to the recipient.
-	//
-	// The host's own acknowledgement is the message appearing in the session's
-	// user messages. That is the delivery signal; turn completion only supplies
-	// the reply, never the verdict.
+	// The deadline expired before the host acknowledged, which can happen when
+	// the acknowledgement itself is lost even though the message was taken. The
+	// history decides in that case, never the transport.
 	budget, poll := adapter.landedBudget, adapter.landedPoll
 	confirmCtx, cancelConfirm := context.WithTimeout(context.WithoutCancel(ctx), budget)
 	defer cancelConfirm()
-	if postErr != nil {
-		landed, confirmErr := adapter.client.WaitForLanded(confirmCtx, sessionID, envelope.ID, budget, poll)
-		if confirmErr == nil && landed {
-			adapter.logger.Info("opencode_delivery_reconciled", "endpoint_id", sessionID,
-				"message_id", envelope.ID, "post_error", postErr.Error(),
-				"note", "queued or accepted while the session was busy")
-			return agentbridge.Delivered(sessionID)
-		}
-		adapter.logger.Info("opencode_delivery_unconfirmed", "endpoint_id", sessionID,
-			"message_id", envelope.ID, "post_error", postErr.Error(), "confirm_error", confirmErr)
-		return agentbridge.DeliveryResult{
-			Code: agentbridge.ResultUnknown, NativeErrorClass: "not_accepted",
-			Detail: fmt.Sprintf("opencode neither accepted the message nor recorded it in the session: %v", postErr),
-		}
-	}
-	// The POST returned a completed turn, so the reply is already known. The
-	// history still has to be consulted, and it is consulted the same way: a
-	// single check races the host's own write-back, so the first miss is not
-	// evidence of anything.
 	landed, confirmErr := adapter.client.WaitForLanded(confirmCtx, sessionID, envelope.ID, budget, poll)
-	if confirmErr != nil || !landed {
-		adapter.logger.Info("opencode_delivery_unconfirmed", "endpoint_id", sessionID,
-			"message_id", envelope.ID, "reason", "history_missing_after_completed_turn")
-		return agentbridge.DeliveryResult{
-			Code: agentbridge.ResultUnknown, NativeErrorClass: "history_missing",
-			Detail: "turn completed but the message never appeared in the session history",
-		}
+	if confirmErr == nil && landed {
+		adapter.logger.Info("opencode_delivery_reconciled", "endpoint_id", sessionID,
+			"message_id", envelope.ID, "post_error", postErr.Error(),
+			"note", "the host recorded the message after the client deadline")
+		return agentbridge.Delivered(sessionID)
 	}
-	if final, err := adapter.awaitTurnReply(ctx, sessionID); err == nil && final.Err != nil {
-		adapter.logger.Info("opencode_turn_failed", "endpoint_id", sessionID, "error", final.Err.Name)
-		return agentbridge.DeliveryResult{
-			Code: agentbridge.ResultUnknown, NativeErrorClass: "turn_" + final.Err.Name,
-			Detail: final.Err.Name,
-		}
+	adapter.logger.Info("opencode_delivery_unconfirmed", "endpoint_id", sessionID,
+		"message_id", envelope.ID, "post_error", postErr.Error(), "confirm_error", confirmErr)
+	return agentbridge.DeliveryResult{
+		Code: agentbridge.ResultUnknown, NativeErrorClass: "not_accepted",
+		Detail: fmt.Sprintf("opencode neither accepted the message nor recorded it in the session: %v", postErr),
 	}
-	adapter.logger.Info("opencode_turn_delivered", "endpoint_id", sessionID)
-	return agentbridge.Delivered(sessionID)
 }
 
 // landedBudget and landedPoll govern how long a delivery waits for the host to
-// record the message. The budget has to exceed the host's own call timeout
-// because a queued message is written to history some time after acceptance.
+// record the message. They only apply when the acknowledgement itself was lost,
+// which is rare, so the budget is a reconciliation window rather than the normal
+// delivery path: it has to stay comfortably inside every transport that carries
+// the answer, and it must never grow into "wait for the recipient's turn".
 const (
-	defaultLandedBudget = 25 * time.Second
+	defaultLandedBudget = 8 * time.Second
 	defaultLandedPoll   = 400 * time.Millisecond
 )
-
-// awaitTurnReply reads the last assistant message so a host-side turn failure can
-// still be reported. It is best effort: the delivery verdict does not depend on
-// it, because a turn that never finishes must not turn a delivered message into a
-// failed one.
-func (adapter *Adapter) awaitTurnReply(ctx context.Context, sessionID string) (Message, error) {
-	replyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	messages, err := adapter.client.Messages(replyCtx, sessionID)
-	if err != nil {
-		return Message{}, err
-	}
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "assistant" {
-			return messages[i], nil
-		}
-	}
-	return Message{}, errors.New("no assistant message was produced")
-}
 
 // healthProbeInterval keeps a health check from turning into a request per
 // delivery; the answer only changes when the user's server does.

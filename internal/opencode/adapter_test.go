@@ -67,18 +67,7 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 				"parts": []map[string]any{{"type": "text", "text": "done"}}},
 		})
 	})
-	mux.HandleFunc("POST /session/{id}/message", func(writer http.ResponseWriter, request *http.Request) {
-		fake.mu.Lock()
-		reject := fake.postErr > 0
-		if reject {
-			fake.postErr--
-		}
-		fake.mu.Unlock()
-		if reject {
-			writer.WriteHeader(http.StatusBadRequest)
-			_, _ = writer.Write([]byte(`{"name":"BadRequest"}`))
-			return
-		}
+	mux.HandleFunc("POST /session/{id}/prompt_async", func(writer http.ResponseWriter, request *http.Request) {
 		var payload struct {
 			Parts []struct {
 				Type string `json:"type"`
@@ -91,68 +80,53 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 			return
 		}
 		fake.mu.Lock()
-		if len(payload.Parts) > 0 {
-			fake.lastPosted = payload.Parts[0].Text
+		reject := fake.postErr > 0
+		if reject {
+			fake.postErr--
 		}
+		fake.mu.Unlock()
+		if reject {
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = writer.Write([]byte(`{"name":"BadRequest"}`))
+			return
+		}
+		fake.mu.Lock()
+		fake.lastPosted = payload.Parts[0].Text
 		fake.turnCount++
 		dropPost, neverRecord := fake.dropPost, fake.neverRecord
+		slow, delayed := fake.slowPost, fake.delayedRecord
 		fake.mu.Unlock()
-		if dropPost && !neverRecord {
-			// Simulate a request whose response never reaches the client and
-			// which left no trace in the session.
-			fake.mu.Lock()
-			fake.lastPosted = ""
-			fake.mu.Unlock()
-			if fake.slowPost > 0 {
-				time.Sleep(fake.slowPost)
+		if dropPost {
+			// The host neither acknowledges nor records: the caller's deadline
+			// expires with the message taken by nobody.
+			if slow > 0 {
+				time.Sleep(slow)
 			}
 			return
 		}
-		if fake.slowPost > 0 {
-			time.Sleep(fake.slowPost)
+		if slow > 0 {
+			time.Sleep(slow)
 		}
-		if neverRecord {
-			writer.WriteHeader(http.StatusOK)
-			_, _ = writer.Write([]byte(`{"info":{"sessionID":"ses_1","role":"assistant"},"parts":[]}`))
-			return
-		}
-		// A queued message becomes visible in the history some time after the
-		// host accepted it, which is what a busy session looks like.
-		record := func() {
-			fake.mu.Lock()
-			fake.recorded = true
-			fake.mu.Unlock()
-		}
-		fake.mu.Lock()
-		firstTurn := fake.turnCount == 1
-		dropPostNow := dropPost
-		delayed := fake.delayedRecord
-		fake.mu.Unlock()
-		if delayed > 0 {
-			go func() {
-				time.Sleep(delayed)
+		if !neverRecord {
+			// prompt_async is acknowledged as soon as the host has taken the
+			// message; the queued message shows up in history later, which is
+			// what delivery into a busy session looks like. nothing here waits
+			// for that, because the acknowledgement is the delivery signal.
+			record := func() {
+				fake.mu.Lock()
+				fake.recorded = true
+				fake.mu.Unlock()
+			}
+			if delayed > 0 {
+				go func() {
+					time.Sleep(delayed)
+					record()
+				}()
+			} else {
 				record()
-			}()
-		} else {
-			record()
+			}
 		}
-		// Real OpenCode answers with an in-progress assistant message.
-		writer.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(writer).Encode(map[string]any{
-			"info": map[string]any{"sessionID": request.PathValue("id"), "role": "assistant",
-				"time": map[string]any{"completed": nil}, "error": nil},
-			"parts": []map[string]any{{"type": "step-start"}, {"type": "text", "text": "working"}},
-		})
-		if firstTurn && !dropPostNow {
-			fake.push(t, map[string]any{"type": "session.status",
-				"properties": map[string]any{"sessionID": request.PathValue("id"),
-					"status": map[string]any{"type": "busy"}}})
-			go func() {
-				time.Sleep(80 * time.Millisecond)
-				fake.push(t, map[string]any{"type": "session.idle",
-					"properties": map[string]any{"sessionID": request.PathValue("id")}})
-			}()
-		}
+		writer.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /event", fake.serveEvents)
 	fake.server = httptest.NewServer(mux)
@@ -252,9 +226,9 @@ func TestListEndpointsIsEmptyWhenServerHasNoSessions(t *testing.T) {
 	}
 }
 
-// The POST response is an in-progress assistant message, so delivery must wait
-// for session.idle on the event stream.
-func TestDeliverConfirmsOnSessionIdle(t *testing.T) {
+// The host's acknowledgement is the delivery verdict. Nothing waits for the
+// turn the message starts, because that turn belongs to the recipient.
+func TestDeliverConfirmsOnHostAcknowledgement(t *testing.T) {
 	fake := newFakeOpenCode(t)
 	adapter := newTestAdapter(t, fake)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -262,7 +236,7 @@ func TestDeliverConfirmsOnSessionIdle(t *testing.T) {
 	adapter.Watch(ctx)
 	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
 	if !result.Delivered() {
-		t.Fatalf("delivery must confirm on session.idle, got %+v", result)
+		t.Fatalf("delivery must confirm on the host acknowledgement, got %+v", result)
 	}
 	if total := fake.turnTotal(); total != 1 {
 		t.Fatalf("exactly one turn must be started, got %d", total)
@@ -471,24 +445,31 @@ func newFakeAppServerWithNoSessions(t *testing.T, reference *fakeOpenCode) strin
 	return "http://" + listener.Addr().String()
 }
 
-// A message accepted by a busy session is written to history *after* the POST
-// deadline expires. Declaring the outcome unknown on the first history miss is
-// therefore a false failure, and the miss is the normal case rather than the
-// exceptional one. The message must be reported as delivered once it appears.
-func TestDeliverWaitsForAQueuedMessageToAppear(t *testing.T) {
+// Delivery into a busy session must not wait for the queued message to become
+// visible. A previous implementation posted to the blocking endpoint and then
+// polled the history for the queued message, which made a delivery take as long
+// as the recipient's turn: minutes on an active agent session, far beyond what
+// any transport carrying the answer is willing to wait. The acknowledgement is
+// the delivery signal, and the history is only consulted when it is lost.
+func TestDeliverReturnsWithoutWaitingForTheQueuedMessage(t *testing.T) {
 	fake := newFakeOpenCode(t)
-	// The host records the message well after the client deadline, which is what
-	// a queued message looks like to the sender.
-	fake.configure(func(f *fakeOpenCode) { f.delayedRecord = 900 * time.Millisecond })
+	// The host records the queued message long after it acknowledged it, which
+	// is what a busy session looks like.
+	fake.configure(func(f *fakeOpenCode) { f.delayedRecord = 3 * time.Second })
 	adapter := New("node-a", Config{
-		BaseURL: fake.server.URL, CallTimeout: 60 * time.Millisecond,
-		IdleWait: 150 * time.Millisecond, LandedBudget: 3 * time.Second,
+		BaseURL: fake.server.URL, CallTimeout: 500 * time.Millisecond,
+		IdleWait: 150 * time.Millisecond, LandedBudget: 500 * time.Millisecond,
 		LandedPoll: 50 * time.Millisecond,
 	}, nil)
 	defer adapter.Close()
+	started := time.Now()
 	result := adapter.Deliver(context.Background(), address("ses_1"), envelope())
+	elapsed := time.Since(started)
 	if !result.Delivered() {
-		t.Fatalf("a queued message that lands later must be reported delivered, got %+v", result)
+		t.Fatalf("an acknowledged message must be delivered, got %+v", result)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("delivery must not wait for the queued message to be recorded, took %s", elapsed)
 	}
 	if total := fake.turnTotal(); total != 1 {
 		t.Fatalf("the message must never be re-posted, got %d posts", total)

@@ -192,32 +192,24 @@ func (client *Client) Messages(ctx context.Context, sessionID string) ([]Message
 	return messages, nil
 }
 
-// PostMessage appends a user message and starts a turn.
+// PostMessage hands a user message to a session and returns as soon as the host
+// has taken it.
 //
-// Unlike Codex, OpenCode's POST blocks until the turn finishes, so a
-// client-side deadline can expire while the message has already landed. A
-// deadline here is therefore reported as an unknown outcome, never as a
-// failure, and the caller reconciles it against the session history.
-func (client *Client) PostMessage(ctx context.Context, sessionID, text string) (Message, error) {
+// The endpoint is prompt_async, not message. /message streams the assistant's
+// answer, so its latency is the recipient's whole turn: delivering to an active
+// agent session would block for minutes, which is longer than any transport in
+// this system is willing to wait. prompt_async answers 204 once the message has
+// been accepted, and that 204 is the host's own acknowledgement of delivery.
+// Whether the queued turn has finished is a separate question and is never part
+// of the delivery verdict.
+//
+// A deadline can still expire just before the host answers, so an expired call
+// is reported as an unknown outcome rather than a failure, and the caller
+// reconciles it against the session history.
+func (client *Client) PostMessage(ctx context.Context, sessionID, text string) error {
 	payload := map[string]any{"parts": []map[string]any{{"type": "text", "text": text}}}
-	body, err := client.post(ctx, "/session/"+url.PathEscape(sessionID)+"/message", payload)
-	if err != nil {
-		return Message{}, err
-	}
-	var response messageResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return Message{}, fmt.Errorf("decode opencode message response: %w", err)
-	}
-	texts := make([]string, 0, len(response.Parts))
-	for _, part := range response.Parts {
-		if part.Type == "text" && part.Text != "" {
-			texts = append(texts, part.Text)
-		}
-	}
-	return Message{
-		SessionID: response.Info.SessionID, Role: response.Info.Role,
-		Err: response.Info.Error, Texts: texts,
-	}, nil
+	_, err := client.post(ctx, "/session/"+url.PathEscape(sessionID)+"/prompt_async", payload)
+	return err
 }
 
 func (client *Client) Busy(sessionID string) bool {
@@ -264,7 +256,9 @@ func (client *Client) post(ctx context.Context, path string, payload any) ([]byt
 		return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
+	// prompt_async answers 204 with no body, so any 2xx is a success and the
+	// body is simply empty for the endpoints that send one.
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("opencode POST %s: %s", path, response.Status)
 	}
 	return io.ReadAll(io.LimitReader(response.Body, 32<<20))
