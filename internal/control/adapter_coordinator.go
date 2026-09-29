@@ -153,17 +153,20 @@ func (coordinator *AdapterCoordinator) Send(ctx context.Context, request SendReq
 			sourceEndpoint = address.EndpointID
 		}
 	}
-	// A declared or legacy source is used only when this node publishes it, so
-	// the recipient is never shown a reply address that cannot exist.
+	// A declared address is used even when this node cannot confirm the
+	// endpoint. Refusing to deliver because the sender is unverified is the exact
+	// failure mode that the best-effort rule exists to remove: the caller asked
+	// for a message to be sent, and the reply address is only shown to the
+	// recipient as text. The LAN path also requires a caller to be present, so
+	// leaving it empty would reject the whole delivery.
+	if sourceAddress == "" && sourceEndpoint == "" {
+		if declared, err := agentbridge.ParseAddress(request.From); err == nil && declared.Valid() {
+			sourceEndpoint = declared.EndpointID
+			sourceAddress = declared.String()
+		}
+	}
 	if sourceAddress == "" && sourceEndpoint != "" {
-		published := false
-		if _, _, err := coordinator.registry.Lookup(ctx,
-			agentbridge.Address{NodeID: coordinator.localID, EndpointID: sourceEndpoint}); err == nil {
-			published = true
-		}
-		if published {
-			sourceAddress = "ra2a://" + coordinator.localID + "/" + sourceEndpoint
-		}
+		sourceAddress = "ra2a://" + coordinator.localID + "/" + sourceEndpoint
 	}
 	if sourceAddress == "" {
 		sourceAddress = "ra2a://" + coordinator.localID + "/anonymous"

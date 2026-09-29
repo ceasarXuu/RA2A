@@ -329,9 +329,9 @@ func TestLegacySourceSessionIDStillResolves(t *testing.T) {
 	if registry.deliveries[0].SourceAddress != "ra2a://node-a/legacy-caller" {
 		t.Fatalf("source address must be normalised, got %+q", registry.deliveries[0].SourceAddress)
 	}
-	// A source this node does not publish must not be shown to the recipient as
-	// a reply address, but it must not stop the delivery either: attribution is
-	// best effort by design.
+	// A source this node does not publish must not stop the delivery: attribution
+	// is best effort by design, and a caller that asked for a message to be sent
+	// gets it sent.
 	unknown := &stubRegistry{result: agentbridge.Delivered("turn-2")}
 	unknown.endpoints = []agentbridge.Endpoint{endpointFixture("node-a", "caller", agentbridge.AgentCodexApp)}
 	strict := NewAdapterCoordinator("node-a", &failingLAN{}, unknown)
@@ -343,8 +343,8 @@ func TestLegacySourceSessionIDStillResolves(t *testing.T) {
 	if len(unknown.deliveries) != 1 {
 		t.Fatalf("the delivery must happen, got %+v", unknown.deliveries)
 	}
-	if got := unknown.deliveries[0].SourceAddress; !strings.HasSuffix(got, "/anonymous") {
-		t.Fatalf("an unpublished source must be attributed as anonymous, got %q", got)
+	if got := unknown.deliveries[0].SourceAddress; got != "ra2a://node-a/not-published" {
+		t.Fatalf("a legacy source must still be carried, got %q", got)
 	}
 }
 
