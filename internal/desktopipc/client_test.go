@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
 	"testing"
 	"time"
 )
@@ -68,10 +67,6 @@ func TestClientInitializesAndStartsTurnThroughDesktopOwner(t *testing.T) {
 			ResultType: "success",
 			Result:     map[string]any{"clientId": "desktop-client-1"},
 		}); err != nil {
-			serverDone <- err
-			return
-		}
-		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
 			serverDone <- err
 			return
 		}
@@ -150,10 +145,7 @@ func TestClientSteersActiveTurnWithoutStartingAnotherTurn(t *testing.T) {
 		t.Fatalf("initialize: %v", err)
 	}
 	resolverCalled := false
-	result, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2", func(context.Context, string) (string, error) {
-		resolverCalled = true
-		return "", fmt.Errorf("must not resolve a model for steer")
-	})
+	result, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2", staticModelResolver())
 	if err != nil {
 		t.Fatalf("send message: %v", err)
 	}
@@ -197,10 +189,6 @@ func TestClientStartsIdleTurnOnlyAfterExplicitNoActiveTurn(t *testing.T) {
 			serverDone <- err
 			return
 		}
-		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
-			serverDone <- err
-			return
-		}
 		start, err := readFrame(serverConn)
 		if err != nil {
 			serverDone <- err
@@ -218,134 +206,11 @@ func TestClientStartsIdleTurnOnlyAfterExplicitNoActiveTurn(t *testing.T) {
 	if err := client.Initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	result, err := client.SendMessage(context.Background(), "thread-1", "idle message", "message-3", func(_ context.Context, threadID string) (string, error) {
-		if threadID != "thread-1" {
-			t.Fatalf("resolver thread = %q", threadID)
-		}
-		return "gpt-test", nil
-	})
+	result, err := client.SendMessage(context.Background(), "thread-1", "idle message", "message-3", staticModelResolver())
 	if err != nil {
 		t.Fatalf("send message: %v", err)
 	}
 	if result.TurnID != "turn-new" {
-		t.Fatalf("turn id = %q", result.TurnID)
-	}
-	if err := <-serverDone; err != nil {
-		t.Fatalf("server: %v", err)
-	}
-}
-
-func TestClientDoesNotStartIdleTurnWhenModelResolutionFails(t *testing.T) {
-	clientConn, serverConn := net.Pipe()
-	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
-
-	serverDone := make(chan error, 1)
-	go func() {
-		initialize, err := readFrame(serverConn)
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		if err := writeFrame(serverConn, successResponse(initialize, map[string]any{"clientId": "desktop-client-1"})); err != nil {
-			serverDone <- err
-			return
-		}
-		steer, err := readFrame(serverConn)
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		serverDone <- writeFrame(serverConn, envelope{
-			Type:       "response",
-			RequestID:  steer.RequestID,
-			ResultType: "error",
-			Error:      "no active turn",
-		})
-	}()
-
-	client := New(clientConn)
-	if err := client.Initialize(context.Background()); err != nil {
-		t.Fatalf("initialize: %v", err)
-	}
-	_, err := client.SendMessage(context.Background(), "thread-1", "idle message", "message-3", func(context.Context, string) (string, error) {
-		return "", fmt.Errorf("default model unavailable")
-	})
-	if !IsNotDelivered(err) || !strings.Contains(err.Error(), "default model unavailable") {
-		t.Fatalf("error = %v", err)
-	}
-	if err := <-serverDone; err != nil {
-		t.Fatalf("server: %v", err)
-	}
-}
-
-func TestClientRetriesStartAfterEmptyModelRejectionAndSettingsBarrier(t *testing.T) {
-	clientConn, serverConn := net.Pipe()
-	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
-
-	serverDone := make(chan error, 1)
-	go func() {
-		initialize, err := readFrame(serverConn)
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		if err := writeFrame(serverConn, successResponse(initialize, map[string]any{"clientId": "desktop-client-1"})); err != nil {
-			serverDone <- err
-			return
-		}
-		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
-			serverDone <- err
-			return
-		}
-
-		firstStart, err := readFrame(serverConn)
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		if firstStart.Method != "thread-follower-start-turn" {
-			t.Errorf("first start method = %q", firstStart.Method)
-		}
-		if err := writeFrame(serverConn, envelope{
-			Type:       "response",
-			RequestID:  firstStart.RequestID,
-			ResultType: "error",
-			Error:      "invalid_request_error: The '' model is not supported when using Codex with a ChatGPT account.",
-		}); err != nil {
-			serverDone <- err
-			return
-		}
-
-		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
-			serverDone <- err
-			return
-		}
-
-		secondStart, err := readFrame(serverConn)
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		if secondStart.Method != "thread-follower-start-turn" {
-			t.Errorf("second start method = %q", secondStart.Method)
-		}
-		assertStartTurnParams(t, secondStart.Params, "thread-1", "hello", "message-1", "gpt-test")
-		serverDone <- writeFrame(serverConn, successResponse(secondStart, map[string]any{
-			"result": map[string]any{"turn": map[string]any{"id": "turn-1"}},
-		}))
-	}()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	client := New(clientConn)
-	if err := client.Initialize(ctx); err != nil {
-		t.Fatalf("initialize: %v", err)
-	}
-	result, err := client.StartTurn(ctx, "thread-1", "hello", "message-1", "gpt-test")
-	if err != nil {
-		t.Fatalf("start turn: %v", err)
-	}
-	if result.TurnID != "turn-1" {
 		t.Fatalf("turn id = %q", result.TurnID)
 	}
 	if err := <-serverDone; err != nil {
@@ -400,9 +265,7 @@ func TestClientDoesNotStartAfterAmbiguousSteerDisconnect(t *testing.T) {
 	if err := client.Initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	_, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2", func(context.Context, string) (string, error) {
-		return "gpt-test", nil
-	})
+	_, err := client.SendMessage(context.Background(), "thread-1", "follow-up", "message-2", staticModelResolver())
 	if !IsDeliveryUnknown(err) {
 		t.Fatalf("error = %v, want delivery unknown", err)
 	}
@@ -423,7 +286,6 @@ func TestClientDoesNotRetryAmbiguousDesktopTimeout(t *testing.T) {
 			ResultType: "success",
 			Result:     map[string]any{"clientId": "desktop-client-1"},
 		})
-		_ = respondToSettingsBarrier(serverConn, "thread-1")
 		_, _ = readFrame(serverConn)
 	}()
 
@@ -461,10 +323,6 @@ func TestClientTreatsDisconnectAfterStartWriteAsDeliveryUnknown(t *testing.T) {
 			serverDone <- err
 			return
 		}
-		if err := respondToSettingsBarrier(serverConn, "thread-1"); err != nil {
-			serverDone <- err
-			return
-		}
 		if _, err := readFrame(serverConn); err != nil {
 			serverDone <- err
 			return
@@ -497,7 +355,6 @@ func TestClientTreatsRejectedStartAsDefinitelyNotDelivered(t *testing.T) {
 			ResultType: "success",
 			Result:     map[string]any{"clientId": "desktop-client-1"},
 		})
-		_ = respondToSettingsBarrier(serverConn, "thread-1")
 		start, _ := readFrame(serverConn)
 		_ = writeFrame(serverConn, envelope{
 			Type:       "response",
@@ -529,7 +386,6 @@ func TestClientTreatsSuccessfulStartWithoutTurnIDAsDeliveryUnknown(t *testing.T)
 			ResultType: "success",
 			Result:     map[string]any{"clientId": "desktop-client-1"},
 		})
-		_ = respondToSettingsBarrier(serverConn, "thread-1")
 		start, _ := readFrame(serverConn)
 		_ = writeFrame(serverConn, envelope{
 			Type:       "response",
@@ -640,4 +496,73 @@ func respondToSettingsBarrier(conn net.Conn, threadID string) error {
 
 func successResponse(request envelope, result map[string]any) envelope {
 	return envelope{Type: "response", RequestID: request.RequestID, ResultType: "success", Result: result}
+}
+
+// staticModelResolver satisfies the Desktop requirement that a follower turn
+// carries a model. The value is forwarded for that turn only; it is never
+// written into the thread settings.
+func staticModelResolver() StartModelResolver {
+	return func(context.Context, string) (string, error) { return "gpt-test", nil }
+}
+
+// RA2A delivers a message and must not touch the thread's settings. The old
+// implementation pushed the resolved model through
+// thread-follower-update-thread-settings, and because the model it resolved was
+// the one the thread was created with rather than the one in force, that call
+// silently rewrote the user's own model choice.
+func TestClientNeverWritesThreadSettings(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+
+	settingsWrites := make(chan string, 4)
+	serverDone := make(chan error, 1)
+	go func() {
+		initialize, err := readFrame(serverConn)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeFrame(serverConn, successResponse(initialize, map[string]any{"clientId": "desktop-client-1"})); err != nil {
+			serverDone <- err
+			return
+		}
+		for {
+			frame, err := readFrame(serverConn)
+			if err != nil {
+				serverDone <- err
+				return
+			}
+			if frame.Method == "thread-follower-update-thread-settings" {
+				settingsWrites <- frame.Method
+			}
+			if frame.Method != "thread-follower-start-turn" {
+				continue
+			}
+			assertStartTurnParams(t, frame.Params, "thread-1", "hello", "message-1", "gpt-test")
+			serverDone <- writeFrame(serverConn, envelope{
+				Type:       "response",
+				RequestID:  frame.RequestID,
+				ResultType: "success",
+				Result:     map[string]any{"result": map[string]any{"turn": map[string]any{"id": "turn-1"}}},
+			})
+			return
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	client := New(clientConn)
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if _, err := client.StartTurn(ctx, "thread-1", "hello", "message-1", "gpt-test"); err != nil {
+		t.Fatalf("start turn: %v", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+	close(settingsWrites)
+	for method := range settingsWrites {
+		t.Fatalf("a delivery must not write thread settings, saw %s", method)
+	}
 }

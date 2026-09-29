@@ -30,6 +30,11 @@ type envelope struct {
 	Response       map[string]any `json:"response,omitempty"`
 }
 
+// StartModelResolver reports the model a thread is currently using. It exists
+// only to satisfy Desktop, which refuses a follower turn with an empty model on
+// ChatGPT accounts; the value is never written back to the thread.
+type StartModelResolver func(context.Context, string) (string, error)
+
 type Client struct {
 	conn     net.Conn
 	clientID string
@@ -38,8 +43,6 @@ type Client struct {
 type TurnResult struct {
 	TurnID string
 }
-
-type StartModelResolver func(context.Context, string) (string, error)
 
 type textInput struct {
 	Type         string `json:"type"`
@@ -132,13 +135,12 @@ func (client *Client) StartTurn(
 	if client.clientID == "" {
 		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop IPC client is not initialized")}
 	}
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return TurnResult{}, &NotDeliveredError{Cause: errors.New("Desktop-owned turn requires a non-empty model")}
-	}
-	if err := client.synchronizeThreadSettings(ctx, threadID, model); err != nil {
-		return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("synchronize Desktop thread settings: %w", err)}
-	}
+	// RA2A delivers a message and touches nothing else. Thread settings belong
+	// to the user: writing a model here silently overwrote whatever they had
+	// selected, because the model resolved for a thread is not necessarily the
+	// one currently in force. The turn therefore inherits the thread's own
+	// settings, and a model is forwarded only when the caller already knows the
+	// thread's current one.
 	request := envelope{
 		Type:           "request",
 		SourceClientID: client.clientID,
@@ -147,26 +149,12 @@ func (client *Client) StartTurn(
 		Params: map[string]any{
 			"conversationId": threadID,
 			"turnStart": map[string]any{
-				"request": map[string]any{
-					"threadId":            threadID,
-					"input":               []textInput{newTextInput(text)},
-					"clientUserMessageId": messageID,
-					"model":               model,
-				},
+				"request": startTurnRequest(threadID, text, messageID, model),
 				"context": map[string]any{"inheritThreadSettings": true},
 			},
 		},
 	}
 	result, err := client.call(ctx, request)
-	if err != nil && isEmptyModelRejection(err) {
-		// The follower handler enters startTurn directly, while the normal UI
-		// path waits for pending thread-settings updates first. An explicit
-		// empty-model rejection is safe to retry after that private barrier.
-		if barrierErr := client.synchronizeThreadSettings(ctx, threadID, model); barrierErr != nil {
-			return TurnResult{}, &NotDeliveredError{Cause: fmt.Errorf("wait for Desktop thread settings before retry: %w", barrierErr)}
-		}
-		result, err = client.call(ctx, request)
-	}
 	if err != nil {
 		var rejected *requestRejectedError
 		if errors.As(err, &rejected) {
@@ -185,18 +173,27 @@ func (client *Client) StartTurn(
 	return TurnResult{TurnID: turnID}, nil
 }
 
-func (client *Client) synchronizeThreadSettings(ctx context.Context, threadID, model string) error {
-	_, err := client.call(ctx, envelope{
-		Type:           "request",
-		SourceClientID: client.clientID,
-		Version:        2,
-		Method:         "thread-follower-update-thread-settings",
-		Params: map[string]any{
-			"conversationId": threadID,
-			"threadSettings": map[string]any{"model": model},
-		},
-	})
-	return err
+// startTurnRequest builds the turn payload.
+//
+// It deliberately carries no model. RA2A delivers a message and must not
+// influence anything else about the session, and the model it could resolve is
+// not reliably the one in force: a thread reports the model it was created with,
+// not the one the user switched to afterwards. Sending that value both selected
+// the wrong model for the turn and, once Desktop persisted it, rewrote the
+// session's own setting. The turn therefore inherits the thread's settings.
+func startTurnRequest(threadID, text, messageID, model string) map[string]any {
+	request := map[string]any{
+		"threadId":            threadID,
+		"input":               []textInput{newTextInput(text)},
+		"clientUserMessageId": messageID,
+	}
+	// Desktop rejects a follower turn that carries no model on ChatGPT accounts,
+	// so the thread's current model is forwarded. It is never written into the
+	// thread settings: doing that rewrote the model the user had selected.
+	if model = strings.TrimSpace(model); model != "" {
+		request["model"] = model
+	}
+	return request
 }
 
 func (client *Client) SendMessage(
