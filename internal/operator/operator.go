@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
+	"github.com/ceasarXuu/RA2A/internal/ochost"
 )
 
 const Version = "v0.0.15"
@@ -262,6 +263,11 @@ func Stop() (Config, error) {
 	if err := codexhost.CleanupManaged(codexhost.DefaultSocketPath()); err != nil {
 		return config, fmt.Errorf("cleanup managed Codex host: %w", err)
 	}
+	// The shared OpenCode server is owned by this daemon, not by whichever TUI
+	// happened to start it, so it is reclaimed alongside the Codex host.
+	if err := ochost.CleanupShared(OpenCodeOwnerPath()); err != nil {
+		return config, fmt.Errorf("cleanup shared OpenCode server: %w", err)
+	}
 	return config, nil
 }
 
@@ -275,6 +281,11 @@ func Exit() (Config, error) {
 	}
 	if err := codexhost.CleanupManaged(codexhost.DefaultSocketPath()); err != nil {
 		return config, fmt.Errorf("cleanup managed Codex host: %w", err)
+	}
+	// The shared OpenCode server is owned by this daemon, not by whichever TUI
+	// happened to start it, so it is reclaimed alongside the Codex host.
+	if err := ochost.CleanupShared(OpenCodeOwnerPath()); err != nil {
+		return config, fmt.Errorf("cleanup shared OpenCode server: %w", err)
 	}
 	// The MCP process is owned by Codex and exits with its stdio connection. Removing
 	// the registration prevents Codex from starting another RA2A MCP process.

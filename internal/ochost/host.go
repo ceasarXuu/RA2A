@@ -284,3 +284,43 @@ func processAlive(pid int) bool {
 	}
 	return process.Signal(syscall.Signal(0)) == nil
 }
+
+// CleanupShared stops a server that RA2A started, using the recorded owner
+// file. It is the counterpart to RegisterOwnerRecord: the RA2A daemon owns the
+// shared OpenCode server, so `ra2a stop` and `ra2a exit` must reclaim it the
+// same way they reclaim the managed Codex App Server. Stopping is skipped when
+// the recorded process is not alive, so an externally started server the user
+// wants to keep is never touched.
+func CleanupShared(ownerPath string) error {
+	if ownerPath == "" {
+		return nil
+	}
+	record, err := readOwner(ownerPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if record.PID <= 0 || !processAlive(record.PID) {
+		return os.Remove(ownerPath)
+	}
+	process, err := os.FindProcess(record.PID)
+	if err != nil {
+		return os.Remove(ownerPath)
+	}
+	if err := process.Signal(syscall.SIGTERM); err != nil {
+		return fmt.Errorf("stop shared OpenCode server: %w", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if !processAlive(record.PID) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if processAlive(record.PID) {
+		_ = process.Signal(syscall.SIGKILL)
+	}
+	return os.Remove(ownerPath)
+}

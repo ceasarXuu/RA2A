@@ -175,3 +175,14 @@ func executablePathGuess() string {
 	}
 	return executable
 }
+
+// OpenCodeOwnerPath records which process owns the shared OpenCode server. The
+// server is a shared resource, so its owner is the RA2A daemon rather than
+// whichever TUI started it.
+func OpenCodeOwnerPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "ra2a", "opencode-owner.json")
+}

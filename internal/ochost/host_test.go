@@ -2,6 +2,7 @@ package ochost
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -263,4 +264,32 @@ func TestServerOutlivesTheClientThatStartedIt(t *testing.T) {
 	}
 	_ = host.Close()
 	t.Fatal("the shared server must not die with the client that started it")
+}
+
+// RA2A owns the shared server, so stop/exit must reclaim it. A server the user
+// started themselves has no RA2A owner record and must be left alone.
+func TestCleanupSharedReclaimsOnlyServersRa2AStarted(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.json")
+	if err := CleanupShared(missing); err != nil {
+		t.Fatalf("cleanup with no owner record must be a no-op, got %v", err)
+	}
+	if err := CleanupShared(""); err != nil {
+		t.Fatalf("cleanup with no owner path must be a no-op, got %v", err)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatalf("cleanup must not create an owner record, got %v", err)
+	}
+	// An owner record pointing at a dead process is simply cleaned up.
+	ownerPath := filepath.Join(t.TempDir(), "owner.json")
+	record := ownerRecord{PID: 999999, URL: "http://127.0.0.1:4099"}
+	data, _ := json.Marshal(record)
+	if err := os.WriteFile(ownerPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CleanupShared(ownerPath); err != nil {
+		t.Fatalf("cleanup of a stale record: %v", err)
+	}
+	if _, err := os.Stat(ownerPath); !os.IsNotExist(err) {
+		t.Fatalf("a stale owner record must be removed, got %v", err)
+	}
 }
