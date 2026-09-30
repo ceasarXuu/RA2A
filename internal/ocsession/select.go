@@ -30,6 +30,7 @@ func Select(ctx context.Context, baseURL string, args []string) (string, []strin
 	}
 	var session string
 	resume := false
+	project := false
 	kept := make([]string, 0, len(args)+2)
 	for i := 0; i < len(args); i++ {
 		name, value, hasValue := strings.Cut(args[i], "=")
@@ -48,6 +49,7 @@ func Select(ctx context.Context, baseURL string, args []string) (string, []strin
 					return "", nil, err
 				}
 				kept = append(kept, "--dir", directory)
+				project = true
 			} else {
 				session = value
 			}
@@ -56,6 +58,24 @@ func Select(ctx context.Context, baseURL string, args []string) (string, []strin
 		case "--fork":
 			return "", nil, fmt.Errorf("--fork is not supported with --ra2a: forked session ownership cannot be verified")
 		default:
+			if (name == "--log-level" || name == "--password" || name == "-p" ||
+				name == "--username" || name == "-u" || name == "--replay-limit") && !hasValue {
+				i++
+				if i >= len(args) {
+					return "", nil, fmt.Errorf("%s requires a value", name)
+				}
+				kept = append(kept, name, args[i])
+				continue
+			}
+			if !strings.HasPrefix(args[i], "-") && !project {
+				directory, err = filepath.Abs(args[i])
+				if err != nil {
+					return "", nil, err
+				}
+				kept = append(kept, "--dir", directory)
+				project = true
+				continue
+			}
 			kept = append(kept, args[i])
 		}
 	}

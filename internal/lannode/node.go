@@ -57,6 +57,7 @@ type Peer struct {
 // mixed-version nodes never mis-route or crash.
 type Session struct {
 	ID           string   `json:"id"`
+	Address      string   `json:"address,omitempty"`
 	Title        string   `json:"title"`
 	Status       string   `json:"status"`
 	Agent        string   `json:"agent,omitempty"`

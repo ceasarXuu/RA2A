@@ -21,6 +21,19 @@ func TestContainsRA2A(t *testing.T) {
 	}
 }
 
+func TestInteractiveTUIAutoAttachAndNativeCommandsPassThrough(t *testing.T) {
+	for _, args := range [][]string{nil, {}, {"--auto"}, {"--continue"}, {"--session", "ses_1"}, {"my-project"}} {
+		if !interactiveTUI(args) {
+			t.Fatalf("interactive TUI %v should attach automatically", args)
+		}
+	}
+	for _, args := range [][]string{{"--help"}, {"--version"}, {"mcp", "list"}, {"run", "hello"}, {"serve", "--port", "4099"}, {"models"}, {"session", "list"}, {"--port", "4098"}, {"--model", "my-model"}} {
+		if interactiveTUI(args) {
+			t.Fatalf("native subcommand %v must pass through", args)
+		}
+	}
+}
+
 func TestWithoutRA2AStripsOnlyTheFlag(t *testing.T) {
 	got := withoutRA2A([]string{"--ra2a", "serve", "--ra2a", "--port"})
 	want := []string{"serve", "--port"}

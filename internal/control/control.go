@@ -137,6 +137,11 @@ func (coordinator *Coordinator) storeSessions(id string, sessions []lannode.Sess
 func sortedTargets(byID map[string]Target) []Target {
 	targets := make([]Target, 0, len(byID))
 	for _, target := range byID {
+		for index := range target.Sessions {
+			if target.Sessions[index].Address == "" {
+				target.Sessions[index].Address = "ra2a://" + target.ID + "/" + target.Sessions[index].ID
+			}
+		}
 		targets = append(targets, target)
 	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })

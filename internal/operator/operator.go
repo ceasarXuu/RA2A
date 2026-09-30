@@ -22,10 +22,11 @@ import (
 const Version = "v0.0.15"
 
 type Config struct {
-	NodeID string `json:"nodeId"`
-	Name   string `json:"name"`
-	PIN    string `json:"pin"`
-	Codex  string `json:"codex"`
+	NodeID   string `json:"nodeId"`
+	Name     string `json:"name"`
+	PIN      string `json:"pin"`
+	Codex    string `json:"codex,omitempty"`
+	OpenCode string `json:"opencode,omitempty"`
 	// CLISessions lists the Codex CLI thread IDs this node publishes. Ownership
 	// of a CLI thread cannot be read back from the host, so adoption is an
 	// explicit operator decision recorded here rather than a guess.
@@ -162,8 +163,8 @@ func Save(config Config) error {
 }
 
 func Validate(config Config) error {
-	if config.NodeID == "" || strings.TrimSpace(config.Name) == "" || config.Codex == "" {
-		return errors.New("node ID, name, and Codex path are required")
+	if config.NodeID == "" || strings.TrimSpace(config.Name) == "" || (config.Codex == "" && config.OpenCode == "") {
+		return errors.New("node ID, name, and at least one supported harness are required")
 	}
 	if len(config.PIN) != 6 || strings.IndexFunc(config.PIN, func(r rune) bool {
 		return r > 127 || !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
@@ -187,6 +188,10 @@ func SetupInteractive(input io.Reader, output io.Writer) error {
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	config = DetectHarnesses(Config{})
+	if config.Codex == "" && config.OpenCode == "" {
+		return errors.New("no supported harness found: install Codex or OpenCode, then run ra2a again")
+	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		return err
@@ -204,11 +209,7 @@ func SetupInteractive(input io.Reader, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	codex, err := findCodex()
-	if err != nil {
-		return err
-	}
-	config = Config{NodeID: hostname, Name: name, PIN: pin, Codex: codex}
+	config.NodeID, config.Name, config.PIN = hostname, name, pin
 	if err := Save(config); err != nil {
 		return err
 	}
@@ -221,6 +222,7 @@ func SetupInteractive(input io.Reader, output io.Writer) error {
 }
 
 func Setup(config Config) error {
+	config = DetectHarnesses(config)
 	if err := Save(config); err != nil {
 		return err
 	}
@@ -289,7 +291,9 @@ func Exit() (Config, error) {
 	}
 	// The MCP process is owned by Codex and exits with its stdio connection. Removing
 	// the registration prevents Codex from starting another RA2A MCP process.
-	_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
+	if config.Codex != "" {
+		_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
+	}
 	return config, UnregisterOpenCodeMCP()
 }
 
@@ -376,45 +380,6 @@ func generatePIN() (string, error) {
 		raw[i] = alphabet[int(raw[i])%len(alphabet)]
 	}
 	return string(raw), nil
-}
-
-func findCodex() (string, error) {
-	if path, err := exec.LookPath("codex"); err == nil {
-		return filepath.Abs(path)
-	}
-	if runtime.GOOS == "darwin" {
-		path := "/Applications/ChatGPT.app/Contents/Resources/codex"
-		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-			return path, nil
-		}
-	}
-	return "", errors.New("Codex executable not found in PATH")
-}
-
-func InstallAndStart(config Config) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
-	if output, err := exec.Command(config.Codex, "mcp", "add", "ra2a", "--", executable, "mcp").CombinedOutput(); err != nil {
-		return fmt.Errorf("register Codex MCP: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	// OpenCode agents must be able to send without the operator editing their
-	// config, so registration happens here rather than being documented as a step.
-	if err := RegisterOpenCodeMCP(executable); err != nil {
-		fmt.Fprintf(os.Stderr, "register OpenCode MCP: %v\n", err)
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		return installDarwin(executable)
-	case "linux":
-		return installLinux(executable)
-	case "windows":
-		return installWindows(executable)
-	default:
-		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
-	}
 }
 
 func installDarwin(executable string) error {

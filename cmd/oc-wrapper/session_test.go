@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -21,8 +22,9 @@ func TestSelectSessionPinsNewAndContinuedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	var created bool
+	expectedDirectory := directory
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Query().Get("directory") != directory {
+		if request.URL.Query().Get("directory") != expectedDirectory {
 			t.Errorf("wrong directory: %s", request.URL)
 		}
 		switch request.Method {
@@ -51,6 +53,11 @@ func TestSelectSessionPinsNewAndContinuedSession(t *testing.T) {
 	id, args, err = ocsession.Select(ctx, server.URL, []string{"--session", "ses_given"})
 	if err != nil || id != "ses_given" || !reflect.DeepEqual(args, []string{"--session", "ses_given"}) {
 		t.Fatalf("explicit: id=%q args=%v err=%v", id, args, err)
+	}
+	expectedDirectory = filepath.Join(directory, "project-demo")
+	id, args, err = ocsession.Select(ctx, server.URL, []string{"project-demo", "--mini"})
+	if err != nil || id != "ses_new" || !reflect.DeepEqual(args, []string{"--dir", expectedDirectory, "--mini", "--session", "ses_new"}) {
+		t.Fatalf("project TUI: id=%q args=%v err=%v", id, args, err)
 	}
 }
 

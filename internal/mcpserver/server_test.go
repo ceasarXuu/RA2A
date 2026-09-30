@@ -40,6 +40,10 @@ func TestServeListsOnlyProductionTools(t *testing.T) {
 	if len(tools) != 2 || tools[0].(map[string]any)["name"] != "list_targets" || tools[1].(map[string]any)["name"] != "send_message" {
 		t.Fatalf("tools = %#v", tools)
 	}
+	schema := tools[1].(map[string]any)["inputSchema"].(map[string]any)
+	if _, exists := schema["properties"].(map[string]any)["from"]; !exists {
+		t.Fatal("send_message must expose its supported caller address parameter in the tool schema")
+	}
 	if description := tools[0].(map[string]any)["description"].(string); !strings.Contains(description, "discovered") || !strings.Contains(description, "status") {
 		t.Fatalf("list_targets description = %q", description)
 	}

@@ -98,6 +98,7 @@ func productionTools() []any {
 				"properties": map[string]any{
 					"to":   map[string]string{"type": "string", "description": "Target address: ra2a://node-id/session-id"},
 					"text": map[string]string{"type": "string", "description": "Message text"},
+					"from": map[string]string{"type": "string", "description": "Optional calling session address from list_targets, required when the host cannot identify which session is sending"},
 				},
 				"required": []string{"to", "text"}, "additionalProperties": false,
 			},

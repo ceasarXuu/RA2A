@@ -138,7 +138,7 @@ func Start(ctx context.Context, config Config) (*Host, error) {
 		command := host.cmd
 		host.mu.Unlock()
 		if command != nil && command.Process != nil {
-			_ = command.Process.Kill()
+			_ = stopSharedProcess(command.Process.Pid)
 		}
 		_ = host.clearOwner()
 		return nil, err
@@ -164,7 +164,7 @@ func (host *Host) spawn(ctx context.Context) error {
 	// every other client. Its lifetime is bounded by explicit Close, which the
 	// RA2A daemon calls on stop/exit.
 	superviseCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	command := exec.Command(host.config.Executable, "serve",
+	command := serverCommand(host.config.Executable, "serve",
 		"--port", strconv.Itoa(port), "--hostname", "127.0.0.1")
 	command.Stderr = host.config.Stderr
 	command.Stdout = host.config.Stderr

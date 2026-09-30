@@ -1,9 +1,9 @@
 // Command oc-wrapper is a transparent launcher for the opencode command.
 //
-// `opencode --ra2a` attaches the TUI to a known session on the shared server, so
+// Interactive `opencode` (or `opencode --ra2a`) attaches the TUI to a known
+// session on the shared server, so
 // messages injected by RA2A are executed there. Every other invocation passes
-// straight through to the native opencode,
-// so the wrapper is invisible unless the user asks for it.
+// straight through to the native opencode.
 //
 // Sharing one server is required, not cosmetic: OpenCode servers do not notify
 // each other about writes to the shared session store, so a message injected
@@ -30,9 +30,10 @@ import (
 
 const ra2aFlag = "--ra2a"
 
-const usage = `opencode [options] --ra2a
+const usage = `opencode [options] [--ra2a]
 
-  --ra2a   run the TUI on the RA2A-supervised OpenCode server. Messages sent by
+  Interactive TUI launches use the RA2A-supervised OpenCode server by default.
+  --ra2a   explicitly request the same shared TUI mode. Messages sent by
            RA2A then appear live, and RA2A can see whether this session is busy
            so it never interrupts a turn in progress.
 
@@ -41,8 +42,17 @@ const usage = `opencode [options] --ra2a
   --hostname and --mdns are refused because they would move the TUI off the
   shared server.
 
-  Any invocation without --ra2a runs the native opencode untouched.
+  Non-TUI subcommands, --help and --version run the native opencode untouched.
 `
+
+var nativeSubcommands = map[string]bool{
+	"completion": true, "acp": true, "mcp": true, "run": true, "debug": true,
+	"providers": true, "auth": true, "agent": true, "upgrade": true,
+	"uninstall": true, "serve": true, "web": true, "models": true,
+	"stats": true, "export": true, "import": true, "github": true,
+	"pr": true, "session": true, "plugin": true, "plug": true,
+	"db": true, "attach": true,
+}
 
 type config struct {
 	serverURL   string
@@ -69,10 +79,10 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 		fmt.Fprint(stdout, usage)
 		return nil
 	}
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		return passthrough(args, stdout, stderr)
-	}
-	if !containsRA2A(args) {
+	if !containsRA2A(args) && !interactiveTUI(args) {
+		if usesNativeOnlyOptions(args) {
+			fmt.Fprintln(stderr, "opencode: these options require a private server; RA2A auto-attachment is not active for this invocation")
+		}
 		return passthrough(args, stdout, stderr)
 	}
 
@@ -125,7 +135,7 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 		}
 	}
 
-	command := exec.Command(settings.executable, append([]string{"attach", settings.serverURL}, attach...)...)
+	command := nativeCommand(settings.executable, append([]string{"attach", settings.serverURL}, attach...)...)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
@@ -133,6 +143,33 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 		return fmt.Errorf("opencode attach %s: %w", settings.serverURL, err)
 	}
 	return nil
+}
+
+func interactiveTUI(args []string) bool {
+	if usesNativeOnlyOptions(args) {
+		return false
+	}
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" || arg == "--version" || arg == "-v" {
+			return false
+		}
+		if nativeSubcommands[arg] {
+			return false
+		}
+	}
+	return true
+}
+
+func usesNativeOnlyOptions(args []string) bool {
+	for _, arg := range args {
+		name, _, _ := strings.Cut(arg, "=")
+		switch name {
+		case "--port", "--hostname", "--mdns", "--mdns-domain", "--cors", "--fork",
+			"--model", "-m", "--agent", "--prompt":
+			return true
+		}
+	}
+	return false
 }
 
 // translateAttachArgs splits the user's arguments into what `attach` accepts and
@@ -201,11 +238,18 @@ func passthrough(args []string, stdout, stderr *os.File) error {
 	if executable == "" {
 		return errors.New("native OpenCode binary not found outside the RA2A wrapper")
 	}
-	command := exec.Command(executable, args...)
+	command := nativeCommand(executable, args...)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
 	return command.Run()
+}
+
+func nativeCommand(executable string, args ...string) *exec.Cmd {
+	if runtime.GOOS == "windows" && (strings.EqualFold(filepath.Ext(executable), ".cmd") || strings.EqualFold(filepath.Ext(executable), ".bat")) {
+		return exec.Command("cmd.exe", append([]string{"/d", "/c", executable}, args...)...)
+	}
+	return exec.Command(executable, args...)
 }
 
 // nativeExecutable finds the real opencode, skipping this wrapper so it can
@@ -223,9 +267,15 @@ func nativeExecutable() string {
 	}
 	if self, err := os.Executable(); err == nil {
 		directory := filepath.Dir(self)
+		if raw, err := os.ReadFile(filepath.Join(directory, ".ra2a-opencode-native-path")); err == nil {
+			candidate := strings.TrimSpace(string(raw))
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() && !isSelf(candidate) {
+				return candidate
+			}
+		}
 		names := []string{"opencode.real", "opencode-bin"}
 		if runtime.GOOS == "windows" {
-			names = []string{"opencode.real.exe", "opencode-bin.exe"}
+			names = []string{"opencode.real.exe", "opencode.real.cmd", "opencode-bin.exe", "opencode-bin.cmd"}
 		}
 		for _, name := range names {
 			candidate := filepath.Join(directory, name)
@@ -238,18 +288,17 @@ func nativeExecutable() string {
 		if directory == "" {
 			directory = "."
 		}
-		name := "opencode"
+		names := []string{"opencode"}
 		if runtime.GOOS == "windows" {
-			name += ".exe"
+			names = []string{"opencode.exe", "opencode.cmd"}
 		}
-		candidate := filepath.Join(directory, name)
-		if info, err := os.Stat(candidate); err != nil || info.IsDir() {
-			continue
+		for _, name := range names {
+			candidate := filepath.Join(directory, name)
+			if info, err := os.Stat(candidate); err != nil || info.IsDir() || isSelf(candidate) {
+				continue
+			}
+			return candidate
 		}
-		if isSelf(candidate) {
-			continue
-		}
-		return candidate
 	}
 	return ""
 }

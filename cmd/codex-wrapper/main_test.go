@@ -73,6 +73,25 @@ func TestClassifyHelpAndVersionPassThrough(t *testing.T) {
 	}
 }
 
+func TestOfficialDaemonKeepsNativeTUIAndFallbackUsesManagedSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix fake CLI fixture")
+	}
+	native := filepath.Join(t.TempDir(), "codex")
+	if err := os.WriteFile(native, []byte("#!/bin/sh\nprintf '{\"status\":\"%s\"}\\n' \"$CODEX_TEST_DAEMON_STATUS\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--yolo"}
+	t.Setenv("CODEX_TEST_DAEMON_STATUS", "running")
+	if got := managedArgs(native, "/tmp/managed.sock", args); len(got) != 1 || got[0] != "--yolo" {
+		t.Fatalf("native shared daemon must keep TUI untouched: %v", got)
+	}
+	t.Setenv("CODEX_TEST_DAEMON_STATUS", "stopped")
+	if got := managedArgs(native, "/tmp/managed.sock", args); len(got) != 3 || got[0] != "--remote" || got[1] != "unix:///tmp/managed.sock" {
+		t.Fatalf("unavailable official daemon should use managed fallback: %v", got)
+	}
+}
+
 func TestReadySocketAcceptsOnlyLiveManagedServer(t *testing.T) {
 	home := newShortDir(t)
 	t.Setenv("CODEX_HOME", home)

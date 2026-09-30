@@ -109,7 +109,7 @@ func (coordinator *AdapterCoordinator) localSessions(ctx context.Context) ([]lan
 			capabilities = append(capabilities, string(capability))
 		}
 		sessions = append(sessions, lannode.Session{
-			ID: endpoint.Address.EndpointID, Title: endpoint.Title,
+			ID: endpoint.Address.EndpointID, Address: endpoint.Address.String(), Title: endpoint.Title,
 			Status: string(endpoint.Status), Agent: string(endpoint.Agent),
 			Capabilities: capabilities,
 		})

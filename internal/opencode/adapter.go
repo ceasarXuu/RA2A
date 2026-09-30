@@ -108,9 +108,13 @@ func (adapter *Adapter) Watch(ctx context.Context) {
 	adapter.watcher = cancel
 	adapter.mu.Unlock()
 	go func() {
+		disconnected := false
 		for {
-			if err := adapter.client.Watch(watchCtx); err != nil && watchCtx.Err() == nil {
-				adapter.logger.Info("opencode_event_stream_dropped", "error", err.Error())
+			if err := adapter.client.Watch(watchCtx); watchCtx.Err() == nil {
+				if !disconnected {
+					adapter.logger.Info("opencode_event_stream_dropped", "error", err)
+					disconnected = true
+				}
 			}
 			if watchCtx.Err() != nil {
 				return
@@ -246,6 +250,13 @@ func (adapter *Adapter) Health(ctx context.Context) agentbridge.Health {
 	adapter.mu.Lock()
 	adapter.reachable, adapter.lastProbe = reachable, time.Now()
 	adapter.mu.Unlock()
+	if !probedAt.IsZero() && cached != reachable {
+		if reachable {
+			adapter.logger.Info("opencode_server_recovered", "server", adapter.baseURL)
+		} else {
+			adapter.logger.Info("opencode_server_unreachable", "server", adapter.baseURL)
+		}
+	}
 	if !reachable {
 		return agentbridge.Unhealthy(agentbridge.ResultUnreachable, "OpenCode server is not answering")
 	}
