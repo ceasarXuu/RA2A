@@ -164,7 +164,7 @@ func (host *Host) spawn(ctx context.Context) error {
 	command.Stdout = host.config.Stderr
 	// A new process group keeps a terminal signal aimed at the caller's TUI from
 	// reaching the shared server.
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureServerCommand(command)
 	if err := command.Start(); err != nil {
 		cancel()
 		return fmt.Errorf("start opencode server: %w", err)
