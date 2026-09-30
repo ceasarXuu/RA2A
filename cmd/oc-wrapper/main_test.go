@@ -59,18 +59,21 @@ func TestNativeExecutableNeverReturnsTheWrapperItself(t *testing.T) {
 	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// CI machines need not have OpenCode installed. The missing-native case
+	// must fail closed, not accidentally find a developer's PATH entry.
+	t.Setenv("PATH", directory)
 	t.Setenv("RA2A_OPENCODE_BINARY", real)
 	if got := nativeExecutable(); got != real {
 		t.Fatalf("the recorded native binary must win, got %q", got)
 	}
 	missing := filepath.Join(directory, "absent")
 	t.Setenv("RA2A_OPENCODE_BINARY", missing)
-	if got := nativeExecutable(); got == missing {
-		t.Fatal("a recorded path that does not exist must fall through")
+	if got := nativeExecutable(); got != "" {
+		t.Fatalf("a missing native OpenCode must not resolve to an arbitrary executable, got %q", got)
 	}
 	t.Setenv("RA2A_OPENCODE_BINARY", "")
-	if got := nativeExecutable(); got == "" {
-		t.Fatal("the native executable must never resolve to an empty path")
+	if got := nativeExecutable(); got != "" {
+		t.Fatalf("an empty override without a native binary must fail closed, got %q", got)
 	}
 }
 
