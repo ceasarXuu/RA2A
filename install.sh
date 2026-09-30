@@ -6,18 +6,12 @@ usage() {
   cat <<'EOF'
 Usage: ./install.sh
        ./install.sh --pin ABC123 --node-id ID [--name NAME] [--codex PATH]
-       ./install.sh --codex-wrapper
-       ./install.sh --opencode-wrapper
        ./install.sh --uninstall
 
 Without setup options, installs the command only. Run ra2a to finish setup.
 With a PIN, performs an Agent-friendly non-interactive setup.
---codex-wrapper installs a fallback codex launcher. Recent Codex CLI attaches to
-its own shared app-server daemon on its own, so this wrapper is only needed when
-daemon attachment is blocked (--no-daemon, -c overrides, --profile,
-CODEX_EXEC_SERVER_URL, the Bedrock first-run wizard, or an elevated Windows
-terminal). It proxies plain TUI sessions when RA2A is available and otherwise
-passes through the native codex.
+Supported harnesses are detected automatically. Codex CLI and OpenCode launchers
+are installed when their native commands exist; no wrapper options are needed.
 EOF
 }
 
@@ -25,8 +19,6 @@ PIN=
 NODE_ID=$(hostname 2>/dev/null || printf 'ra2a-node')
 NODE_NAME=
 CODEX_PATH=
-WRAPPER=0
-OC_WRAPPER=0
 SETUP=0
 UNINSTALL=0
 while [ "$#" -gt 0 ]; do
@@ -35,8 +27,7 @@ while [ "$#" -gt 0 ]; do
     --node-id) [ "$#" -ge 2 ] || fail '--node-id requires a value'; NODE_ID=$2; SETUP=1; shift 2 ;;
     --name) [ "$#" -ge 2 ] || fail '--name requires a value'; NODE_NAME=$2; SETUP=1; shift 2 ;;
     --codex) [ "$#" -ge 2 ] || fail '--codex requires a value'; CODEX_PATH=$2; SETUP=1; shift 2 ;;
-    --codex-wrapper) WRAPPER=1; shift ;;
-    --opencode-wrapper) OC_WRAPPER=1; shift ;;
+    --codex-wrapper|--opencode-wrapper) shift ;; # accepted for older callers; detection is automatic
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) fail "unknown option: $1" ;;
@@ -61,7 +52,14 @@ if [ "$UNINSTALL" -eq 1 ]; then
   # Run the MCP cleanup before removing a wrapper so `mcp` still passes through.
   if [ -n "$MCP_CODEX" ] && [ -x "$MCP_CODEX" ]; then "$MCP_CODEX" mcp remove ra2a >/dev/null 2>&1 || true; fi
   if [ -f "$WRAPPER_MARKER" ]; then
-    rm -f "$BIN_DIR/codex" "$WRAPPER_MARKER"
+    if [ -L "$BIN_DIR/codex.bin" ]; then
+      rm -f "$BIN_DIR/codex" "$BIN_DIR/codex.bin"
+    elif [ -e "$BIN_DIR/codex.bin" ]; then
+      mv -f "$BIN_DIR/codex.bin" "$WRAPPER_PATH"
+    else
+      rm -f "$WRAPPER_PATH"
+    fi
+    rm -f "$WRAPPER_MARKER"
     printf 'RA2A codex wrapper removed; the native codex command is restored.\n'
   fi
   if [ -f "$OC_WRAPPER_MARKER" ]; then
@@ -94,28 +92,96 @@ fi
 case "$OS_NAME" in Darwin|Linux) ;; *) fail "unsupported operating system: $OS_NAME" ;; esac
 command -v go >/dev/null 2>&1 || fail 'Go 1.24 or newer is required to build from source'
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+CODEX_NATIVE=$CODEX_PATH
+if [ -n "$CODEX_NATIVE" ] && [ ! -x "$CODEX_NATIVE" ]; then fail "Codex executable is not runnable: $CODEX_NATIVE"; fi
+if [ -z "$CODEX_NATIVE" ] && command -v codex >/dev/null 2>&1; then CODEX_NATIVE=$(command -v codex); fi
+if [ -z "$CODEX_NATIVE" ] && [ -x "$WRAPPER_PATH" ]; then CODEX_NATIVE=$WRAPPER_PATH; fi
+if [ -f "$WRAPPER_MARKER" ]; then
+  if [ -e "$BIN_DIR/codex.bin" ]; then
+    CODEX_NATIVE=$BIN_DIR/codex.bin
+  else
+    CODEX_NATIVE=
+    old_ifs=$IFS; IFS=:
+    for directory in $PATH; do
+      [ -n "$directory" ] || directory=.
+      if [ "$directory/codex" != "$WRAPPER_PATH" ] && [ -x "$directory/codex" ]; then
+        CODEX_NATIVE=$directory/codex
+        break
+      fi
+    done
+    IFS=$old_ifs
+    if [ -n "$CODEX_NATIVE" ]; then
+      if [ -L "$BIN_DIR/codex.bin" ]; then mv "$BIN_DIR/codex.bin" "$BIN_DIR/codex.bin.stale-$(date +%s)"; fi
+      ln -s "$CODEX_NATIVE" "$BIN_DIR/codex.bin"
+      CODEX_NATIVE=$BIN_DIR/codex.bin
+    else
+      mv "$WRAPPER_PATH" "$WRAPPER_PATH.retired-$(date +%s)"
+      mv "$WRAPPER_MARKER" "$WRAPPER_MARKER.retired-$(date +%s)"
+    fi
+  fi
+fi
+OC_NATIVE=
+if command -v opencode >/dev/null 2>&1; then OC_NATIVE=$(command -v opencode); fi
+if [ -z "$OC_NATIVE" ] && [ -x "$OC_WRAPPER_PATH" ]; then OC_NATIVE=$OC_WRAPPER_PATH; fi
+if [ -f "$OC_WRAPPER_MARKER" ]; then
+  if [ -x "$BIN_DIR/opencode.real" ]; then
+    OC_NATIVE=$BIN_DIR/opencode.real
+  else
+    OC_NATIVE=
+    old_ifs=$IFS; IFS=:
+    for directory in $PATH; do
+      [ -n "$directory" ] || directory=.
+      if [ "$directory/opencode" != "$OC_WRAPPER_PATH" ] && [ -x "$directory/opencode" ]; then
+        OC_NATIVE=$directory/opencode
+        break
+      fi
+    done
+    IFS=$old_ifs
+    if [ -z "$OC_NATIVE" ]; then
+      mv "$OC_WRAPPER_PATH" "$OC_WRAPPER_PATH.retired-$(date +%s)"
+      mv "$OC_WRAPPER_MARKER" "$OC_WRAPPER_MARKER.retired-$(date +%s)"
+    fi
+  fi
+fi
+CODEX_FOR_CONFIG=$CODEX_NATIVE
+if [ -z "$CODEX_FOR_CONFIG" ] && [ "$OS_NAME" = Darwin ] && [ -x /Applications/ChatGPT.app/Contents/Resources/codex ]; then
+  CODEX_FOR_CONFIG=/Applications/ChatGPT.app/Contents/Resources/codex
+fi
+if [ -n "$CODEX_NATIVE" ]; then printf 'detected harness: Codex CLI (%s)\n' "$CODEX_NATIVE"; fi
+if [ -n "$OC_NATIVE" ]; then printf 'detected harness: OpenCode (%s)\n' "$OC_NATIVE"; fi
+if [ -n "$CODEX_FOR_CONFIG" ] && [ -z "$CODEX_NATIVE" ]; then printf 'detected harness: Codex App (%s)\n' "$CODEX_FOR_CONFIG"; fi
+if [ -z "$CODEX_FOR_CONFIG" ] && [ -z "$OC_NATIVE" ]; then printf 'no supported harness detected; RA2A command only will be installed\n'; fi
 BUILD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ra2a-install.XXXXXX")
 trap 'rm -rf "$BUILD_DIR"' EXIT HUP INT TERM
 (cd "$SCRIPT_DIR" && go build -trimpath -ldflags '-s -w' -o "$BUILD_DIR/ra2a" ./cmd/ra2a)
+if [ -n "$CODEX_NATIVE" ]; then
+  (cd "$SCRIPT_DIR" && go build -trimpath -ldflags '-s -w' -o "$BUILD_DIR/codex-wrapper" ./cmd/codex-wrapper)
+fi
+if [ -n "$OC_NATIVE" ]; then
+  (cd "$SCRIPT_DIR" && go build -trimpath -ldflags '-s -w' -o "$BUILD_DIR/oc-wrapper" ./cmd/oc-wrapper)
+fi
 mkdir -p "$BIN_DIR"
 cp "$BUILD_DIR/ra2a" "$BIN_PATH.new"
 chmod 755 "$BIN_PATH.new"
 mv -f "$BIN_PATH.new" "$BIN_PATH"
 
-if [ "$WRAPPER" -eq 1 ]; then
-  if [ -e "$WRAPPER_PATH" ] && [ ! -f "$WRAPPER_MARKER" ]; then
-    fail "codex already exists at $WRAPPER_PATH without the RA2A marker; refusing to overwrite it"
-  fi
-  (cd "$SCRIPT_DIR" && go build -trimpath -ldflags '-s -w' -o "$BUILD_DIR/codex-wrapper" ./cmd/codex-wrapper)
+if [ -n "$CODEX_NATIVE" ]; then
   cp "$BUILD_DIR/codex-wrapper" "$WRAPPER_PATH.new"
   chmod 755 "$WRAPPER_PATH.new"
+  if [ ! -f "$WRAPPER_MARKER" ]; then
+    [ ! -e "$BIN_DIR/codex.bin" ] && [ ! -L "$BIN_DIR/codex.bin" ] || fail "codex.bin already exists at $BIN_DIR/codex.bin; refusing to overwrite it"
+    if [ -e "$WRAPPER_PATH" ] || [ -L "$WRAPPER_PATH" ]; then
+      mv -f "$WRAPPER_PATH" "$BIN_DIR/codex.bin"
+    else
+      ln -s "$CODEX_NATIVE" "$BIN_DIR/codex.bin"
+    fi
+  fi
   mv -f "$WRAPPER_PATH.new" "$WRAPPER_PATH"
   : > "$WRAPPER_MARKER"
   printf 'RA2A codex wrapper installed (plain codex TUI sessions are proxied when RA2A is available)\n'
 fi
 
-if [ "$OC_WRAPPER" -eq 1 ]; then
-  (cd "$SCRIPT_DIR" && go build -trimpath -ldflags '-s -w' -o "$BUILD_DIR/oc-wrapper" ./cmd/oc-wrapper)
+if [ -n "$OC_NATIVE" ]; then
   cp "$BUILD_DIR/oc-wrapper" "$OC_WRAPPER_PATH.new"
   chmod 755 "$OC_WRAPPER_PATH.new"
   if [ ! -f "$OC_WRAPPER_MARKER" ] && { [ -e "$OC_WRAPPER_PATH" ] || [ -L "$OC_WRAPPER_PATH" ]; }; then
@@ -126,13 +192,23 @@ if [ "$OC_WRAPPER" -eq 1 ]; then
   fi
   mv -f "$OC_WRAPPER_PATH.new" "$OC_WRAPPER_PATH"
   : > "$OC_WRAPPER_MARKER"
-  printf 'RA2A opencode wrapper installed. Run `opencode --ra2a` to attach to the RA2A OpenCode server;\n'
-  printf 'every other opencode invocation is passed through unchanged.\n'
+  printf 'RA2A opencode wrapper installed (interactive opencode now attaches automatically);\n'
+  printf 'non-interactive subcommands pass through to native opencode.\n'
 fi
+
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *) printf 'RA2A launcher directory is not on PATH: add %s before other harness binaries when opening a new terminal.\n' "$BIN_DIR" ;;
+esac
 
 printf 'RA2A command installed\n'
 printf 'binary: %s\n' "$BIN_PATH"
 if [ "$SETUP" -eq 0 ]; then
+  if [ -f "$HOME/.config/ra2a/config.json" ]; then
+    "$BIN_PATH" restart
+    printf 'RA2A service restarted with detected harnesses.\n'
+    exit 0
+  fi
   printf 'Run ra2a to finish setup.\n'
   exit 0
 fi
@@ -140,13 +216,10 @@ fi
 case "$PIN" in ??????) ;; *) fail 'PIN must be exactly 6 characters' ;; esac
 case "$PIN" in *[!A-Za-z0-9]*) fail 'PIN must contain only letters and digits' ;; esac
 [ -n "$NODE_NAME" ] || NODE_NAME=$NODE_ID
-if [ -z "$CODEX_PATH" ]; then
-  if command -v codex >/dev/null 2>&1; then
-    CODEX_PATH=$(command -v codex)
-  elif [ "$OS_NAME" = Darwin ] && [ -x /Applications/ChatGPT.app/Contents/Resources/codex ]; then
-    CODEX_PATH=/Applications/ChatGPT.app/Contents/Resources/codex
-  else
-    fail 'Codex executable not found; pass --codex /absolute/path/to/codex'
-  fi
+if [ -z "$CODEX_FOR_CONFIG" ] && [ -z "$OC_NATIVE" ]; then
+  fail 'no supported harness found; install Codex or OpenCode before setup'
 fi
-"$BIN_PATH" setup --pin "$PIN" --node-id "$NODE_ID" --name "$NODE_NAME" --codex "$CODEX_PATH"
+set -- setup --pin "$PIN" --node-id "$NODE_ID" --name "$NODE_NAME"
+if [ -n "$CODEX_FOR_CONFIG" ]; then set -- "$@" --codex "$CODEX_FOR_CONFIG"; fi
+if [ -n "$OC_NATIVE" ]; then set -- "$@" --opencode "$OC_NATIVE"; fi
+"$BIN_PATH" "$@"

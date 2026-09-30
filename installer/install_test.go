@@ -31,7 +31,7 @@ func TestRemoteUnixInstallerDownloadsChecksummedRelease(t *testing.T) {
 	defer server.Close()
 	home := t.TempDir()
 	command := exec.Command("sh", "../install-remote.sh")
-	command.Env = append(os.Environ(), "HOME="+home, "NO_PROXY=127.0.0.1", "RA2A_RELEASE_ROOT="+server.URL, "RA2A_VERSION=v0.0.3")
+	command.Env = append(os.Environ(), "HOME="+home, "PATH=/usr/bin:/bin", "NO_PROXY=127.0.0.1", "RA2A_RELEASE_ROOT="+server.URL, "RA2A_VERSION=v0.0.3")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("remote install: %v\n%s", err, output)
@@ -66,7 +66,7 @@ func TestRemoteUnixInstallerPreservesExistingBinaryOnChecksumFailure(t *testing.
 		t.Fatal(err)
 	}
 	command := exec.Command("sh", "../install-remote.sh")
-	command.Env = append(os.Environ(), "HOME="+home, "NO_PROXY=127.0.0.1", "RA2A_RELEASE_ROOT="+server.URL, "RA2A_VERSION=v0.0.3")
+	command.Env = append(os.Environ(), "HOME="+home, "PATH=/usr/bin:/bin", "NO_PROXY=127.0.0.1", "RA2A_RELEASE_ROOT="+server.URL, "RA2A_VERSION=v0.0.3")
 	if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "checksum") {
 		t.Fatalf("err=%v output=%s", err, output)
 	}
@@ -91,7 +91,7 @@ func TestRemoteUnixInstallerPassesNonInteractiveSetupArguments(t *testing.T) {
 	defer server.Close()
 	home := t.TempDir()
 	command := exec.Command("sh", "../install-remote.sh", "--pin", "A2B3C4", "--node-id", "device-b", "--name", "Device B", "--codex", "/opt/codex")
-	command.Env = append(os.Environ(), "HOME="+home, "NO_PROXY=127.0.0.1", "RA2A_RELEASE_ROOT="+server.URL, "RA2A_VERSION=v0.0.3")
+	command.Env = append(os.Environ(), "HOME="+home, "PATH=/usr/bin:/bin", "NO_PROXY=127.0.0.1", "RA2A_RELEASE_ROOT="+server.URL, "RA2A_VERSION=v0.0.3")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("remote setup: %v\n%s", err, output)
 	}
@@ -174,7 +174,7 @@ func TestUnixUninstallUsesExplicitCodex(t *testing.T) {
 func TestUnixInstallerInstallsCodexWrapperWithMarker(t *testing.T) {
 	requireUnixShell(t)
 	home, fakeBin := installerEnvironment(t, "Darwin")
-	command := exec.Command("sh", "../install.sh", "--codex-wrapper")
+	command := exec.Command("sh", "../install.sh")
 	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -189,19 +189,36 @@ func TestUnixInstallerInstallsCodexWrapperWithMarker(t *testing.T) {
 	}
 }
 
-func TestUnixInstallerRefusesToOverwriteForeignCodex(t *testing.T) {
+func TestUnixInstallerPreservesNativeCodexAcrossReinstallAndUninstall(t *testing.T) {
 	requireUnixShell(t)
 	home, fakeBin := installerEnvironment(t, "Darwin")
 	binDir := filepath.Join(home, ".local", "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeExecutable(t, filepath.Join(binDir, "codex"), "#!/bin/sh\nexit 0\n")
-	command := exec.Command("sh", "../install.sh", "--codex-wrapper")
-	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
-	output, err := command.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "refusing to overwrite") {
-		t.Fatalf("err=%v output=%s", err, output)
+	native := filepath.Join(binDir, "codex")
+	const original = "#!/bin/sh\nprintf 'native codex\\n'\n"
+	writeExecutable(t, native, original)
+	env := append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	for i := 0; i < 2; i++ {
+		command := exec.Command("sh", "../install.sh")
+		command.Env = env
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("install %d: %v\n%s", i, err, output)
+		}
+		backup, err := os.ReadFile(filepath.Join(binDir, "codex.bin"))
+		if err != nil || string(backup) != original {
+			t.Fatalf("install %d changed native codex: %q, %v", i, backup, err)
+		}
+	}
+	command := exec.Command("sh", "../install.sh", "--uninstall")
+	command.Env = env
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("uninstall: %v\n%s", err, output)
+	}
+	got, err := os.ReadFile(native)
+	if err != nil || string(got) != original {
+		t.Fatalf("native codex was not restored: %q, %v", got, err)
 	}
 }
 
@@ -248,7 +265,7 @@ func TestUnixOpenCodeWrapperRepeatInstallAndUninstallPreserveNative(t *testing.T
 	writeExecutable(t, native, original)
 	env := append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
 	for i := 0; i < 2; i++ {
-		command := exec.Command("sh", "../install.sh", "--opencode-wrapper")
+		command := exec.Command("sh", "../install.sh")
 		command.Env = env
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("install %d: %v\n%s", i, err, output)
@@ -280,7 +297,7 @@ func TestPowerShellInstallerDelegatesLifecycleToRA2A(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"go build", "setup", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "Uninstall", "Run ra2a to finish setup", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'", "$Mcp = $Codex", "ra2a.exe.retired-", "Move-Item -LiteralPath $RetiredPath -Destination $BinaryPath", "CodexWrapper", ".ra2a-codex-wrapper", "codex.cmd", "cmd/codex-wrapper"} {
+	for _, marker := range []string{"go build", "setup", "$Pin -notmatch '^[A-Za-z0-9]{6}$'", "Uninstall", "Run ra2a to finish setup", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'", "$Mcp = $Codex", "ra2a.exe.retired-", "Move-Item -LiteralPath $RetiredPath -Destination $BinaryPath", "$CodexNative", "$OpenCodeNative", ".ra2a-codex-wrapper", "codex.cmd", "cmd/codex-wrapper", "cmd/oc-wrapper"} {
 		if !strings.Contains(string(content), marker) {
 			t.Errorf("install.ps1 missing %q", marker)
 		}
@@ -292,7 +309,7 @@ func TestRemotePowerShellInstallerUsesReleaseAndSHA256(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"releases/latest", "Get-FileHash", "SHA256", "ra2a-$Version-windows-$Architecture.exe", "Move-Item", "setup --pin", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'"} {
+	for _, marker := range []string{"releases/latest", "Get-FileHash", "SHA256", "ra2a-$Version-windows-$Architecture.exe", "codex-wrapper-$Version-windows-$Architecture.exe", "opencode-wrapper-$Version-windows-$Architecture.exe", "Move-Item", "$SetupArgs", "Join-Path $HOME '.local\\bin'", "Join-Path $HOME '.config\\ra2a\\config.json'"} {
 		if !strings.Contains(string(content), marker) {
 			t.Errorf("install-remote.ps1 missing %q", marker)
 		}
@@ -304,7 +321,7 @@ func TestReleaseWorkflowBuildsChecksummedCrossPlatformAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"tags:", "v*", "ra2a version", "go test ./...", "go vet ./...", "darwin arm64", "linux amd64", "windows amd64", "sha256", "install-ra2a.sh", "install-ra2a.ps1", "gh release create"} {
+	for _, marker := range []string{"tags:", "v*", "ra2a version", "go test ./...", "go vet ./...", "darwin arm64", "linux amd64", "windows amd64", "codex-wrapper", "opencode-wrapper", "sha256", "install-ra2a.sh", "install-ra2a.ps1", "gh release create"} {
 		if !strings.Contains(string(content), marker) {
 			t.Errorf("release workflow missing %q", marker)
 		}

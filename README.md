@@ -40,7 +40,7 @@ flowchart LR
 | Codex CLI | 🧪 Validated, not released | Adapter implemented; delivery contract verified on Ubuntu and Windows |
 | Claude Code | 🧭 Planned | Connect through its session interface |
 | Claude Desktop App | 🧭 Planned | Deliver messages to specific desktop sessions |
-| OpenCode | 🧭 Planned | Integrate with RA2A discovery and messaging |
+| OpenCode | 🧪 Implemented on dev/main, cross-device validation pending | Plain TUI attaches automatically; OpenCode-only nodes supported |
 | Pi | 🧭 Planned | Integrate with RA2A discovery and messaging |
 | DeepSeek Harness | 🧭 Planned | Integrate with RA2A discovery and messaging |
 
@@ -80,6 +80,12 @@ ra2a
 ```
 
 On first run: name the device → save the generated six-character PIN → run `ra2a pin <PIN>` on the other devices. Once you see `status: running`, RA2A is running in the background and Codex has access to its MCP tools.
+
+**Development branch (not yet in the latest Release):** Run `./install.sh` or
+`./install.ps1` from the source checkout. The installer detects installed Codex
+CLI and OpenCode commands, installs their launchers automatically, and restarts
+an already configured daemon. Plain interactive `opencode` joins RA2A without
+wrapper-specific installation flags or `--ra2a`; OpenCode-only nodes can set up.
 
 On Windows, the release is installed in `$HOME\.local\bin` and stores configuration in `$HOME\.config\ra2a`. A current-user scheduled task owns the daemon lifecycle, so closing the installer or Codex tool terminal does not stop it; a health trigger restores the daemon after an unexpected exit.
 

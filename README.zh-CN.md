@@ -40,7 +40,7 @@ flowchart LR
 | Codex CLI | 🧪 已验证未发布 | 适配器已实现，投递契约已在 Ubuntu 与 Windows 验证 |
 | Claude Code | 🧭 计划支持 | 接入对应会话接口 |
 | Claude Desktop App | 🧭 计划支持 | 支持桌面会话定向投递 |
-| OpenCode | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
+| OpenCode | 🧪 dev/main 已实现待跨机验收 | 普通 TUI 自动附着；OpenCode-only 与同类/异类互通需按互通矩阵验收 |
 | Pi | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
 | DeepSeek Harness | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
 
@@ -80,6 +80,11 @@ ra2a
 ```
 
 首次运行：设置设备名称 → 保存自动生成的 6 位 PIN → 在其他设备执行 `ra2a pin <PIN>`。看到 `status: running` 后服务已转入后台，Codex 会自动获得 RA2A MCP 工具。
+
+**开发版（尚未发布到 latest Release）：** 在项目源码根目录运行 `./install.sh` 或
+`./install.ps1`，安装器自动发现已安装的 Codex CLI 和 OpenCode，安装对应 wrapper；
+有配置的设备会自动重启 daemon。普通 `opencode` TUI 会接入 RA2A，不再需要用户传
+`--opencode-wrapper` 或 `--ra2a`。只安装 OpenCode 的设备同样可完成首次 `ra2a` 引导。
 
 Windows 正式版安装在 `$HOME\.local\bin`，配置保存在 `$HOME\.config\ra2a`。daemon 由当前登录用户的计划任务托管，关闭安装终端或 Codex 工具终端不会停止服务；daemon 异常退出后会由健康触发器自动恢复。
 

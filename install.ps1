@@ -3,13 +3,8 @@ param(
     [string]$NodeId = $env:COMPUTERNAME,
     [string]$Name,
     [string]$Codex,
-    # Fallback only. Recent Codex CLI attaches to its own shared app-server
-    # daemon on its own, so this launcher is only needed when daemon attachment
-    # is blocked (--no-daemon, -c overrides, --profile, CODEX_EXEC_SERVER_URL,
-    # the Bedrock first-run wizard, or an elevated terminal).
+    # Legacy aliases; launchers are now detected and installed automatically.
     [switch]$CodexWrapper,
-    # Installs the opencode launcher so `opencode --ra2a` attaches to the
-    # RA2A-supervised OpenCode server. Every other invocation passes through.
     [switch]$OpenCodeWrapper,
     [switch]$Uninstall
 )
@@ -21,9 +16,11 @@ $BinaryPath = Join-Path $BinDir 'ra2a.exe'
 $WrapperPath = Join-Path $BinDir 'codex.exe'
 $WrapperCmdPath = Join-Path $BinDir 'codex.cmd'
 $WrapperMarker = Join-Path $BinDir '.ra2a-codex-wrapper'
+$WrapperNativePath = Join-Path $BinDir '.ra2a-codex-native-path'
 $OcWrapperPath = Join-Path $BinDir 'opencode.exe'
 $OcWrapperReal = Join-Path $BinDir 'opencode.real.exe'
 $OcWrapperMarker = Join-Path $BinDir '.ra2a-opencode-wrapper'
+$OcNativePath = Join-Path $BinDir '.ra2a-opencode-native-path'
 $ConfigPath = Join-Path $HOME '.config\ra2a\config.json'
 $LegacyInstallRoot = Join-Path $env:LOCALAPPDATA 'RA2A'
 $LegacyConfigPath = Join-Path $LegacyInstallRoot 'config.json'
@@ -41,7 +38,17 @@ if ($Uninstall) {
     # Run MCP cleanup while a wrapper can still pass `mcp` through.
     if ($Mcp -and (Test-Path -LiteralPath $Mcp -PathType Leaf)) { & $Mcp mcp remove ra2a 2>$null }
     if (Test-Path -LiteralPath $WrapperMarker) {
-        Remove-Item -LiteralPath $WrapperPath, $WrapperCmdPath, $WrapperMarker -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $WrapperPath) {
+            Move-Item -LiteralPath $WrapperPath -Destination "$WrapperPath.retired-$([Guid]::NewGuid().ToString('N'))"
+        }
+        Remove-Item -LiteralPath $WrapperCmdPath -Force -ErrorAction SilentlyContinue
+        foreach ($Suffix in @('.exe', '.cmd')) {
+            $Saved = Join-Path $BinDir "codex.bin$Suffix"
+            if (Test-Path -LiteralPath $Saved) {
+                Move-Item -LiteralPath $Saved -Destination (Join-Path $BinDir "codex$Suffix")
+            }
+        }
+        Remove-Item -LiteralPath $WrapperMarker, $WrapperNativePath -Force -ErrorAction SilentlyContinue
         Write-Output 'RA2A codex wrapper removed; the native codex command is restored.'
     }
     if (Test-Path -LiteralPath $OcWrapperMarker) {
@@ -61,6 +68,7 @@ if ($Uninstall) {
             throw
         }
         Remove-Item -LiteralPath $OcWrapperMarker -Force
+        Remove-Item -LiteralPath $OcNativePath -Force -ErrorAction SilentlyContinue
     }
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $BinaryPath -Force -ErrorAction SilentlyContinue
@@ -74,6 +82,63 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     throw 'Go 1.24 or newer is required to build from source'
 }
 $SourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($Codex -and -not (Test-Path -LiteralPath $Codex -PathType Leaf)) { throw "Codex executable not found: $Codex" }
+$CodexNative = $Codex
+$OpenCodeNative = $null
+if (-not $CodexNative -and (Test-Path -LiteralPath $WrapperMarker)) {
+    if (Test-Path -LiteralPath $WrapperNativePath) { $CodexNative = (Get-Content -LiteralPath $WrapperNativePath -Raw).Trim() }
+    if ($CodexNative -and -not (Test-Path -LiteralPath $CodexNative -PathType Leaf)) { $CodexNative = $null }
+    if (-not $CodexNative) {
+        foreach ($Suffix in @('.exe', '.cmd')) {
+            $Saved = Join-Path $BinDir "codex.bin$Suffix"
+            if (Test-Path -LiteralPath $Saved) { $CodexNative = $Saved; break }
+        }
+    }
+}
+if (-not $CodexNative) {
+    $CodexNative = Get-Command codex.exe, codex.cmd, codex -All -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandType -eq 'Application' -and (Test-Path -LiteralPath $_.Source -PathType Leaf) -and $_.Source -ne $WrapperPath -and $_.Source -ne $WrapperCmdPath } |
+        Select-Object -ExpandProperty Source -First 1
+}
+if (-not $CodexNative -and -not (Test-Path -LiteralPath $WrapperMarker) -and (Test-Path -LiteralPath $WrapperPath)) {
+    $CodexNative = $WrapperPath
+}
+if (-not $CodexNative) {
+    # Codex Desktop can bundle a usable native CLI without putting it on PATH.
+    $CodexNative = Get-CimInstance Win32_Process -Filter "Name='codex.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match 'app-server' -and $_.CommandLine -notmatch '\.ra2a-' -and $_.ExecutablePath } |
+        Select-Object -ExpandProperty ExecutablePath -First 1
+}
+if (-not $CodexNative -and (Test-Path -LiteralPath $WrapperMarker)) {
+    $Retired = [Guid]::NewGuid().ToString('N')
+    foreach ($Path in @($WrapperPath, $WrapperCmdPath, $WrapperMarker, $WrapperNativePath)) {
+        if (Test-Path -LiteralPath $Path) { Move-Item -LiteralPath $Path -Destination "$Path.retired-$Retired" }
+    }
+    Write-Output 'Codex executable is missing; stale RA2A launcher moved to backup'
+}
+if (Test-Path -LiteralPath $OcWrapperMarker) {
+    if (Test-Path -LiteralPath $OcNativePath) { $OpenCodeNative = (Get-Content -LiteralPath $OcNativePath -Raw).Trim() }
+    if ($OpenCodeNative -and -not (Test-Path -LiteralPath $OpenCodeNative -PathType Leaf)) { $OpenCodeNative = $null }
+    if (-not $OpenCodeNative -and (Test-Path -LiteralPath $OcWrapperReal)) { $OpenCodeNative = $OcWrapperReal }
+}
+if (-not $OpenCodeNative) {
+    $OpenCodeNative = Get-Command opencode.exe, opencode.cmd, opencode -All -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandType -eq 'Application' -and (Test-Path -LiteralPath $_.Source -PathType Leaf) -and $_.Source -ne $OcWrapperPath } |
+        Select-Object -ExpandProperty Source -First 1
+}
+if (-not $OpenCodeNative -and -not (Test-Path -LiteralPath $OcWrapperMarker) -and (Test-Path -LiteralPath $OcWrapperPath)) {
+    $OpenCodeNative = $OcWrapperPath
+}
+if (-not $OpenCodeNative -and (Test-Path -LiteralPath $OcWrapperMarker)) {
+    $Retired = [Guid]::NewGuid().ToString('N')
+    foreach ($Path in @($OcWrapperPath, $OcWrapperMarker, $OcNativePath)) {
+        if (Test-Path -LiteralPath $Path) { Move-Item -LiteralPath $Path -Destination "$Path.retired-$Retired" }
+    }
+    Write-Output 'OpenCode executable is missing; stale RA2A launcher moved to backup'
+}
+if ($CodexNative) { Write-Output "detected harness: Codex ($CodexNative)" }
+if ($OpenCodeNative) { Write-Output "detected harness: OpenCode ($OpenCodeNative)" }
+if (-not $CodexNative -and -not $OpenCodeNative) { Write-Output 'no supported harness detected; RA2A command only will be installed' }
 $BuildPath = Join-Path $env:TEMP ("ra2a-install-{0}.exe" -f ([Guid]::NewGuid().ToString('N')))
 Push-Location $SourceRoot
 try {
@@ -82,8 +147,35 @@ try {
 } finally {
     Pop-Location
 }
+$WrapperBuildPath = $null
+$OcBuildPath = $null
+if ($CodexNative -or $OpenCodeNative) {
+    Push-Location $SourceRoot
+    try {
+        if ($CodexNative) {
+            $WrapperBuildPath = Join-Path $env:TEMP ("codex-wrapper-{0}.exe" -f ([Guid]::NewGuid().ToString('N')))
+            & go build -trimpath -ldflags '-s -w' -o $WrapperBuildPath ./cmd/codex-wrapper
+            if ($LASTEXITCODE -ne 0) { throw 'codex wrapper build failed' }
+        }
+        if ($OpenCodeNative) {
+            $OcBuildPath = Join-Path $env:TEMP ("oc-wrapper-{0}.exe" -f ([Guid]::NewGuid().ToString('N')))
+            & go build -trimpath -ldflags '-s -w' -o $OcBuildPath ./cmd/oc-wrapper
+            if ($LASTEXITCODE -ne 0) { throw 'opencode wrapper build failed' }
+        }
+    } finally {
+        Pop-Location
+    }
+}
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+$OldDaemon = Get-CimInstance Win32_Process -Filter "Name='ra2a.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match '\sdaemon(\s|$)' } | Select-Object -First 1
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($OldDaemon) {
+    for ($Attempt = 0; $Attempt -lt 20 -and (Get-Process -Id $OldDaemon.ProcessId -ErrorAction SilentlyContinue); $Attempt++) {
+        Start-Sleep -Milliseconds 500
+    }
+    if (Get-Process -Id $OldDaemon.ProcessId -ErrorAction SilentlyContinue) { throw 'old RA2A daemon did not exit; refusing to publish a new binary' }
+}
 $RetiredPath = $null
 Get-ChildItem -LiteralPath $BinDir -Filter 'ra2a.exe.retired-*' -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
@@ -105,38 +197,29 @@ try {
 Write-Output 'RA2A command installed'
 Write-Output "binary: $BinaryPath"
 
-if ($CodexWrapper) {
-    if ((Test-Path -LiteralPath $WrapperPath) -and -not (Test-Path -LiteralPath $WrapperMarker)) {
-        throw "codex.exe already exists at $WrapperPath without the RA2A marker; refusing to overwrite it"
-    }
-    $WrapperBuildPath = Join-Path $env:TEMP ("codex-wrapper-{0}.exe" -f ([Guid]::NewGuid().ToString('N')))
-    Push-Location $SourceRoot
-    try {
-        & go build -trimpath -ldflags '-s -w' -o $WrapperBuildPath ./cmd/codex-wrapper
-        if ($LASTEXITCODE -ne 0) { throw 'codex wrapper build failed' }
-    } finally {
-        Pop-Location
-    }
+if ($CodexNative) {
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-    Move-Item -LiteralPath $WrapperBuildPath -Destination $WrapperPath -Force
+    if (-not (Test-Path -LiteralPath $WrapperMarker)) {
+        foreach ($Suffix in @('.exe', '.cmd')) {
+            $Original = Join-Path $BinDir "codex$Suffix"
+            if (Test-Path -LiteralPath $Original) {
+                $Saved = Join-Path $BinDir "codex.bin$Suffix"
+                if (Test-Path -LiteralPath $Saved) { throw "refusing to overwrite existing $Saved" }
+                Move-Item -LiteralPath $Original -Destination $Saved
+                if ($CodexNative -eq $Original) { $CodexNative = $Saved }
+            }
+        }
+    } elseif (Test-Path -LiteralPath $WrapperPath) {
+        Move-Item -LiteralPath $WrapperPath -Destination "$WrapperPath.retired-$([Guid]::NewGuid().ToString('N'))"
+    }
+    Move-Item -LiteralPath $WrapperBuildPath -Destination $WrapperPath
     @("@echo off", "`"%~dp0codex.exe`" %*") | Set-Content -LiteralPath $WrapperCmdPath -Encoding Ascii
+    Set-Content -LiteralPath $WrapperNativePath -Value $CodexNative -NoNewline
     New-Item -ItemType File -Path $WrapperMarker -Force | Out-Null
     Write-Output 'RA2A codex wrapper installed (plain codex TUI sessions are proxied when RA2A is available)'
-} elseif (Test-Path -LiteralPath $WrapperMarker) {
-    # Wrapper was previously installed but this run did not request it again;
-    # keep the existing wrapper so the user's environment stays stable.
-    Write-Output 'RA2A codex wrapper already installed (kept)'
 }
 
-if ($OpenCodeWrapper) {
-    $OcBuildPath = Join-Path $env:TEMP ("oc-wrapper-{0}.exe" -f ([Guid]::NewGuid().ToString('N')))
-    Push-Location $SourceRoot
-    try {
-        & go build -trimpath -ldflags '-s -w' -o $OcBuildPath ./cmd/oc-wrapper
-        if ($LASTEXITCODE -ne 0) { throw 'opencode wrapper build failed' }
-    } finally {
-        Pop-Location
-    }
+if ($OpenCodeNative) {
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
     $OcNativeMoved = $false
     if ((Test-Path -LiteralPath $OcWrapperPath) -and -not (Test-Path -LiteralPath $OcWrapperMarker)) {
@@ -144,6 +227,7 @@ if ($OpenCodeWrapper) {
             throw "opencode.real.exe already exists at $OcWrapperReal; refusing to overwrite it"
         }
         Move-Item -LiteralPath $OcWrapperPath -Destination $OcWrapperReal -Force
+        if ($OpenCodeNative -eq $OcWrapperPath) { $OpenCodeNative = $OcWrapperReal }
         $OcNativeMoved = $true
     }
     $OcRetired = $null
@@ -166,10 +250,12 @@ if ($OpenCodeWrapper) {
         throw
     }
     New-Item -ItemType File -Path $OcWrapperMarker -Force | Out-Null
-    Write-Output 'RA2A opencode wrapper installed. Run `opencode --ra2a` to attach to the RA2A OpenCode server.'
-    Write-Output 'Every other opencode invocation is passed through unchanged.'
-} elseif (Test-Path -LiteralPath $OcWrapperMarker) {
-    Write-Output 'RA2A opencode wrapper already installed (kept)'
+    Set-Content -LiteralPath $OcNativePath -Value $OpenCodeNative -NoNewline
+    Write-Output 'RA2A opencode wrapper installed; interactive opencode attaches automatically.'
+}
+
+if (($env:Path -split ';') -notcontains $BinDir) {
+    Write-Output "RA2A launcher directory is not on PATH: add $BinDir before other harness binaries when opening a new terminal."
 }
 
 $SetupRequested = $PSBoundParameters.ContainsKey('Pin') -or $PSBoundParameters.ContainsKey('NodeId') -or $PSBoundParameters.ContainsKey('Name') -or $PSBoundParameters.ContainsKey('Codex')
@@ -191,14 +277,15 @@ if ($Pin -notmatch '^[A-Za-z0-9]{6}$') {
 }
 if (-not $Name) { $Name = $NodeId }
 if (-not $Codex) {
-    $Command = Get-Command codex.exe -ErrorAction SilentlyContinue
-    if (-not $Command) { $Command = Get-Command codex -ErrorAction SilentlyContinue }
-    if ($Command) { $Codex = $Command.Source }
+    $Codex = $CodexNative
 }
-if (-not $Codex -or -not (Test-Path -LiteralPath $Codex -PathType Leaf)) {
-    throw 'Codex executable not found; pass -Codex C:\absolute\path\to\codex.exe'
+if (-not $Codex -and -not $OpenCodeNative) {
+    throw 'No supported harness found; install Codex or OpenCode before setup'
 }
-& $BinaryPath setup --pin $Pin --node-id $NodeId --name $Name --codex $Codex
+$SetupArgs = @('setup', '--pin', $Pin, '--node-id', $NodeId, '--name', $Name)
+if ($Codex) { $SetupArgs += @('--codex', $Codex) }
+if ($OpenCodeNative) { $SetupArgs += @('--opencode', $OpenCodeNative) }
+& $BinaryPath @SetupArgs
 if ($LASTEXITCODE -ne 0) { throw 'RA2A setup failed' }
 if (Test-Path -LiteralPath $ConfigPath) {
     Remove-Item -LiteralPath $LegacyBinaryPath -Force -ErrorAction SilentlyContinue
