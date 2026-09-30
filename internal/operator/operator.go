@@ -19,7 +19,7 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/ochost"
 )
 
-const Version = "v0.0.16"
+const Version = "v0.0.17"
 
 type Config struct {
 	NodeID   string `json:"nodeId"`

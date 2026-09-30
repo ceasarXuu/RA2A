@@ -1,6 +1,6 @@
 # RA2A 已支持 Harness 自动安装与核验
 
-适用：源码 `install.sh` / `install.ps1`，以及自 v0.0.16 起的发布资产 `install-ra2a.sh` / `install-ra2a.ps1`。旧版 Release 安装器不具备自动 wrapper 安装能力。
+适用：源码 `install.sh` / `install.ps1`，以及自 v0.0.17 起的发布资产 `install-ra2a.sh` / `install-ra2a.ps1`。旧版 Release 安装器不具备自动 wrapper 安装能力。
 
 ## 安装契约
 
