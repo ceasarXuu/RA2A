@@ -82,12 +82,13 @@ server → 用户 TUI，且 `delivery: confirmed`（适配器等到了 `session.
 
 验证：
 
-| 场景 | 修复前 | 修复后 |
-| --- | --- | --- |
-| 本地目标成功 | `confirmed` | `confirmed` |
-| 跨机目标成功 | `handed_to_transport` | `confirmed` |
-| 目标不存在 | 报错 | 报错（未误报 confirmed） |
-| 对端 Desktop 未运行 | `DELIVERY_UNKNOWN` | `DELIVERY_UNKNOWN`（未误报 confirmed） |
+| 场景 | 修复前 | 修复后 | 实测 |
+| --- | --- | --- | --- |
+| 本地目标成功 | `confirmed` | `confirmed` | ✅ |
+| 跨机成功 → rog306 | `handed_to_transport` | `confirmed` | ✅ 1.187s |
+| 跨机成功 → macmini-m4 | `handed_to_transport` | `confirmed` | ✅ 0.881s |
+| 目标不存在 | 报错 | 报错（未误报 confirmed） | ✅ `TARGET_UNSUPPORTED` |
+| 对端 Desktop 未运行 | `DELIVERY_UNKNOWN` | `DELIVERY_UNKNOWN`（未误报 confirmed） | ✅ 两次实测 |
 
 本条链路的三个独立缺陷一并留档：投递耗用阻塞端点（§11.5）、wrapper 参数转发、
 Codex 会话模型被改写（见 §11.6）。
