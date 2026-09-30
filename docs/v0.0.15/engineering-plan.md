@@ -569,12 +569,15 @@ accepted）。实测通过。
 `agent/capabilities/id/status/title`，**不含 model**。这符合产品原则——RA2A 不该
 理解会话设置；为此加一个 model 字段去「方便验证」反而是主动违反该原则。
 
-### 附带发现：Windows 上 restart 不替换进程
+### 附带发现：部署必须核验「运行的东西真的被替换」
 
-rog306 首次 `ra2a restart` 返回成功但旧进程仍在运行：Windows 计划任务的
-`IgnoreNew` 策略不会替换已运行的实例。核验新 PID 的启动时间与可执行文件路径
-后，改 stop + restart 才生效。这与本机 Linux 上「换了二进制但没重启 daemon」
-是同一类错误的不同载体：**命令返回成功不等于运行的东西被替换。**
+Windows 上 `ra2a restart` 会返回成功但旧进程仍在运行：计划任务的
+`IgnoreNew` 策略不会替换已运行的实例。这与 Linux 上「换了二进制但没重启
+daemon」是同一类错误的不同载体——**命令返回成功不等于运行的东西被替换**。
+
+操作步骤与逐项核验（stop 后确认旧 PID 消失、restart 后确认 PID 变化与可执行
+文件路径匹配）归属 `runbooks/windows-managed-app-server-lifecycle-handoff.md`，
+本节不重复。
 
 ## 12. 待决项（阻塞 Phase 3）
 
