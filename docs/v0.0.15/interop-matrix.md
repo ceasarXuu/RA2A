@@ -66,27 +66,31 @@ server → 用户 TUI，且 `delivery: confirmed`（适配器等到了 `session.
 | rog306 → ubuntu407 opencode | `FINAL-034633` | 到达（14s 往返） |
 | macmini-m4 → ubuntu407 opencode（新构建） | `FINAL-MACMINI-20260930-042216` | 到达 |
 
-### 发送方返回值：LAN 成功时只报 `handed_to_transport`
+### 发送方返回值：LAN 成功现在报 `confirmed`
 
-三个节点发送跨机消息时，发送方拿到的都是：
+原先跨机成功只报 `handed_to_transport`，语义弱于本地目标的 `confirmed`，
+三个节点之间四个方向的成功投递都因此被弱化表述（macmini-m4 联调时指出）。
 
-```json
-{"delivery":"handed_to_transport","status":"accepted"}
-```
+该判断来自「跨节点结论不可信」的年代：接收端要等整个 turn，超时后结论回不来
+（见 §11.5），所以只能保守表述。投递耗时修复后这个前提已不存在——LAN 发送是
+同步 CoAP 往返，`deliverOverLAN` 只在远端适配器返回 `Delivered` 时才返回成功，
+因此**跨机成功返回本身就携带了远端的确认**。
 
-这与 `confirmed` 不同。当前实现按目标节点是否为本地来决定（`adapter_coordinator.go`
-的 `DeliveryConfirmed`），并有测试断言「跨节点目标不得报 confirmed」。
+已收紧（`DeliveryConfirmed` 不再按目标节点判定）：三条成功路径全部以「目标已
+收下」为返回条件——本地 registry 内联投递、本地信箱落盘、跨机同步往返。确认是
+「发送成功」的属性，不是地址的属性。
 
-**但这个判断是保守过头了**：LAN 发送是同步 CoAP 往返，`deliverOverLAN` 只在远端
-适配器返回 `Delivered` 时才返回成功，因此**跨机发送若成功返回，远端其实已经确认**，
-报 `confirmed` 才是准确的。现有断言来自「跨节点结果不可信」的年代——那时接收端
-要等整个 turn，超时后结论回不来（见 §11.5），所以只能保守表述。
+验证：
 
-修完投递耗时之后这个前提已经不成立。是否收紧为 `confirmed` 属于投递结果契约的
-产品决策，尚未执行；文档中也没有记录过必须报 `handed_to_transport`。
+| 场景 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 本地目标成功 | `confirmed` | `confirmed` |
+| 跨机目标成功 | `handed_to_transport` | `confirmed` |
+| 目标不存在 | 报错 | 报错（未误报 confirmed） |
+| 对端 Desktop 未运行 | `DELIVERY_UNKNOWN` | `DELIVERY_UNKNOWN`（未误报 confirmed） |
 
-记录当前事实：**`accepted`/`handed_to_transport` 表示链路成功但未声明已确认**，
-可据此判断链路可用，不能据此判断目标适配器已确认。
+本条链路的三个独立缺陷一并留档：投递耗用阻塞端点（§11.5）、wrapper 参数转发、
+Codex 会话模型被改写（见 §11.6）。
 
 ## 节点升级记录：macmini-m4
 

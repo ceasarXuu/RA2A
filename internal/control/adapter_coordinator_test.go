@@ -233,17 +233,18 @@ func (lan failingLAN) SendMessage(context.Context, lannode.Peer, lannode.Message
 	return errors.New("local delivery must not use LAN")
 }
 
-func TestDeliveryConfirmedDistinguishesLocalFromRemote(t *testing.T) {
+// The confirmation question is only ever asked after a send succeeded, and every
+// successful send has already placed the message with the target: locally through
+// the registry, across the LAN through a synchronous round trip the peer only
+// answers with success after its own adapter returned delivered. The address
+// therefore does not change the answer.
+func TestDeliveryConfirmedCoversEverySuccessfulSend(t *testing.T) {
 	registry := &stubRegistry{result: agentbridge.Delivered("turn-1")}
 	coordinator := NewAdapterCoordinator("node-a", &recordingLAN{}, registry)
-	if !coordinator.DeliveryConfirmed("ra2a://node-a/cli-1") {
-		t.Fatal("a local target must be reported as confirmed by the adapter")
-	}
-	if coordinator.DeliveryConfirmed("ra2a://node-b/cli-1") {
-		t.Fatal("a cross-node target must not be reported as confirmed")
-	}
-	if coordinator.DeliveryConfirmed("garbage") {
-		t.Fatal("a malformed target must not be reported as confirmed")
+	for _, target := range []string{"ra2a://node-a/cli-1", "ra2a://node-b/cli-1"} {
+		if !coordinator.DeliveryConfirmed(target) {
+			t.Fatalf("%s: a successful send is a confirmed delivery", target)
+		}
 	}
 }
 
@@ -259,7 +260,7 @@ func TestCoordinatorWithoutConfirmerIsNeverConfirmed(t *testing.T) {
 	if got := deliveryConfirmation(adapter, "ra2a://node-a/x"); got != "confirmed" {
 		t.Fatalf("local target must be confirmed, got %q", got)
 	}
-	if got := deliveryConfirmation(adapter, "ra2a://node-b/x"); got != "handed_to_transport" {
-		t.Fatalf("cross-node target must not be confirmed, got %q", got)
+	if got := deliveryConfirmation(adapter, "ra2a://node-b/x"); got != "confirmed" {
+		t.Fatalf("a cross-node success carries the peer's confirmation too, got %q", got)
 	}
 }

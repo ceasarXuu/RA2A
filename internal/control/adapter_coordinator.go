@@ -222,12 +222,23 @@ func (coordinator *AdapterCoordinator) storeMailbox(recipient, source string, re
 	return result
 }
 
-// DeliveryConfirmed reports whether a success response for this target means
-// the adapter confirmed it. Local deliveries are confirmed before the control
-// plane answers; cross-node sends are only handed to the LAN transport.
-func (coordinator *AdapterCoordinator) DeliveryConfirmed(target string) bool {
-	nodeID, _, err := parseTarget(target)
-	return err == nil && nodeID == coordinator.localID
+// DeliveryConfirmed reports whether a success response for this target means the
+// adapter confirmed it, and for this coordinator every successful send does.
+//
+// Each path that can return success has already placed the message with the
+// target before it returns: a local delivery runs through the registry inline, a
+// local mailbox is written to disk, and a cross-node delivery is a synchronous
+// round trip whose peer answers success only after its own adapter returned
+// delivered. Confirmation is therefore a property of the send having succeeded,
+// not of the address, and no target is inspected here.
+//
+// The LAN case used to be excluded because the peer's verdict could not survive
+// the trip: a delivery into a busy session waited for the recipient's whole turn
+// and blew the transport budget, so a success response could not be trusted to
+// mean anything. With that fixed (see docs/v0.0.15/engineering-plan.md §11.5) the
+// exclusion only understated every cross-node result.
+func (coordinator *AdapterCoordinator) DeliveryConfirmed(string) bool {
+	return true
 }
 
 // resultError maps the unified result codes onto the control-plane error set so
