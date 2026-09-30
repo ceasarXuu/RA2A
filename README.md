@@ -37,10 +37,10 @@ flowchart LR
 | Agent / App | Status | Notes |
 |---|---|---|
 | **Codex App** | ✅ Supported | Cross-device validation completed on macOS and Windows |
-| Codex CLI | 🧪 Validated, not released | Adapter implemented; delivery contract verified on Ubuntu and Windows |
+| Codex CLI | 🧪 Preview | Adapter and launcher shipped; full cross-harness matrix still under validation |
 | Claude Code | 🧭 Planned | Connect through its session interface |
 | Claude Desktop App | 🧭 Planned | Deliver messages to specific desktop sessions |
-| OpenCode | 🧪 Implemented on dev/main, cross-device validation pending | Plain TUI attaches automatically; OpenCode-only nodes supported |
+| OpenCode | 🧪 Preview | Plain TUI attaches automatically; OpenCode-only nodes supported; cross-harness matrix still under validation |
 | Pi | 🧭 Planned | Integrate with RA2A discovery and messaging |
 | DeepSeek Harness | 🧭 Planned | Integrate with RA2A discovery and messaging |
 
@@ -61,7 +61,7 @@ flowchart LR
 
 ## Quick Start
 
-No Git, Go, source checkout, root, or administrator privileges required. The target device must have Codex App installed.
+No Git, Go, source checkout, root, or administrator privileges required. The target device needs an available supported harness (Codex App, Codex CLI, or OpenCode).
 
 ### macOS / Linux
 
@@ -81,11 +81,11 @@ ra2a
 
 On first run: name the device → save the generated six-character PIN → run `ra2a pin <PIN>` on the other devices. Once you see `status: running`, RA2A is running in the background and Codex has access to its MCP tools.
 
-**Development branch (not yet in the latest Release):** Run `./install.sh` or
-`./install.ps1` from the source checkout. The installer detects installed Codex
-CLI and OpenCode commands, installs their launchers automatically, and restarts
-an already configured daemon. Plain interactive `opencode` joins RA2A without
-wrapper-specific installation flags or `--ra2a`; OpenCode-only nodes can set up.
+The installer detects installed Codex CLI and OpenCode commands, installs their
+launchers automatically, and restarts an already configured daemon. Plain
+interactive `opencode` joins RA2A without wrapper-specific installation flags
+or `--ra2a`; OpenCode-only nodes can set up. Existing TUI processes need to be
+reopened by the user to load a newly installed launcher.
 
 On Windows, the release is installed in `$HOME\.local\bin` and stores configuration in `$HOME\.config\ra2a`. A current-user scheduled task owns the daemon lifecycle, so closing the installer or Codex tool terminal does not stop it; a health trigger restores the daemon after an unexpected exit.
 
@@ -118,7 +118,7 @@ Mac / Planner
 | `ra2a name [name]` | Set the device name |
 | `ra2a pin [6-character PIN]` | Set the shared PIN |
 | `ra2a version` | Show the installed version |
-| `ra2a update` | Verify and update to the latest stable release |
+| `ra2a update` | Update the core command; re-run the Release installer after upgrading from v0.0.15 to install harness launchers |
 
 `ra2a stop` is reversible: run `ra2a` or `ra2a restart` to resume. `ra2a exit` also removes the platform service definition and Codex MCP registration; it does not delete the binary or configuration. Codex owns its stdio MCP child process, so an already-open MCP process exits when Codex closes that connection.
 
