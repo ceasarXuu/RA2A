@@ -52,6 +52,10 @@ OC_WRAPPER_PATH=$BIN_DIR/opencode
 OC_WRAPPER_MARKER=$BIN_DIR/.ra2a-opencode-wrapper
 
 if [ "$UNINSTALL" -eq 1 ]; then
+  if [ -x "$BIN_PATH" ]; then
+    "$BIN_PATH" opencode-mcp-unregister || fail 'could not unregister OpenCode MCP'
+    "$BIN_PATH" opencode-server-cleanup || fail 'could not stop the shared OpenCode server'
+  fi
   MCP_CODEX=$CODEX_PATH
   if [ -z "$MCP_CODEX" ] && command -v codex >/dev/null 2>&1; then MCP_CODEX=$(command -v codex); fi
   # Run the MCP cleanup before removing a wrapper so `mcp` still passes through.
@@ -61,7 +65,12 @@ if [ "$UNINSTALL" -eq 1 ]; then
     printf 'RA2A codex wrapper removed; the native codex command is restored.\n'
   fi
   if [ -f "$OC_WRAPPER_MARKER" ]; then
-    rm -f "$OC_WRAPPER_PATH" "$OC_WRAPPER_MARKER"
+    if [ -e "$BIN_DIR/opencode.real" ] || [ -L "$BIN_DIR/opencode.real" ]; then
+      mv -f "$BIN_DIR/opencode.real" "$OC_WRAPPER_PATH"
+    else
+      rm -f "$OC_WRAPPER_PATH"
+    fi
+    rm -f "$OC_WRAPPER_MARKER"
     printf 'RA2A opencode wrapper removed; the native opencode command is restored.\n'
   fi
   case "$OS_NAME" in
@@ -106,15 +115,15 @@ if [ "$WRAPPER" -eq 1 ]; then
 fi
 
 if [ "$OC_WRAPPER" -eq 1 ]; then
-  if [ -e "$OC_WRAPPER_PATH" ] && [ ! -f "$OC_WRAPPER_MARKER" ]; then
-    fail "opencode already exists at $OC_WRAPPER_PATH without the RA2A marker; refusing to overwrite it"
-  fi
   (cd "$SCRIPT_DIR" && go build -trimpath -ldflags '-s -w' -o "$BUILD_DIR/oc-wrapper" ./cmd/oc-wrapper)
-  if [ -e "$OC_WRAPPER_PATH" ] || [ -L "$OC_WRAPPER_PATH" ]; then
-    mv -f "$OC_WRAPPER_PATH" "$BIN_DIR/opencode.real"
-  fi
   cp "$BUILD_DIR/oc-wrapper" "$OC_WRAPPER_PATH.new"
   chmod 755 "$OC_WRAPPER_PATH.new"
+  if [ ! -f "$OC_WRAPPER_MARKER" ] && { [ -e "$OC_WRAPPER_PATH" ] || [ -L "$OC_WRAPPER_PATH" ]; }; then
+    if [ -e "$BIN_DIR/opencode.real" ] || [ -L "$BIN_DIR/opencode.real" ]; then
+      fail "opencode.real already exists at $BIN_DIR/opencode.real; refusing to overwrite it"
+    fi
+    mv -f "$OC_WRAPPER_PATH" "$BIN_DIR/opencode.real"
+  fi
   mv -f "$OC_WRAPPER_PATH.new" "$OC_WRAPPER_PATH"
   : > "$OC_WRAPPER_MARKER"
   printf 'RA2A opencode wrapper installed. Run `opencode --ra2a` to attach to the RA2A OpenCode server;\n'

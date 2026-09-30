@@ -1,8 +1,8 @@
 // Command oc-wrapper is a transparent launcher for the opencode command.
 //
-// `opencode --ra2a` attaches the TUI to the RA2A-supervised OpenCode server, so
-// messages injected by RA2A appear live and RA2A can observe session busy
-// state. Every other invocation passes straight through to the native opencode,
+// `opencode --ra2a` attaches the TUI to a known session on the shared server, so
+// messages injected by RA2A are executed there. Every other invocation passes
+// straight through to the native opencode,
 // so the wrapper is invisible unless the user asks for it.
 //
 // Sharing one server is required, not cosmetic: OpenCode servers do not notify
@@ -19,11 +19,13 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/ochost"
+	"github.com/ceasarXuu/RA2A/internal/ocsession"
 )
 
 const ra2aFlag = "--ra2a"
@@ -34,8 +36,8 @@ const usage = `opencode [options] --ra2a
            RA2A then appear live, and RA2A can see whether this session is busy
            so it never interrupts a turn in progress.
 
-  --yolo and --auto keep working: they are translated into the attach client's
-  permission policy, because attach itself has no permission flag. --port,
+  --yolo and --auto approve permission requests for the attached session (but
+  never override explicit denies). --port,
   --hostname and --mdns are refused because they would move the TUI off the
   shared server.
 
@@ -43,12 +45,12 @@ const usage = `opencode [options] --ra2a
 `
 
 type config struct {
-	serverURL  string
-	executable string
-	timeout    time.Duration
-	ownerPath  string
-	attachArgs []string
-	permission string
+	serverURL   string
+	executable  string
+	timeout     time.Duration
+	ownerPath   string
+	attachArgs  []string
+	autoApprove bool
 }
 
 func main() {
@@ -80,11 +82,14 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 		timeout:    25 * time.Second,
 		ownerPath:  ownerPath(),
 	}
-	attach, permission, err := translateAttachArgs(withoutRA2A(args))
+	if settings.executable == "" {
+		return errors.New("native OpenCode binary not found outside the RA2A wrapper")
+	}
+	attach, autoApprove, err := translateAttachArgs(withoutRA2A(args))
 	if err != nil {
 		return err
 	}
-	settings.attachArgs, settings.permission = attach, permission
+	settings.attachArgs, settings.autoApprove = attach, autoApprove
 
 	host, err := ochost.Start(ctx, ochost.Config{
 		Executable:       settings.executable,
@@ -100,35 +105,45 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 		return fmt.Errorf("prepare the RA2A OpenCode server: %w", err)
 	}
 	defer func() { _ = host.Close() }()
+	sessionID, attach, err := ocsession.Select(ctx, settings.serverURL, settings.attachArgs)
+	if err != nil {
+		return fmt.Errorf("select OpenCode session: %w", err)
+	}
+	release, err := ocsession.Register(ocsession.Directory(), sessionID)
+	if err != nil {
+		return fmt.Errorf("register OpenCode attachment: %w", err)
+	}
+	defer release()
+	fmt.Fprintf(stderr, "opencode_attachment_registered session=%s server=%s\n", sessionID, settings.serverURL)
+	if settings.autoApprove {
+		approveCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		ready := make(chan error, 1)
+		go approveRequests(approveCtx, settings.serverURL, sessionID, ready, stderr)
+		if err := <-ready; err != nil {
+			return fmt.Errorf("start OpenCode auto-approval: %w", err)
+		}
+	}
 
-	command := exec.Command(settings.executable, append([]string{"attach", settings.serverURL}, settings.attachArgs...)...)
+	command := exec.Command(settings.executable, append([]string{"attach", settings.serverURL}, attach...)...)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
-	if settings.permission != "" {
-		// The attach client decides how to answer permission prompts and reads
-		// that policy from here; there is no attach flag for it.
-		command.Env = append(os.Environ(), "OPENCODE_PERMISSION="+settings.permission)
-	}
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("opencode attach %s: %w", settings.serverURL, err)
 	}
 	return nil
 }
 
-// allowAllPermission is the ruleset behind --yolo/--auto: every permission
-// request is answered with allow unless the user's own configuration denies it.
-const allowAllPermission = `[{"permission":"*","pattern":"*","action":"allow"}]`
-
 // translateAttachArgs splits the user's arguments into what `attach` accepts and
-// the top-level-only flags the wrapper has to translate.
+// the top-level-only flags the wrapper has to handle.
 //
 // `attach` exposes a far smaller flag set than the top-level command: it has no
 // permission flag at all, so `opencode --yolo --ra2a` used to die on an argument
-// dump from the yargs parser. The attach client takes its permission policy from
-// OPENCODE_PERMISSION, so the flag is translated into that variable and removed
-// from the arguments instead of being forwarded.
-func translateAttachArgs(args []string) (kept []string, permission string, err error) {
+// dump from the yargs parser. The flag is removed from the arguments; the
+// caller answers this session's permission.asked events instead of changing
+// the server-wide policy or setting an attach-only environment variable.
+func translateAttachArgs(args []string) (kept []string, autoApprove bool, err error) {
 	kept = make([]string, 0, len(args))
 	for _, arg := range args {
 		name, value, hasValue := strings.Cut(arg, "=")
@@ -136,18 +151,18 @@ func translateAttachArgs(args []string) (kept []string, permission string, err e
 		switch name {
 		case "--yolo", "--auto":
 			if !negative {
-				permission = allowAllPermission
+				autoApprove = true
 			}
 		case "--port", "--hostname", "--mdns", "--mdns-domain":
 			// Letting these through would point the TUI at a different server,
 			// and messages RA2A delivers would stop appearing in it with no
 			// visible cause.
-			return nil, "", fmt.Errorf("%s cannot be combined with %s: the shared server address is fixed", name, ra2aFlag)
+			return nil, false, fmt.Errorf("%s cannot be combined with %s: the shared server address is fixed", name, ra2aFlag)
 		default:
 			kept = append(kept, arg)
 		}
 	}
-	return kept, permission, nil
+	return kept, autoApprove, nil
 }
 
 func containsRA2A(args []string) bool {
@@ -182,7 +197,11 @@ func withoutRA2A(args []string) []string {
 // passthrough runs the native opencode with the original arguments. The
 // wrapper must be invisible to a user who never asked for RA2A.
 func passthrough(args []string, stdout, stderr *os.File) error {
-	command := exec.Command(nativeExecutable(), args...)
+	executable := nativeExecutable()
+	if executable == "" {
+		return errors.New("native OpenCode binary not found outside the RA2A wrapper")
+	}
+	command := exec.Command(executable, args...)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
@@ -198,15 +217,19 @@ func passthrough(args []string, stdout, stderr *os.File) error {
 // binary wins; returning a bare name would resolve to the wrapper again.
 func nativeExecutable() string {
 	if recorded := os.Getenv("RA2A_OPENCODE_BINARY"); recorded != "" {
-		if _, err := os.Stat(recorded); err == nil {
+		if _, err := os.Stat(recorded); err == nil && !isSelf(recorded) {
 			return recorded
 		}
 	}
 	if self, err := os.Executable(); err == nil {
 		directory := filepath.Dir(self)
-		for _, name := range []string{"opencode.real", "opencode-bin"} {
+		names := []string{"opencode.real", "opencode-bin"}
+		if runtime.GOOS == "windows" {
+			names = []string{"opencode.real.exe", "opencode-bin.exe"}
+		}
+		for _, name := range names {
 			candidate := filepath.Join(directory, name)
-			if _, err := os.Stat(candidate); err == nil {
+			if _, err := os.Stat(candidate); err == nil && !isSelf(candidate) {
 				return candidate
 			}
 		}
@@ -215,7 +238,11 @@ func nativeExecutable() string {
 		if directory == "" {
 			directory = "."
 		}
-		candidate := filepath.Join(directory, "opencode")
+		name := "opencode"
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		candidate := filepath.Join(directory, name)
 		if info, err := os.Stat(candidate); err != nil || info.IsDir() {
 			continue
 		}
@@ -224,7 +251,7 @@ func nativeExecutable() string {
 		}
 		return candidate
 	}
-	return "opencode"
+	return ""
 }
 
 func isSelf(path string) bool {

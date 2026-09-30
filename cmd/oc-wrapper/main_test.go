@@ -118,23 +118,27 @@ func TestNativeExecutableSkipsTheWrapperItselfInPath(t *testing.T) {
 	if got != real {
 		t.Fatalf("expected the real binary %q, got %q", real, got)
 	}
+	t.Setenv("RA2A_OPENCODE_BINARY", self)
+	if got := nativeExecutable(); got != real {
+		t.Fatalf("self-referential binary override must not recurse, got %q", got)
+	}
 }
 
 // --yolo/--auto have no attach equivalent, so they are translated into the
 // attach client's permission policy rather than forwarded. Forwarding them made
 // `opencode --yolo --ra2a` die on a yargs argument dump.
 func TestTranslateAttachArgsMovesYoloIntoThePermissionPolicy(t *testing.T) {
-	kept, permission, err := translateAttachArgs([]string{"--yolo", "--continue"})
+	kept, autoApprove, err := translateAttachArgs([]string{"--yolo", "--continue"})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
 	if !reflect.DeepEqual(kept, []string{"--continue"}) {
 		t.Fatalf("the flag must not be forwarded to attach, got %v", kept)
 	}
-	if permission != allowAllPermission {
-		t.Fatalf("yolo must become the allow-all policy, got %q", permission)
+	if !autoApprove {
+		t.Fatal("yolo must enable the per-session auto-approval responder")
 	}
-	if _, permission, _ := translateAttachArgs([]string{"--auto=false"}); permission != "" {
+	if _, autoApprove, _ := translateAttachArgs([]string{"--auto=false"}); autoApprove {
 		t.Fatal("an explicit --auto=false must not enable the policy")
 	}
 }
@@ -151,7 +155,7 @@ func TestTranslateAttachArgsRefusesFlagsThatMoveTheServer(t *testing.T) {
 
 // Arguments attach does understand must survive untouched.
 func TestTranslateAttachArgsKeepsSupportedFlags(t *testing.T) {
-	kept, permission, err := translateAttachArgs([]string{"--continue", "--session", "ses_x", "--mini"})
+	kept, autoApprove, err := translateAttachArgs([]string{"--continue", "--session", "ses_x", "--mini"})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -159,7 +163,7 @@ func TestTranslateAttachArgsKeepsSupportedFlags(t *testing.T) {
 	if !reflect.DeepEqual(kept, want) {
 		t.Fatalf("got %v, want %v", kept, want)
 	}
-	if permission != "" {
+	if autoApprove {
 		t.Fatal("no policy must be set when the user did not ask for one")
 	}
 }

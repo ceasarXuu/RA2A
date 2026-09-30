@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
+	"github.com/ceasarXuu/RA2A/internal/ocsession"
 )
 
 // fakeOpenCode reproduces the real server surface: session listing, message
@@ -33,6 +34,15 @@ type fakeOpenCode struct {
 
 func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 	t.Helper()
+	leaseDir := t.TempDir()
+	t.Setenv("RA2A_OC_SESSION_DIR", leaseDir)
+	for _, id := range []string{"ses_1", "ses_2"} {
+		closeLease, err := ocsession.Register(leaseDir, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(closeLease)
+	}
 	fake := &fakeOpenCode{messages: make(chan string, 32)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /session", func(writer http.ResponseWriter, _ *http.Request) {
@@ -142,7 +152,6 @@ func newFakeOpenCode(t *testing.T) *fakeOpenCode {
 	t.Cleanup(fake.server.Close)
 	return fake
 }
-
 func (fake *fakeOpenCode) push(t *testing.T, event map[string]any) {
 	t.Helper()
 	payload, err := json.Marshal(event)

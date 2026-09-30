@@ -11,16 +11,21 @@
 
 | 发送端 ＼ 接收端 | codex-app | codex-cli | opencode |
 | --- | --- | --- | --- |
-| **codex-app** | ✅ 长期回归，Windows/Ubuntu/macOS | ⚠️ Windows 本机通过，LAN 未验 | ✅ 用户目视确认实时渲染 + 跨机往返（`FINAL-034633`） |
+| **codex-app** | ✅ 长期回归，Windows/Ubuntu/macOS | ⚠️ Windows 本机通过，LAN 未验 | ⚠️ 旧实现目视确认实时渲染 + 跨机往返（`FINAL-034633`）；新附着租约待跨机复验 |
 | **codex-cli** | ⚠️ 同上，反向 | ⚠️ Windows 本机通过，LAN 未验 | — |
-| **opencode** | ✅ 跨机往返（`FINAL-034633`，rog306 回） | — | ✅ RA2A 投递侧通，排队消息会被执行 |
+| **opencode** | ⚠️ 旧实现跨机往返（`FINAL-034633`）；新附着租约待跨机复验 | — | ⚠️ 隔离宿主及回归测试通过；新附着租约待真机复验 |
 
-## 接收方向：零配置已达成
+## 接收方向：以实际附着会话为准
 
-opencode 适配器默认**发布共享 server 报告的全部会话**，与 codex-app 发布全部
-316 个 session 的口径一致。任何 session 都能收到投递，无需登记。
+2026-09-30 的排查证实旧口径错误：OpenCode 共享 server 列出的全部会话也包括由
+普通 OpenCode 私有 server 执行的会话；向其投递可能返回 accepted 却永远不执行。
+新实现只发布**当前有存活 `--ra2a` TUI 附着**的会话，TUI 退出后停止发布；
+不要求人工登记，wrapper 自动维护附着租约。以前针对“发布全部会话”的验收
+不能直接证明新条件下的跨机互通，须按上表重新实测。
 
-`ra2a adopt-oc` 保留为**收窄**手段（只暴露指定会话），不再是前置步骤。
+权限方面，`--yolo --ra2a` 会仅为本次附着的 session 自动回复服务端的 ask 事件；
+显式 deny 保持生效。隔离 OpenCode 1.18.33 宿主的实际 ask→reply 已验证，
+用户正在运行的旧版 TUI 仍需重启后做现场复验。
 
 ## 未打通的格子：opencode agent 未稳定选用 RA2A 工具
 

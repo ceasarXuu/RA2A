@@ -26,6 +26,7 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/mailbox"
 	"github.com/ceasarXuu/RA2A/internal/mcpserver"
 	"github.com/ceasarXuu/RA2A/internal/ochost"
+	"github.com/ceasarXuu/RA2A/internal/ocsession"
 	"github.com/ceasarXuu/RA2A/internal/opencode"
 	"github.com/ceasarXuu/RA2A/internal/operator"
 )
@@ -134,6 +135,10 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		}
 		fmt.Fprintf(output, "name: %s\nstatus: exited\n", config.Name)
 		return nil
+	case "opencode-mcp-unregister":
+		return operator.UnregisterOpenCodeMCP()
+	case "opencode-server-cleanup":
+		return ochost.CleanupShared(operator.OpenCodeOwnerPath())
 	case "mailbox":
 		return runMailbox(args[1:], output)
 	case "adopt-cli", "release-cli":
@@ -429,8 +434,17 @@ func runOpencodeAttach(ctx context.Context, args []string, output io.Writer) err
 	}
 	defer func() { _ = host.Close() }()
 	fmt.Fprintf(output, "opencode-server=%s owned=%v\n", host.URL(), host.Owned())
+	sessionID, attach, err := ocsession.Select(ctx, host.URL(), args)
+	if err != nil {
+		return fmt.Errorf("select OpenCode session: %w", err)
+	}
+	release, err := ocsession.Register(ocsession.Directory(), sessionID)
+	if err != nil {
+		return fmt.Errorf("register OpenCode attachment: %w", err)
+	}
+	defer release()
 	command := exec.CommandContext(ctx, opencodeExecutable(),
-		append([]string{"attach", host.URL()}, args...)...)
+		append([]string{"attach", host.URL()}, attach...)...)
 	command.Stdin = os.Stdin
 	command.Stdout = output
 	command.Stderr = os.Stderr

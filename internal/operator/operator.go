@@ -290,7 +290,7 @@ func Exit() (Config, error) {
 	// The MCP process is owned by Codex and exits with its stdio connection. Removing
 	// the registration prevents Codex from starting another RA2A MCP process.
 	_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
-	return config, nil
+	return config, UnregisterOpenCodeMCP()
 }
 
 func serviceRunning() error {

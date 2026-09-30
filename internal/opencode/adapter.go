@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
+	"github.com/ceasarXuu/RA2A/internal/ocsession"
 )
 
 // AgentKind is the agent identity this adapter publishes. OpenCode is an
@@ -18,17 +19,18 @@ import (
 const AgentKind = agentbridge.AgentOpenCode
 
 type Adapter struct {
-	nodeID       string
-	client       *Client
-	baseURL      string
-	logger       *slog.Logger
-	mu           sync.RWMutex
-	adopted      map[string]struct{}
-	landedBudget time.Duration
-	landedPoll   time.Duration
-	watcher      context.CancelFunc
-	lastProbe    time.Time
-	reachable    bool
+	nodeID        string
+	client        *Client
+	baseURL       string
+	logger        *slog.Logger
+	unattachedLog sync.Once
+	mu            sync.RWMutex
+	adopted       map[string]struct{}
+	landedBudget  time.Duration
+	landedPoll    time.Duration
+	watcher       context.CancelFunc
+	lastProbe     time.Time
+	reachable     bool
 }
 
 func New(nodeID string, config Config, stderr io.Writer) *Adapter {
@@ -47,13 +49,21 @@ func New(nodeID string, config Config, stderr io.Writer) *Adapter {
 
 func (adapter *Adapter) Kind() agentbridge.AgentKind { return AgentKind }
 
-// ResolveCaller reports this node's OpenCode sessions when one of them acts as
-// a sender. OpenCode does not put a stable caller identity in MCP metadata, so
-// when exactly one session exists the adapter can answer without guessing;
+// ResolveCaller reports this node's attached OpenCode sessions when one of
+// them acts as a sender. OpenCode does not put a stable caller identity in MCP
+// metadata, so when exactly one attached session exists it can answer;
 // otherwise it asks the caller to declare which session it is rather than
 // attributing the message to the wrong conversation.
 func (adapter *Adapter) ResolveCaller(_ context.Context, caller agentbridge.CallerContext) (agentbridge.Address, error) {
 	sessions, err := adapter.client.ListSessions(context.Background())
+	active := ocsession.Active(ocsession.Directory())
+	eligible := sessions[:0]
+	for _, session := range sessions {
+		if active[session.ID] {
+			eligible = append(eligible, session)
+		}
+	}
+	sessions = eligible
 	if err != nil || len(sessions) == 0 {
 		return agentbridge.Address{}, agentbridge.CallerHint(
 			"no OpenCode session is available on this node to act as the caller")
@@ -114,17 +124,22 @@ func (adapter *Adapter) Watch(ctx context.Context) {
 	}()
 }
 
-// ListEndpoints publishes every session the shared server reports. OpenCode
-// sessions are globally listed and reachable through the one shared server, so
-// there is no ownership ambiguity to resolve and no reason to make the operator
-// register anything.
+// ListEndpoints publishes only sessions with a live attached RA2A TUI. The
+// global session store also lists sessions owned by private OpenCode servers;
+// sending to those sessions can be acknowledged without ever being executed.
 func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoint, error) {
 	sessions, err := adapter.client.ListSessions(ctx)
 	if err != nil {
 		return nil, err
 	}
 	endpoints := make([]agentbridge.Endpoint, 0, len(sessions))
+	active := ocsession.Active(ocsession.Directory())
+	unattached := 0
 	for _, session := range sessions {
+		if !active[session.ID] {
+			unattached++
+			continue
+		}
 		sessionID := session.ID
 		status := agentbridge.EndpointReady
 		if adapter.client.Busy(sessionID) {
@@ -143,15 +158,22 @@ func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoi
 			Address: agentbridge.Address{NodeID: adapter.nodeID, EndpointID: sessionID},
 		})
 	}
+	if unattached > 0 {
+		adapter.unattachedLog.Do(func() {
+			adapter.logger.Info("opencode_sessions_unattached", "count", unattached,
+				"note", "sessions without a live --ra2a TUI are not published")
+		})
+	}
 	return endpoints, nil
 }
 
 func (adapter *Adapter) Deliver(ctx context.Context, address agentbridge.Address, envelope agentbridge.MessageEnvelope) agentbridge.DeliveryResult {
-	// No ownership gate here. OpenCode sessions are globally listed and reachable
-	// through the one shared server, so gating delivery on a local registry would
-	// silently hide sessions from the mesh for no safety gain: a caller that can
-	// reach this endpoint can already address any session.
+	// Registry lookup gated delivery on the live attachment lease. Recheck here
+	// because the TUI may have exited between lookup and POST.
 	sessionID := address.EndpointID
+	if !ocsession.Active(ocsession.Directory())[sessionID] {
+		return agentbridge.DeliveryResult{Code: agentbridge.ResultNotFound, Detail: "OpenCode session has no active RA2A attachment"}
+	}
 	marker := agentbridge.RenderIncomingText(envelope)
 	postErr := adapter.client.PostMessage(ctx, sessionID, marker)
 	if postErr == nil {

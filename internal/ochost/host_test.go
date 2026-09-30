@@ -231,6 +231,24 @@ func TestCloseIsIdempotentAndClearsTheOwnerRecord(t *testing.T) {
 	}
 }
 
+func TestAdoptedHostCloseDoesNotEraseOwnersRecord(t *testing.T) {
+	url := startStubServer(t)
+	ownerPath := filepath.Join(t.TempDir(), "owner.json")
+	if err := os.WriteFile(ownerPath, []byte(`{"pid":123,"url":"`+url+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	host, err := Start(context.Background(), Config{URL: url, OwnerPath: ownerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ownerPath); err != nil {
+		t.Fatalf("adopted client removed another host's owner record: %v", err)
+	}
+}
+
 // The server is a shared resource: RA2A and every attached TUI depend on it, so
 // closing one client must not take it down for the others.
 func TestServerOutlivesTheClientThatStartedIt(t *testing.T) {
@@ -279,6 +297,15 @@ func TestServerOutlivesTheClientThatStartedIt(t *testing.T) {
 		if Reachable(context.Background(), "http://127.0.0.1:"+strconv.Itoa(port)) {
 			// Still serving: the shared server must have survived the client.
 			_ = host.Close()
+			if _, err := os.Stat(ownerPath); err != nil {
+				t.Fatalf("the owner record must outlive the TUI: %v", err)
+			}
+			if err := CleanupShared(ownerPath); err != nil {
+				t.Fatalf("daemon cleanup must stop the shared server: %v", err)
+			}
+			if Reachable(context.Background(), "http://127.0.0.1:"+strconv.Itoa(port)) {
+				t.Fatal("shared server still reachable after daemon cleanup")
+			}
 			return
 		}
 		time.Sleep(100 * time.Millisecond)

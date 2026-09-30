@@ -22,7 +22,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -135,6 +134,13 @@ func Start(ctx context.Context, config Config) (*Host, error) {
 	}
 	if err := host.waitReady(ctx, config.ReadinessTimeout); err != nil {
 		_ = host.Close()
+		host.mu.Lock()
+		command := host.cmd
+		host.mu.Unlock()
+		if command != nil && command.Process != nil {
+			_ = command.Process.Kill()
+		}
+		_ = host.clearOwner()
 		return nil, err
 	}
 	return host, nil
@@ -229,7 +235,9 @@ func (host *Host) Close() error {
 	if cancel != nil {
 		cancel()
 	}
-	_ = host.clearOwner()
+	// Close detaches supervision; it does not terminate the shared process.
+	// Keep its owner record until CleanupShared actually stops it, including
+	// when the TUI that originally spawned it has exited.
 	return nil
 }
 
@@ -277,14 +285,6 @@ func readOwner(path string) (ownerRecord, error) {
 	return record, json.Unmarshal(data, &record)
 }
 
-func processAlive(pid int) bool {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return process.Signal(syscall.Signal(0)) == nil
-}
-
 // CleanupShared stops a server that RA2A started, using the recorded owner
 // file. It is the counterpart to RegisterOwnerRecord: the RA2A daemon owns the
 // shared OpenCode server, so `ra2a stop` and `ra2a exit` must reclaim it the
@@ -305,22 +305,8 @@ func CleanupShared(ownerPath string) error {
 	if record.PID <= 0 || !processAlive(record.PID) {
 		return os.Remove(ownerPath)
 	}
-	process, err := os.FindProcess(record.PID)
-	if err != nil {
-		return os.Remove(ownerPath)
-	}
-	if err := process.Signal(syscall.SIGTERM); err != nil {
+	if err := stopSharedProcess(record.PID); err != nil {
 		return fmt.Errorf("stop shared OpenCode server: %w", err)
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if !processAlive(record.PID) {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if processAlive(record.PID) {
-		_ = process.Signal(syscall.SIGKILL)
 	}
 	return os.Remove(ownerPath)
 }

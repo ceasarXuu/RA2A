@@ -30,6 +30,12 @@ $LegacyConfigPath = Join-Path $LegacyInstallRoot 'config.json'
 $LegacyBinaryPath = Join-Path $LegacyInstallRoot 'bin\ra2a.exe'
 
 if ($Uninstall) {
+    if (Test-Path -LiteralPath $BinaryPath) {
+        & $BinaryPath opencode-mcp-unregister
+        if ($LASTEXITCODE -ne 0) { throw 'could not unregister OpenCode MCP' }
+        & $BinaryPath opencode-server-cleanup
+        if ($LASTEXITCODE -ne 0) { throw 'could not stop the shared OpenCode server' }
+    }
     $Mcp = $Codex
     if (-not $Mcp) { $Mcp = (Get-Command codex -ErrorAction SilentlyContinue).Source }
     # Run MCP cleanup while a wrapper can still pass `mcp` through.
@@ -37,6 +43,24 @@ if ($Uninstall) {
     if (Test-Path -LiteralPath $WrapperMarker) {
         Remove-Item -LiteralPath $WrapperPath, $WrapperCmdPath, $WrapperMarker -Force -ErrorAction SilentlyContinue
         Write-Output 'RA2A codex wrapper removed; the native codex command is restored.'
+    }
+    if (Test-Path -LiteralPath $OcWrapperMarker) {
+        $OcUninstallRetired = $null
+        if (Test-Path -LiteralPath $OcWrapperPath) {
+            $OcUninstallRetired = "$OcWrapperPath.retired-$([Guid]::NewGuid().ToString('N'))"
+            Move-Item -LiteralPath $OcWrapperPath -Destination $OcUninstallRetired
+        }
+        try {
+            if (Test-Path -LiteralPath $OcWrapperReal) {
+                Move-Item -LiteralPath $OcWrapperReal -Destination $OcWrapperPath
+            }
+        } catch {
+            if ($OcUninstallRetired -and -not (Test-Path -LiteralPath $OcWrapperPath)) {
+                Move-Item -LiteralPath $OcUninstallRetired -Destination $OcWrapperPath -ErrorAction SilentlyContinue
+            }
+            throw
+        }
+        Remove-Item -LiteralPath $OcWrapperMarker -Force
     }
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $BinaryPath -Force -ErrorAction SilentlyContinue
@@ -105,9 +129,6 @@ if ($CodexWrapper) {
 }
 
 if ($OpenCodeWrapper) {
-    if ((Test-Path -LiteralPath $OcWrapperPath) -and -not (Test-Path -LiteralPath $OcWrapperMarker)) {
-        throw "opencode.exe already exists at $OcWrapperPath without the RA2A marker; refusing to overwrite it"
-    }
     $OcBuildPath = Join-Path $env:TEMP ("oc-wrapper-{0}.exe" -f ([Guid]::NewGuid().ToString('N')))
     Push-Location $SourceRoot
     try {
@@ -117,10 +138,33 @@ if ($OpenCodeWrapper) {
         Pop-Location
     }
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-    if ((Test-Path -LiteralPath $OcWrapperPath) -or (Test-Path -LiteralPath $OcWrapperReal)) {
+    $OcNativeMoved = $false
+    if ((Test-Path -LiteralPath $OcWrapperPath) -and -not (Test-Path -LiteralPath $OcWrapperMarker)) {
+        if (Test-Path -LiteralPath $OcWrapperReal) {
+            throw "opencode.real.exe already exists at $OcWrapperReal; refusing to overwrite it"
+        }
         Move-Item -LiteralPath $OcWrapperPath -Destination $OcWrapperReal -Force
+        $OcNativeMoved = $true
     }
-    Move-Item -LiteralPath $OcBuildPath -Destination $OcWrapperPath -Force
+    $OcRetired = $null
+    if (Test-Path -LiteralPath $OcWrapperMarker) {
+        if (-not (Test-Path -LiteralPath $OcWrapperPath)) {
+            throw "OpenCode wrapper marker exists but $OcWrapperPath is missing; refusing to replace an unknown installation"
+        }
+        $OcRetired = "$OcWrapperPath.retired-$([Guid]::NewGuid().ToString('N'))"
+        Move-Item -LiteralPath $OcWrapperPath -Destination $OcRetired
+    }
+    try {
+        Move-Item -LiteralPath $OcBuildPath -Destination $OcWrapperPath
+    } catch {
+        if ($OcRetired -and -not (Test-Path -LiteralPath $OcWrapperPath)) {
+            Move-Item -LiteralPath $OcRetired -Destination $OcWrapperPath -ErrorAction SilentlyContinue
+        }
+        if ($OcNativeMoved -and -not (Test-Path -LiteralPath $OcWrapperPath)) {
+            Move-Item -LiteralPath $OcWrapperReal -Destination $OcWrapperPath -ErrorAction SilentlyContinue
+        }
+        throw
+    }
     New-Item -ItemType File -Path $OcWrapperMarker -Force | Out-Null
     Write-Output 'RA2A opencode wrapper installed. Run `opencode --ra2a` to attach to the RA2A OpenCode server.'
     Write-Output 'Every other opencode invocation is passed through unchanged.'

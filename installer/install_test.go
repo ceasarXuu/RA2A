@@ -236,6 +236,45 @@ func TestUnixUninstallRestoresNativeCodex(t *testing.T) {
 	}
 }
 
+func TestUnixOpenCodeWrapperRepeatInstallAndUninstallPreserveNative(t *testing.T) {
+	requireUnixShell(t)
+	home, fakeBin := installerEnvironment(t, "Darwin")
+	bin := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	native := filepath.Join(bin, "opencode")
+	const original = "#!/bin/sh\nprintf 'original\\n'\n"
+	writeExecutable(t, native, original)
+	env := append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	for i := 0; i < 2; i++ {
+		command := exec.Command("sh", "../install.sh", "--opencode-wrapper")
+		command.Env = env
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("install %d: %v\n%s", i, err, output)
+		}
+		data, err := os.ReadFile(filepath.Join(bin, "opencode.real"))
+		if err != nil || string(data) != original {
+			t.Fatalf("install %d changed native: %q, %v", i, data, err)
+		}
+	}
+	command := exec.Command("sh", "../install.sh", "--uninstall")
+	command.Env = env
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("uninstall: %v\n%s", err, output)
+	}
+	data, err := os.ReadFile(native)
+	if err != nil || string(data) != original {
+		t.Fatalf("uninstall failed to restore native: %q, %v", data, err)
+	}
+	assertFileContains(t, filepath.Join(home, "ra2a-calls.log"), "opencode-mcp-unregister", "opencode-server-cleanup")
+	for _, path := range []string{filepath.Join(bin, "opencode.real"), filepath.Join(bin, ".ra2a-opencode-wrapper")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("uninstall left %s: %v", path, err)
+		}
+	}
+}
+
 func TestPowerShellInstallerDelegatesLifecycleToRA2A(t *testing.T) {
 	content, err := os.ReadFile("../install.ps1")
 	if err != nil {
