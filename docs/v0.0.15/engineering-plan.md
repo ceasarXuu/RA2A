@@ -516,6 +516,66 @@ accepted）。实测通过。
 （`DESKTOP_OWNER_UNAVAILABLE: no-client-found`），无法从本端唤起。
 对方恢复并回消息后即可确认发送方拿到 `delivered`。
 
+## 11.6 已修复缺陷：投递改写了 Codex 会话的模型设置
+
+- 发现日期：2026-09-30
+- 修复日期：2026-09-30
+- 状态：**已修复并跨机验证**（ubuntu407 `e2ff3dd`，rog306 `dee0770`）
+
+### 现象
+
+用户把某个 Codex 会话从 `gpt5.6-sol` 手动切到 `gpt6-sol` 并跑了几轮，
+下次该会话收到 RA2A 消息后，模型被改回 `5.6-sol`。这是**必现**，且违反产品
+要求：RA2A 必须完全透明，除投递消息外不得改动会话任何设置。
+
+### 根因
+
+`StartTurn` 在发 turn 之前调用 `thread-follower-update-thread-settings`，把解析
+出的 model 写进 thread 设置。这是**持久化改写**，不是投递。
+
+解析值本身也不可靠：`ResolveThreadModel` 优先取 `thread/read` 的 `model` 字段，
+而该字段是线程**创建时**的来源模型；只有当它为空时才回退去读 rollout 文件里
+最后一个 `turn_context`（那个才是当前模型）。于是「创建时的旧模型」压过
+「当前模型」，被写回会话。
+
+### 修复
+
+- 删除 `synchronizeThreadSettings` 及其两处调用（正常路径与空 model 重试路径）。
+- 保留向 turn 请求传 model：实测 Desktop 在 ChatGPT 账号下拒绝空 model
+  （`The '' model is not supported when using Codex with a ChatGPT account`），
+  所以必须传，且只作用于该次 turn。
+- 新增测试 `TestClientNeverWritesThreadSettings`：断言投递过程中**绝不出现**
+  `thread-follower-update-thread-settings` 帧，把产品要求编码进测试。
+
+### 执行归属：修复要部署在每个持有 Codex 会话的节点
+
+这个写入由**接收端节点**执行：投递链路是
+`发送方 → LAN → 接收方 deliverOverLAN → 接收方 registry → 接收方 codex-app
+适配器 → 接收方 desktopipc → 接收方 Desktop`。
+
+因此修复的影响范围**不是全局的**，每个持有 Codex 会话的节点各需要一份。仅
+修复发送方无效——本缺陷第一次「已修复」的结论就是因此站不住的，rog306 的
+会话在 ubuntu407 部署后仍然回退，直到 rog306 自己也部署。
+
+### 跨机验证
+
+| 节点 | 版本 | 结果 |
+| --- | --- | --- |
+| ubuntu407 | `e2ff3dd` | 已部署 |
+| macmini-m4 | `e2ff3dd` | 已部署 |
+| rog306 | `dee0770`（含 `e2ff3dd`） | 会话设为 `gpt-6.1-sol` → 跑轮次 → 收两条 RA2A 消息 → **模型保持，未回退** ✅ |
+
+验证必须由**接收端**观察模型，不能由发送端代劳：RA2A 暴露的会话字段只有
+`agent/capabilities/id/status/title`，**不含 model**。这符合产品原则——RA2A 不该
+理解会话设置；为此加一个 model 字段去「方便验证」反而是主动违反该原则。
+
+### 附带发现：Windows 上 restart 不替换进程
+
+rog306 首次 `ra2a restart` 返回成功但旧进程仍在运行：Windows 计划任务的
+`IgnoreNew` 策略不会替换已运行的实例。核验新 PID 的启动时间与可执行文件路径
+后，改 stop + restart 才生效。这与本机 Linux 上「换了二进制但没重启 daemon」
+是同一类错误的不同载体：**命令返回成功不等于运行的东西被替换。**
+
 ## 12. 待决项（阻塞 Phase 3）
 
 | ID | 待决项 | 阻塞范围 | 建议 |
