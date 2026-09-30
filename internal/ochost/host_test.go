@@ -31,6 +31,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 `
 
+// stopSupervisedServer kills the shared server a test started.
+//
+// host.Close only detaches this client: the server is a shared resource that
+// deliberately outlives whoever started it, which is the behaviour these tests
+// exist to prove. Nothing else stops it, so without an explicit kill every run
+// leaves a server process and its port behind -- that is how ten orphans
+// accumulated in a single day.
+func stopSupervisedServer(t *testing.T, host *Host) {
+	t.Helper()
+	host.mu.Lock()
+	process := host.cmd.Process
+	host.mu.Unlock()
+	if process == nil {
+		return
+	}
+	_ = process.Kill()
+	_, _ = process.Wait()
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -163,6 +182,7 @@ func TestSupervisedServerRestartsAfterAnUnexpectedExit(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	defer host.Close()
+	t.Cleanup(func() { stopSupervisedServer(t, host) })
 	if !host.Owned() {
 		t.Fatal("the host must own a spawned server")
 	}
@@ -242,6 +262,7 @@ func TestServerOutlivesTheClientThatStartedIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
+	t.Cleanup(func() { stopSupervisedServer(t, host) })
 	// The client that started it goes away, exactly like a TUI being closed.
 	cancelClient()
 	host.mu.Lock()
