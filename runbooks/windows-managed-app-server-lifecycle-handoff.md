@@ -103,7 +103,22 @@ if (Test-Path -LiteralPath $OwnerPath) { throw 'owner lease survived stop' }
 
 ### 3.2 restart
 
+> **Windows 计划任务注意事项（2026-09-30 实机确认）**：RA2A 计划任务使用
+> `MultipleInstances=IgnoreNew`。仅执行 `ra2a restart` 时，重新注册后发出的
+> `Start-ScheduledTask` 可能被仍在运行的旧实例忽略；命令虽然返回
+> `status: running`，daemon PID 和内存中的代码却没有变化。部署新二进制后必须先
+> `stop` 再 `restart`，并以新 PID、启动时间和可执行文件路径为准，不能只相信命令
+> 输出或磁盘文件时间戳。
+
 ```powershell
+$BeforeDaemon = Get-CimInstance Win32_Process -Filter "Name='ra2a.exe'" |
+  Where-Object { $_.CommandLine -match '\sdaemon(\s|$)' } |
+  Select-Object -First 1
+& $Ra2a stop
+Start-Sleep -Seconds 2
+if (Get-Process -Id $BeforeDaemon.ProcessId -ErrorAction SilentlyContinue) {
+  throw 'old RA2A daemon survived stop'
+}
 & $Ra2a restart
 Start-Sleep -Seconds 3
 $Daemon = Get-CimInstance Win32_Process -Filter "Name='ra2a.exe'" |
@@ -113,6 +128,10 @@ $Managed = Get-CimInstance Win32_Process -Filter "Name='codex.exe'" |
   Where-Object { $_.CommandLine -match 'app-server.*\.ra2a-\d+\.sock' } |
   Select-Object -First 1
 if (-not $Daemon -or -not $Managed) { throw 'RA2A daemon or managed App Server did not restart' }
+if ([int]$Daemon.ProcessId -eq [int]$BeforeDaemon.ProcessId) { throw 'RA2A daemon PID did not change' }
+$DaemonProcess = Get-Process -Id $Daemon.ProcessId
+if ($DaemonProcess.Path -ne $Ra2a) { throw "daemon executable mismatch: $($DaemonProcess.Path)" }
+$DaemonProcess | Select-Object Id, StartTime, Path
 $Lease = Get-Content -LiteralPath $OwnerPath -Raw | ConvertFrom-Json
 if ([int]$Lease.pid -ne [int]$Managed.ProcessId) { throw 'owner PID does not match managed App Server' }
 if ($Lease.socketPath -notmatch '\.ra2a-\d+\.sock$') { throw 'socket is not per-launch isolated' }
