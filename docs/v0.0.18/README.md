@@ -69,6 +69,13 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 
 上述回归不覆盖真实宿主的并发订阅生命周期、跨设备 App/CLI 四方向互通、20+ 多轮、人工继续和恢复矩阵。[PD31 与原互通验收](../v0.0.15/engineering-plan.md)仍需现场完成，不能将局部缺陷修复等同于 CLI 正式支持准入。
 
+### CLI 写入能力门禁补齐（2026-10-02）
+
+- 修复前隔离 WebSocket 复现确认：`canAcceptDirectInput` 缺失或 `null` 时，空闲线程实际提交 `turn/start`、活跃线程实际提交 `turn/steer` 并返回 delivered；`false`、缺失、`null` 的线程均错误发布为带 `receiveText` 的 ready/busy 端点。
+- 枚举与直接投递共用既有 `acceptsDirectInput()`，要求宿主明确返回 `true`。其余形态不发布可收件端点；直接投递返回 `unsupported / capability_rejected`、释放订阅且零 turn 写入。此前发布的地址不能绕过实时门禁。
+- 新增 true/false/missing/null × idle/active 八项协议回归，以及三项能力变化后的旧地址回归；实际捕获 start/steer 调用。上述五个包的 `go test -race -count=1` 通过。
+- 本阶段仅修改源码并运行临时 fake 宿主，没有连接正式 daemon、发真实模型任务或部署本机服务；本机 CLI/App、认证和代理配置未修改。正式支持准入仍遵循上述 PD31 验收边界。
+
 ## 本机 Codex App 地区登录错误调查（2026-10-01）
 
 - 环境：Ubuntu，App `26.924.22138`，bundled Codex `0.158.0-alpha.2.1`；正常 CLI / 官方 daemon 为 `0.159.3`。

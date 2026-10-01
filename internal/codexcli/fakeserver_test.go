@@ -43,6 +43,7 @@ type fakeAppServer struct {
 	failTurn          map[string]string
 	rejectResume      map[string]string
 	noDirectIn        map[string]bool
+	directInputFields map[string]json.RawMessage
 	inputs            []json.RawMessage
 	completeBeforeAck bool
 	disconnectTurn    bool
@@ -74,14 +75,15 @@ func newFakeAppServer(t *testing.T) *fakeAppServer {
 	}
 	server := &fakeAppServer{
 		t: t, listener: listener, socketPath: socketPath,
-		resumeSeen:   map[string]bool{},
-		threads:      map[string]*fakeThread{},
-		activeTurns:  map[string]string{},
-		suppressDone: map[string]bool{},
-		failTurn:     map[string]string{},
-		rejectResume: map[string]string{},
-		noDirectIn:   map[string]bool{},
-		codexHome:    "/none",
+		resumeSeen:        map[string]bool{},
+		threads:           map[string]*fakeThread{},
+		activeTurns:       map[string]string{},
+		suppressDone:      map[string]bool{},
+		failTurn:          map[string]string{},
+		rejectResume:      map[string]string{},
+		noDirectIn:        map[string]bool{},
+		directInputFields: map[string]json.RawMessage{},
+		codexHome:         "/none",
 	}
 	server.codexPath = writeFakeCodex(t, socketPath)
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
@@ -243,6 +245,7 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 		server.mu.Lock()
 		thread := server.threads[threadID]
 		noDirect := server.noDirectIn[threadID]
+		directInput, override := server.directInputFields[threadID]
 		server.mu.Unlock()
 		if thread == nil {
 			return server.rpcError(conn, id, -32600, "thread not loaded: "+threadID)
@@ -252,13 +255,20 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 			status = "active"
 		}
 		accept := thread.canAccept && !noDirect
+		record := map[string]any{
+			"id": thread.id, "sessionId": thread.id, "source": "vscode", "originator": "codex-tui",
+			"cliVersion": "0.158.0", "preview": "preview of " + thread.id,
+			"status": map[string]any{"type": status}, "canAcceptDirectInput": accept,
+		}
+		if override {
+			if len(directInput) == 0 {
+				delete(record, "canAcceptDirectInput")
+			} else {
+				record["canAcceptDirectInput"] = directInput
+			}
+		}
 		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": map[string]any{
-			"thread": map[string]any{
-				"id": thread.id, "sessionId": thread.id, "source": "vscode", "originator": "codex-tui",
-				"cliVersion": "0.158.0", "preview": "preview of " + thread.id,
-				"status":               map[string]any{"type": status},
-				"canAcceptDirectInput": accept,
-			},
+			"thread": record,
 		}})
 	case "thread/start":
 		server.mu.Lock()

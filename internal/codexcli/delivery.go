@@ -41,13 +41,17 @@ func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoi
 				"reason", "read_failed", "error", err.Error())
 			continue
 		}
+		if !thread.acceptsDirectInput() {
+			adapter.logger.Info("cli_capability_rejected", "endpoint_id", threadID, "capability", "canAcceptDirectInput")
+			continue
+		}
 		status := agentbridge.EndpointReady
 		if thread.active() {
 			status = agentbridge.EndpointBusy
 		}
-		capabilities := []agentbridge.Capability{agentbridge.CapabilityReceiveText, agentbridge.CapabilityReplyAddress}
-		if thread.acceptsDirectInput() {
-			capabilities = append(capabilities, agentbridge.CapabilitySteerActiveTurn, agentbridge.CapabilityInteractiveSafe)
+		capabilities := []agentbridge.Capability{
+			agentbridge.CapabilityReceiveText, agentbridge.CapabilityReplyAddress,
+			agentbridge.CapabilitySteerActiveTurn, agentbridge.CapabilityInteractiveSafe,
 		}
 		endpoints = append(endpoints, agentbridge.Endpoint{
 			ID: threadID, Agent: agentbridge.AgentCodexCLI, NativeSessionID: threadID,
@@ -104,12 +108,12 @@ func (adapter *Adapter) deliverToThread(ctx context.Context, server *appServer, 
 			Code: agentbridge.ResultNotFound, NativeErrorClass: classifyRPCError(err), Detail: err.Error(),
 		}
 	}
-	if thread.CanAcceptDirectInput != nil && !*thread.CanAcceptDirectInput {
+	if !thread.acceptsDirectInput() {
 		adapter.logger.Info("cli_capability_rejected", "endpoint_id", threadID, "capability", "canAcceptDirectInput")
 		adapter.unsubscribe(ctx, server, threadID)
 		return agentbridge.DeliveryResult{
 			Code: agentbridge.ResultUnsupported, NativeErrorClass: "capability_rejected",
-			Detail: "host refuses direct input for this thread",
+			Detail: "host has not enabled direct input for this thread",
 		}
 	}
 	activeTurnID := ""
