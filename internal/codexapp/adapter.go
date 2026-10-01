@@ -30,15 +30,23 @@ type Session struct {
 }
 
 type Adapter struct {
-	nodeID string
-	source SessionSource
-	logger *slog.Logger
+	nodeID          string
+	source          SessionSource
+	logger          *slog.Logger
+	excludedThreads map[string]struct{}
 }
 
-func New(nodeID string, source SessionSource, stderr io.Writer) *Adapter {
+// Excluded thread IDs retain another adapter's explicit ownership even when that
+// adapter does not currently publish them. App history includes CLI threads too.
+func New(nodeID string, source SessionSource, stderr io.Writer, excludedThreadIDs ...string) *Adapter {
+	excluded := make(map[string]struct{}, len(excludedThreadIDs))
+	for _, threadID := range excludedThreadIDs {
+		excluded[threadID] = struct{}{}
+	}
 	return &Adapter{
 		nodeID: nodeID, source: source,
-		logger: slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		logger:          slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		excludedThreads: excluded,
 	}
 }
 
@@ -51,6 +59,9 @@ func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoi
 	}
 	endpoints := make([]agentbridge.Endpoint, 0, len(sessions))
 	for _, session := range sessions {
+		if _, excluded := adapter.excludedThreads[session.ID]; excluded {
+			continue
+		}
 		status := agentbridge.EndpointReady
 		if session.Status != "" && session.Status != "idle" {
 			status = agentbridge.EndpointBusy

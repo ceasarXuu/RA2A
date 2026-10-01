@@ -108,17 +108,17 @@ func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket strin
 		if err != nil {
 			return nil, fmt.Errorf("start managed Codex App Server: %w", err)
 		}
-		appAdapter := codexapp.New(nodeID, codexAppBridge{source: source}, stderr)
-		if err := registry.Register(appAdapter); err != nil {
-			_ = source.Close()
-			return nil, err
-		}
 		cliAdapter := codexcli.New(nodeID, codexcli.Config{CodexPath: codexPath, Stderr: stderr})
 		for _, threadID := range cliSessions {
 			if err := cliAdapter.Register(threadID); err != nil {
 				fmt.Fprintf(stderr, "skip cli session %q: %v\n", threadID, err)
 				continue
 			}
+		}
+		appAdapter := codexapp.New(nodeID, codexAppBridge{source: source}, stderr, cliAdapter.Registered()...)
+		if err := registry.Register(appAdapter); err != nil {
+			_ = source.Close()
+			return nil, err
 		}
 		if err := registry.Register(cliAdapter); err != nil {
 			_ = source.Close()
