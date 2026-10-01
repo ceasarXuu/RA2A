@@ -75,6 +75,6 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 - 直接失败证据：浏览器 OAuth callback 成功，App 自带原生后端随后三次在 token 兑换收到 HTTP403、`unsupported_country_region_territory`。因此拒绝发生在后端兑换阶段。
 - 网络对照：App Chromium 使用 GNOME 的现有 localhost 代理，原生后端没有继承 HTTP(S) proxy 环境；CLI 后端使用该现有代理。公开无凭据认证元数据 GET 经现有代理为 HTTP200、直连为 HTTP403，但 GET 拒绝页本身不作为 OAuth 地区 code 的替代证据。
 - RA2A 归因边界：App 直接启动自己的 bundled 后端，进程树和启动日志不经过 RA2A wrapper/managed host；未发现 RA2A 产品代码写认证文件或调用登录/退出接口的因果证据。当前证据支持 App 原生网络环境差异，而非 RA2A 启动接管。
-- 状态：调查已定位失败阶段与网络差异，实际恢复未验证。让 App 继承正常 CLI 的现有网络环境重新启动并登录，需要先关闭当前 App 窗口，已向用户提出验证请求；没有修改凭据、删除缓存或重启正式 RA2A/CLI 服务。
+- 状态：用户已授权本机修复。已新建用户级桌面入口并正常重启 App，原生后端使用现有代理，本地账号读取从约15秒恢复到5–30毫秒。实际 OAuth 登录尚待用户操作/反馈，不能标记已恢复；durable 云端 WebSocket 仍有独立超时，Node 环境代理开关试验无效后已移除。未修改凭据、删除缓存、改 App 包源码或重启正式 RA2A/CLI 服务。
 
 复用诊断步骤见 [Harness runbook](../../runbooks/auto-harness-install.md#linux-codex-app-登录地区错误的诊断边界)。

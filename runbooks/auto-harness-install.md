@@ -54,6 +54,15 @@ sh -n install.sh && sh -n install-remote.sh
 2. 用 App `stdio_transport_spawned` 日志、父 PID 与 `/proc/<pid>/exe` 确认后端是否来自 App 自带路径，或确实经过 RA2A wrapper/managed host。
 3. 在原生日志中区分浏览器 callback 失败、token 兑换失败与账号读取失败；按 App 后端 PID 和时间筛选，避免混入 CLI 的日志。当前安装的原生日志为 `~/.codex/logs_2.sqlite`，以只读方式查询；日志格式和位置需随版本核实。
 4. 可对公开无凭据认证元数据端点作正常路径与直连对照，记录 HTTP 状态即可。公开 GET 的拒绝页不能替代 OAuth 错误 code 的证据。不要输出 OAuth code、token、Authorization 或完整认证文件。
-5. 若确认 App 未继承用户正常 CLI 的现有网络环境，候选操作是保存当前工作、关闭 App 后从该 shell 重新启动，再由用户实际登录验证。此操作尚未在本次调查中完成；不要据此标记已恢复，不要删除 `auth.json` 或会话缓存。
+5. 若确认 App 未继承用户正常 CLI 的现有网络环境，候选操作是保存当前工作、关闭 App 后从该 shell 重新启动，再由用户实际登录验证。本次已完成正常重启和后端路径验证，实际 OAuth 登录仍待用户操作；不能据此标记登录已恢复，不要删除 `auth.json` 或会话缓存。
 
 本次进程树确认 App 直接启动 `/usr/lib/chatgpt/resources/codex`，不经过 RA2A wrapper；未发现 RA2A 产品代码写认证文件或调用登录/退出接口。共享后端可能自动刷新凭据，因此结论限于当前有证据的失败路径。官方认证缓存说明见 [OpenAI Docs](https://learn.chatgpt.com/docs/auth)。
+
+### 本机入口修复与验证（2026-10-01）
+
+- 在 `~/.local/share/applications/chatgpt.desktop` 新建同 ID 的用户入口，保留系统入口其余字段，只将 `Exec` 改为 `/usr/bin/env` 携带当前正常 CLI 的 `HTTP_PROXY`、`HTTPS_PROXY`、小写同名键和 localhost `NO_PROXY`，再执行原 `/usr/bin/chatgpt %U`。本机现有代理为 `http://127.0.0.1:7890`；不得把此地址当成所有设备的默认值。用户入口优先级依据 [Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry/latest-single/#desktop-file-id)。
+- `desktop-file-validate` 通过。移除启动 GIO 进程的代理变量后，用该入口正常启动 App；原生后端仍携带代理并实际连接 `127.0.0.1:7890`。`Gio.DesktopAppInfo.new('chatgpt.desktop').get_filename()` 解析到用户入口，验证了后续菜单启动所用文件。本地 `getAuthStatus` 从约 15 秒缩短到 5–30 毫秒。
+- App 已正常重启；RA2A 服务和正常 CLI daemon 的 PID 保持。认证文件与配置文件 metadata 保持，未复制、删除或直接改写凭据。
+- 当前 App 的 durable 云端 WebSocket 是另一条 Node 网络路径，仍有 `open_timeout`。虽然运行时二进制包含 Node 环境代理功能，试用 `NODE_USE_ENV_PROXY=1` 后实测仍直连，已移除此无效开关；未改 ASAR、关闭 TLS 校验或改全局 DNS/代理。不能以本地账号读取恢复代表云端连接和实际登录均已验收。
+- 实际登录验证需要用户查看已打开 App，必要时点击登录并完成浏览器授权；以 native 的成功 token 兑换、App 登录完成事件或用户实际使用结果为完成依据。当前尚未获得这项反馈。
+- 回退该本机入口时，将新建用户文件移到带时间戳的 `.disabled` 备份名，使菜单恢复系统入口；保留文件便于再恢复。若 App 包升级改变了系统入口字段，应重新核对用户副本。
