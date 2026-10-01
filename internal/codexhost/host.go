@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -67,7 +66,7 @@ func Start(ctx context.Context, config Config) (*Host, error) {
 }
 
 func startManaged(ctx context.Context, config Config) (*managedProcess, error) {
-	if err := os.MkdirAll(filepath.Dir(config.SocketPath), 0o700); err != nil {
+	if err := prepareControlDirectory(filepath.Dir(config.SocketPath)); err != nil {
 		return nil, fmt.Errorf("create App Server control directory: %w", err)
 	}
 	command := managedCommand(ctx, config)

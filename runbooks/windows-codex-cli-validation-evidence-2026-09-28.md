@@ -33,3 +33,36 @@
 - 从另一台机器向专用 Desktop 测试 session 完成 W2 的 LAN 投递，并直接确认 UI 显示；本机正式控制端点与 Desktop turn 日志已通过。
 - 从另一台机器完成 W5/W6/W7 的 LAN 端返回值、`list_targets.agent=codex-cli` 与日志联验；需要在不影响正式 Desktop 配置的前提下，把隔离 CLI thread 接入 LAN 节点。
 - 补齐 W8 真实网络/版本混用场景。
+
+## FIX-001 实现验证补充（2026-10-01）
+
+来源：[v0.0.18 FIX-001](../docs/v0.0.18/README.md)。本节记录实现阶段，**尚未完成修复后的 Windows 实机验收**；不改变上文 2026-09-28 的原始验证范围。
+
+| 验证项 | 结果 | 范围 |
+| --- | --- | --- |
+| Linux 宿主生命周期回归 | PASS | `go test ./internal/codexhost`；Unix 目录行为不变。 |
+| Windows amd64 测试编译 | PASS | `GOOS=windows GOARCH=amd64 go test -c ./internal/codexhost`；包含 5 项新增 Windows ACL 测试，编译不能代替运行。 |
+| Wine 11.0 补充尝试 | 无测试结果 | 全新临时 prefix 在初始化阶段 90 秒超时；该 prefix 的 Wine 进程已停止。未运行官方 Windows daemon，不计实机验收。 |
+| Windows 首次目录/坏继承 ACL/daemon 先启动 | 待验证 | 下列 Windows 测试与真实启动顺序都需要执行。 |
+
+Windows 非提升 PowerShell 中先运行：
+
+```powershell
+go test ./internal/codexhost -run '^TestControlDirectory' -v
+```
+
+通过标准：5 项测试通过，`TestControlDirectoryRejectsReparsePoint` 若因符号链接权限跳过，需用隔离 junction 场景补测后才完成该边界。测试仅操作临时夹具。测试分别检查官方等价的 protected、单 OICI FullControl DACL，官方式不允许删除共享的目录句柄共存，当前 owner 保留，以及已有子文件/兄弟文件/父目录的完整安全描述符与内容不变。
+
+随后按 FIX-001 的验收条件，在全新短路径的隔离 `CODEX_HOME` 中补真实 CLI/daemon/RA2A 顺序验证。使用独立 `ra2a serve` 实例与独立控制端口，避免对正式服务执行 `stop/restart/selftest`；沿用清单第 5 节的 mock 配置，避免复制真实认证资料。制造额外继承 ACL 仅限新建实验目录，禁止针对真实 `~/.codex` 或整个 `CODEX_HOME` 递归收紧权限。
+
+每个场景保留以下证据：
+
+```powershell
+codex --version
+codex app-server daemon version
+$acl = Get-Acl (Join-Path $env:CODEX_HOME 'app-server-control')
+$acl | Select-Object Owner, AreAccessRulesProtected, Sddl
+$acl.Access | Select-Object IdentityReference, FileSystemRights, IsInherited, InheritanceFlags, PropagationFlags
+```
+
+回传应明确：CLI 与 daemon 版本、测试提交、独立实例 PID/控制端口、启动顺序、修复前后 ACL、官方 daemon 状态、普通 `codex`/`codex --yolo` 的 TUI 输入结果、RA2A 重启及升级结果、既有 socket/会话保留情况，以及是否出现跳过测试。正式环境的临时手工修 ACL 和交叉编译都不计入修复验收。
