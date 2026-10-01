@@ -54,7 +54,7 @@ sh -n install.sh && sh -n install-remote.sh
 2. 用 App `stdio_transport_spawned` 日志、父 PID 与 `/proc/<pid>/exe` 确认后端是否来自 App 自带路径，或确实经过 RA2A wrapper/managed host。
 3. 在原生日志中区分浏览器 callback 失败、token 兑换失败与账号读取失败；按 App 后端 PID 和时间筛选，避免混入 CLI 的日志。当前安装的原生日志为 `~/.codex/logs_2.sqlite`，以只读方式查询；日志格式和位置需随版本核实。
 4. 可对公开无凭据认证元数据端点作正常路径与直连对照，记录 HTTP 状态即可。公开 GET 的拒绝页不能替代 OAuth 错误 code 的证据。不要输出 OAuth code、token、Authorization 或完整认证文件。
-5. 若确认 App 未继承用户正常 CLI 的现有网络环境，候选操作是保存当前工作、关闭 App 后从该 shell 重新启动，再由用户实际登录验证。本次已完成正常重启和后端路径验证，实际 OAuth 登录仍待用户操作；不能据此标记登录已恢复，不要删除 `auth.json` 或会话缓存。
+5. 若确认 App 未继承用户正常 CLI 的现有网络环境，保存当前工作、正常关闭 App 后使用该网络环境启动，再验证实际登录及消息执行。账号读取成功不足以完成验收，不要删除 `auth.json` 或会话缓存。
 
 本次进程树确认 App 直接启动 `/usr/lib/chatgpt/resources/codex`，不经过 RA2A wrapper；未发现 RA2A 产品代码写认证文件或调用登录/退出接口。共享后端可能自动刷新凭据，因此结论限于当前有证据的失败路径。官方认证缓存说明见 [OpenAI Docs](https://learn.chatgpt.com/docs/auth)。
 
@@ -63,6 +63,11 @@ sh -n install.sh && sh -n install-remote.sh
 - 在 `~/.local/share/applications/chatgpt.desktop` 新建同 ID 的用户入口，保留系统入口其余字段，只将 `Exec` 改为 `/usr/bin/env` 携带当前正常 CLI 的 `HTTP_PROXY`、`HTTPS_PROXY`、小写同名键和 localhost `NO_PROXY`，再执行原 `/usr/bin/chatgpt %U`。本机现有代理为 `http://127.0.0.1:7890`；不得把此地址当成所有设备的默认值。用户入口优先级依据 [Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry/latest-single/#desktop-file-id)。
 - `desktop-file-validate` 通过。移除启动 GIO 进程的代理变量后，用该入口正常启动 App；原生后端仍携带代理并实际连接 `127.0.0.1:7890`。`Gio.DesktopAppInfo.new('chatgpt.desktop').get_filename()` 解析到用户入口，验证了后续菜单启动所用文件。本地 `getAuthStatus` 从约 15 秒缩短到 5–30 毫秒。
 - App 已正常重启；RA2A 服务和正常 CLI daemon 的 PID 保持。认证文件与配置文件 metadata 保持，未复制、删除或直接改写凭据。
-- 当前 App 的 durable 云端 WebSocket 是另一条 Node 网络路径，仍有 `open_timeout`。虽然运行时二进制包含 Node 环境代理功能，试用 `NODE_USE_ENV_PROXY=1` 后实测仍直连，已移除此无效开关；未改 ASAR、关闭 TLS 校验或改全局 DNS/代理。不能以本地账号读取恢复代表云端连接和实际登录均已验收。
-- 实际登录验证需要用户查看已打开 App，必要时点击登录并完成浏览器授权；以 native 的成功 token 兑换、App 登录完成事件或用户实际使用结果为完成依据。当前尚未获得这项反馈。
+- App 的 durable 云端 WebSocket 使用另一条 Node 网络路径。`NODE_USE_ENV_PROXY=1` 实测无效并已移除；后续使用仅由 App 用户入口加载的 Ubuntu `libproxychains4=4.17-1` TCP 代理库，使真实 durable 握手恢复：`initialize_handshake_result outcome=success transportKind=websocket`、`initialized=true`、`state=connected`，主进程连接现有 `127.0.0.1:7890`。未改 ASAR、TLS、全局 DNS/代理或系统安装。
+- 该库仅提取到 `~/.local/lib/codex-app-network/proxychains-4.17/`，配置为 `~/.config/codex-app-network/proxychains.conf`，入口额外设置 `LD_PRELOAD`、`PROXYCHAINS_CONF_FILE`。包 SHA256 为 `0a8c84d04961c474129697b0ceb9cd77bc9226c65f8ad16fc432824a3cfc6164`，与 apt 元数据核对；来源保存在同目录 `source.txt`。使用 strict chain、现有 SOCKS5 代理和回环/私网排除；不启用库内 DNS 线程。本机原有 DNS 配合该代理已完成真实云端握手，不据此推断其他设备也适用。
+- 默认 `proxy_dns` 在真实 App 中产生四次 FD 关闭警告及 zygote fatal；移除该选项的同库对照可以正常启动并连接云端。不能用普通 Node 探针替代多进程 App 验证，也不能关闭沙箱绕过错误。上游 [配置说明](https://github.com/rofl0r/proxychains-ng/blob/v4.17/src/proxychains.conf) 已说明线程 DNS 对复杂程序的兼容边界。
+- `/proc/<main-pid>/environ` 原始缓冲在这个 App 中会被清空，不能据全 NUL 推断 JavaScript `process.env` 没有代理。应结合子进程环境、代码路径和实际连接判断。
+- **任务执行仍未恢复。** 用户两次反馈卡在启动；后台未见对应 `turn/start`。真实 App 的进程跟踪证明 Git 检查已执行 `/usr/bin/git --version` 并 exit 0，App 内部仍报 `Git is unavailable`；此错误在增加 TCP 代理前也存在。不能据此重装 Git 或把它直接当成已确认的提交阻塞根因。临时 `CODEX_MAX_LOG_LEVEL=debug` 和进程跟踪已结束，已恢复正常入口启动。
+- 官方源提供 App `26.928.31416`，当前系统安装仍为 `26.924.22138`。新版包已校验并仅提取用于只读对比；相关本地 Git/RPC 逻辑未见针对性修复，升级不能保证解决。当前安装文件 `dpkg -V chatgpt` 校验正常，重装同版本缺乏依据。最终验收仍要求实际消息得到回复。
+- 若仅回退 TCP 库接入，恢复 `~/.config/codex-app-network/chatgpt.before-tcp-proxy.desktop` 到用户入口；失败的线程 DNS 配置及入口另有备份。库和备份保留，不删除用户数据。
 - 回退该本机入口时，将新建用户文件移到带时间戳的 `.disabled` 备份名，使菜单恢复系统入口；保留文件便于再恢复。若 App 包升级改变了系统入口字段，应重新核对用户副本。

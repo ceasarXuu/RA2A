@@ -75,6 +75,8 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 - 直接失败证据：浏览器 OAuth callback 成功，App 自带原生后端随后三次在 token 兑换收到 HTTP403、`unsupported_country_region_territory`。因此拒绝发生在后端兑换阶段。
 - 网络对照：App Chromium 使用 GNOME 的现有 localhost 代理，原生后端没有继承 HTTP(S) proxy 环境；CLI 后端使用该现有代理。公开无凭据认证元数据 GET 经现有代理为 HTTP200、直连为 HTTP403，但 GET 拒绝页本身不作为 OAuth 地区 code 的替代证据。
 - RA2A 归因边界：App 直接启动自己的 bundled 后端，进程树和启动日志不经过 RA2A wrapper/managed host；未发现 RA2A 产品代码写认证文件或调用登录/退出接口的因果证据。当前证据支持 App 原生网络环境差异，而非 RA2A 启动接管。
-- 状态：用户已授权本机修复。已新建用户级桌面入口并正常重启 App，原生后端使用现有代理，本地账号读取从约15秒恢复到5–30毫秒。实际 OAuth 登录尚待用户操作/反馈，不能标记已恢复；durable 云端 WebSocket 仍有独立超时，Node 环境代理开关试验无效后已移除。未修改凭据、删除缓存、改 App 包源码或重启正式 RA2A/CLI 服务。
+- 网络状态：已新建用户级桌面入口，原生后端使用现有代理，本地账号读取从约15秒恢复到5–30毫秒。Node 环境代理开关无效并已移除；App 入口加载用户目录的标准 TCP 代理库后，真实 durable WebSocket 初始化成功、状态 connected。默认线程 DNS 模式未通过 zygote 启动对照，已回退为验证成功的 TCP-only 配置，保留完整沙箱。
+- **整体任务仍未解决**：用户发送消息仍卡启动，未见对应 `turn/start`。真实 App 的 Git 检查子进程成功 exit 0，但 App 内部仍将其判为不可用；错误早于代理修复，不能据标签认定 Git 缺失或 RA2A 侵入。临时 debug/进程跟踪已移除，恢复正常入口启动。
+- 版本边界：系统仍为 `26.924.22138`、安装文件校验正常。官方新版 `26.928.31416` 已下载校验并仅提取进行只读对比，相关本地 Git/RPC 逻辑没有针对性修复证据，尚未升级或重装。未直接改写凭据、删除缓存、改 App 包源码或重启正式 RA2A/CLI 服务。
 
 复用诊断步骤见 [Harness runbook](../../runbooks/auto-harness-install.md#linux-codex-app-登录地区错误的诊断边界)。
