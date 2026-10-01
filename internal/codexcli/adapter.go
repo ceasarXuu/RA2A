@@ -33,14 +33,23 @@ type Adapter struct {
 	config        Config
 	logger        *slog.Logger
 	nodeID        string
+	connectMu     sync.Mutex
 	mu            sync.Mutex
 	conn          *rpcConn
 	server        *appServer
 	serverVersion string
 	codexHome     string
 	registered    map[string]struct{}
-	turnWaiters   map[string]chan turnRecord
+	turnWaiters   map[string]*turnOutcome
+	done          chan struct{}
 	closed        bool
+}
+
+type turnOutcome struct {
+	done        chan struct{}
+	turn        turnRecord
+	completedAt time.Time
+	waiters     int
 }
 
 func New(nodeID string, config Config) *Adapter {
@@ -61,7 +70,8 @@ func New(nodeID string, config Config) *Adapter {
 		logger:      slog.New(slog.NewTextHandler(config.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
 		codexHome:   config.CodexHome,
 		registered:  make(map[string]struct{}),
-		turnWaiters: make(map[string]chan turnRecord),
+		turnWaiters: make(map[string]*turnOutcome),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -111,17 +121,28 @@ func (adapter *Adapter) EnsureThread(ctx context.Context, cwd, model string) (st
 }
 
 func (adapter *Adapter) connect(ctx context.Context) (*appServer, error) {
+	adapter.connectMu.Lock()
+	defer adapter.connectMu.Unlock()
 	adapter.mu.Lock()
 	if adapter.closed {
 		adapter.mu.Unlock()
 		return nil, errors.New("adapter is closed")
 	}
 	if adapter.server != nil {
-		server := adapter.server
-		adapter.mu.Unlock()
-		return server, nil
+		select {
+		case <-adapter.conn.closed:
+		default:
+			server := adapter.server
+			adapter.mu.Unlock()
+			return server, nil
+		}
 	}
+	stale := adapter.conn
+	adapter.conn, adapter.server = nil, nil
 	adapter.mu.Unlock()
+	if stale != nil {
+		_ = stale.Close()
+	}
 
 	daemon, err := DetectDaemon(ctx, adapter.config.CodexPath)
 	if err != nil {
@@ -193,16 +214,35 @@ func (adapter *Adapter) onNotification(method string, params json.RawMessage) {
 		return
 	}
 	var payload turnCompletedParams
-	if err := jsonUnmarshal(params, &payload); err != nil {
+	if err := jsonUnmarshal(params, &payload); err != nil || payload.Turn.ID == "" {
 		return
 	}
 	adapter.mu.Lock()
-	waiter := adapter.turnWaiters[payload.Turn.ID]
-	delete(adapter.turnWaiters, payload.Turn.ID)
-	adapter.mu.Unlock()
-	if waiter != nil {
-		waiter <- payload.Turn
-		close(waiter)
+	defer adapter.mu.Unlock()
+	if adapter.closed {
+		return
+	}
+	adapter.pruneTurnOutcomes()
+	outcome := adapter.turnWaiters[payload.Turn.ID]
+	if outcome == nil {
+		outcome = &turnOutcome{done: make(chan struct{})}
+		adapter.turnWaiters[payload.Turn.ID] = outcome
+	}
+	if !outcome.completedAt.IsZero() {
+		return
+	}
+	outcome.turn, outcome.completedAt = payload.Turn, time.Now()
+	close(outcome.done)
+}
+
+// Keep early completions through the request/confirmation window, then remove
+// them lazily. Active waiters retain their own outcome until they return.
+func (adapter *Adapter) pruneTurnOutcomes() {
+	cutoff := time.Now().Add(-adapter.config.CallTimeout - adapter.config.ConfirmWindow)
+	for id, outcome := range adapter.turnWaiters {
+		if outcome.waiters == 0 && !outcome.completedAt.IsZero() && outcome.completedAt.Before(cutoff) {
+			delete(adapter.turnWaiters, id)
+		}
 	}
 }
 
@@ -230,7 +270,8 @@ func (adapter *Adapter) Close() error {
 	conn := adapter.conn
 	adapter.conn = nil
 	adapter.server = nil
-	adapter.turnWaiters = make(map[string]chan turnRecord)
+	adapter.turnWaiters = make(map[string]*turnOutcome)
+	close(adapter.done)
 	adapter.mu.Unlock()
 	if conn == nil {
 		return nil

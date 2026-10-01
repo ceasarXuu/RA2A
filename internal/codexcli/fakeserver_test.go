@@ -43,6 +43,9 @@ type fakeAppServer struct {
 	failTurn          map[string]string
 	rejectResume      map[string]string
 	noDirectIn        map[string]bool
+	inputs            []json.RawMessage
+	completeBeforeAck bool
+	disconnectTurn    bool
 
 	// codexHome is reported by initialize; accountReadErr and
 	// accountReadSilent shape the account read the managed-host gate performs.
@@ -288,6 +291,7 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": map[string]any{"data": turns}})
 	case "turn/start", "turn/steer":
 		server.mu.Lock()
+		server.inputs = append(server.inputs, append(json.RawMessage(nil), params...))
 		if method == "turn/start" && !server.resumeSeen[threadID] {
 			server.t.Errorf("turn/start was sent before thread/resume was acknowledged for %s", threadID)
 		}
@@ -303,33 +307,40 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 		server.activeTurns[threadID] = turnID
 		suppress := server.suppressDone[threadID]
 		failure := server.failTurn[threadID]
+		beforeAck := server.completeBeforeAck
+		disconnect := server.disconnectTurn
 		server.mu.Unlock()
+		if disconnect {
+			return conn.Close()
+		}
 
 		result := map[string]any{"turn": map[string]any{"id": turnID, "status": "inProgress", "error": nil}}
 		if method == "turn/steer" {
 			result = map[string]any{"turnId": turnID}
-		}
-		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": result})
-		if suppress {
-			return nil
 		}
 		completed := fakeTurn{ID: turnID, Status: "completed"}
 		if failure != "" {
 			completed.Status = "failed"
 			completed.Error = &turnError{Message: failure}
 		}
-		go func() {
-			time.Sleep(30 * time.Millisecond)
-			payload, _ := json.Marshal(map[string]any{
+		notifyCompleted := func() {
+			if suppress {
+				return
+			}
+			server.writeJSON(conn, map[string]any{
 				"jsonrpc": "2.0", "method": "turn/completed",
 				"params": map[string]any{"threadId": threadID, "turn": map[string]any{
 					"id": turnID, "status": completed.Status, "error": completed.Error,
 				}},
 			})
-			server.writeMu.Lock()
-			_ = conn.WriteMessage(websocket.TextMessage, payload)
-			server.writeMu.Unlock()
-		}()
+		}
+		if beforeAck {
+			notifyCompleted()
+		}
+		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": result})
+		if !beforeAck {
+			notifyCompleted()
+		}
 	case "thread/unsubscribe":
 		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": map[string]any{"status": "unsubscribed"}})
 	default:

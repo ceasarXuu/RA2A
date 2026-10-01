@@ -80,7 +80,7 @@ func (adapter *Adapter) Deliver(ctx context.Context, address agentbridge.Address
 		}
 		return agentbridge.DeliveryResult{Code: agentbridge.ResultUnknown, Detail: err.Error()}
 	}
-	return adapter.deliverToThread(ctx, server, threadID, envelope.Text)
+	return adapter.deliverToThread(ctx, server, threadID, agentbridge.RenderIncomingText(envelope))
 }
 
 // deliverToThread follows the verified order: subscribe first and wait for the
@@ -168,26 +168,35 @@ func (adapter *Adapter) submitTurn(ctx context.Context, server *appServer, threa
 }
 
 func (adapter *Adapter) awaitTurnOutcome(ctx context.Context, turnID string) turnRecord {
-	waiter := make(chan turnRecord, 1)
 	adapter.mu.Lock()
-	adapter.turnWaiters[turnID] = waiter
+	adapter.pruneTurnOutcomes()
+	outcome := adapter.turnWaiters[turnID]
+	if outcome == nil {
+		outcome = &turnOutcome{done: make(chan struct{})}
+		adapter.turnWaiters[turnID] = outcome
+	}
+	outcome.waiters++
 	adapter.mu.Unlock()
+	defer func() {
+		adapter.mu.Lock()
+		defer adapter.mu.Unlock()
+		outcome.waiters--
+		if outcome.waiters == 0 && outcome.completedAt.IsZero() && adapter.turnWaiters[turnID] == outcome {
+			delete(adapter.turnWaiters, turnID)
+		}
+	}()
 
 	timer := time.NewTimer(adapter.config.ConfirmWindow)
 	defer timer.Stop()
 	select {
-	case turn := <-waiter:
-		return turn
+	case <-outcome.done:
+		return outcome.turn
 	case <-timer.C:
-		adapter.mu.Lock()
-		delete(adapter.turnWaiters, turnID)
-		adapter.mu.Unlock()
 		adapter.logger.Info("cli_turn_accepted_unconfirmed", "turn_id", turnID)
 		return turnRecord{ID: turnID, Status: "unconfirmed"}
 	case <-ctx.Done():
-		adapter.mu.Lock()
-		delete(adapter.turnWaiters, turnID)
-		adapter.mu.Unlock()
+		return turnRecord{ID: turnID, Status: "unconfirmed"}
+	case <-adapter.done:
 		return turnRecord{ID: turnID, Status: "unconfirmed"}
 	}
 }

@@ -87,8 +87,11 @@ func (client *rpcConn) readLoop() {
 		}
 		switch {
 		case message.Method != "" && len(message.ID) == 0:
-			if client.notify != nil {
-				client.notify(message.Method, message.Params)
+			client.mu.Lock()
+			notify := client.notify
+			client.mu.Unlock()
+			if notify != nil {
+				notify(message.Method, message.Params)
 			}
 		case len(message.ID) > 0:
 			key := string(message.ID)
@@ -106,15 +109,15 @@ func (client *rpcConn) readLoop() {
 
 func (client *rpcConn) fail(err error) {
 	client.once.Do(func() {
-		client.readErr = err
 		client.mu.Lock()
+		client.readErr = err
 		waiters := client.waiters
 		client.waiters = make(map[string]chan rpcMessage)
+		close(client.closed)
 		client.mu.Unlock()
 		for _, waiter := range waiters {
 			close(waiter)
 		}
-		close(client.closed)
 	})
 }
 
@@ -128,6 +131,13 @@ func (client *rpcConn) call(ctx context.Context, method string, params any, resu
 		params = map[string]any{}
 	}
 	client.mu.Lock()
+	select {
+	case <-client.closed:
+		err := client.readErr
+		client.mu.Unlock()
+		return fmt.Errorf("%s: app-server connection closed: %v", method, err)
+	default:
+	}
 	client.nextID++
 	id := client.nextID
 	key := fmt.Sprintf("%d", id)
@@ -147,6 +157,8 @@ func (client *rpcConn) call(ctx context.Context, method string, params any, resu
 	client.write.Unlock()
 	if err != nil {
 		client.forget(key)
+		client.fail(err)
+		_ = client.conn.Close()
 		return fmt.Errorf("send %s: %w", method, err)
 	}
 	select {
