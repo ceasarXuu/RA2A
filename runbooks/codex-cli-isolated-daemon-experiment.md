@@ -230,3 +230,9 @@ pgrep -af "ra2a daemon"; ls -la ~/.codex/app-server-control/
 确认属于 CLI 后，备份 RA2A 二进制与配置，部署含 `e7aa4ae` 排除修复的已验证版本，再执行 `ra2a adopt-cli <完整 thread ID>`。该命令仅保存配置，现有 registry 不热加载，需仅重启 RA2A 服务，再检查端点为 `codex-cli`。重启前核对正式 CLI/App 是否在服务 cgroup 外；重启后核对关键 PID 和配置/认证/代理文件元数据。不要通过重启 App 或开启 Desktop 失败后的 managed fallback 来绕过错误归属。
 
 只有对端真实投递收到并完成后才记录通过。若协调会话正在执行长任务，发送方等待 `turn/completed` 可能超时；不要自动重发。两端需要互发时分开回合，避免收到请求的回合又同步等待向原发送方回投，形成互相等待。
+
+## Windows 测试写配置的隔离要求（2026-10-02）
+
+Windows 的 `os.UserHomeDir()` 读取 `USERPROFILE`，仅设置 `HOME` 无法隔离 `operator.Save`。ROG 实际出现 OpenCode-only 测试写入 `open-node` 与测试 PIN、导致 DTLS 超时；恢复正式配置后通知恢复。
+
+需要调用 operator 或 RA2A run 路径的测试同时设置临时 `HOME`、`USERPROFILE`、`LOCALAPPDATA`，并在任何 Save/Load 前断言 `operator.ConfigPath()` 落在临时目录。`LOCALAPPDATA` 用于旧 Windows 配置读取与迁移，也必须隔离；fake 宿主并不自动隔离配置和 mailbox。复用 `cmd/ra2a` 的 `isolatedOperatorHome` fixture。Windows 交叉编译只证明可构建，原生执行结果另行记录。

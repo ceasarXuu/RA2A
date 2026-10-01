@@ -415,6 +415,7 @@ func fakeSourceFactory(sessions []lannode.Session) sessionSourceFactory {
 }
 
 func TestRunSelfTestDiscoversAndCallsLocalNode(t *testing.T) {
+	isolatedOperatorHome(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var output bytes.Buffer
@@ -436,6 +437,7 @@ func TestRunSelfTestDiscoversAndCallsLocalNode(t *testing.T) {
 }
 
 func TestRunSendDiscoversPeerAndDeliversMessage(t *testing.T) {
+	isolatedOperatorHome(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var output bytes.Buffer
@@ -465,6 +467,7 @@ func TestRunSendDiscoversPeerAndDeliversMessage(t *testing.T) {
 }
 
 func TestRunServeStopsWhenContextIsCancelled(t *testing.T) {
+	isolatedOperatorHome(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var output bytes.Buffer
@@ -577,6 +580,7 @@ func TestSendWithDesktopPreferenceUsesManagedWhenDesktopIntegrationIsDisabled(t 
 // Local delivery now goes through the adapter registry, so an address that the
 // node never published must be rejected instead of being forwarded blindly.
 func TestRunSendRejectsUnpublishedLocalTarget(t *testing.T) {
+	isolatedOperatorHome(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var output bytes.Buffer

@@ -104,7 +104,15 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 - ROG306 投递 ubuntu407 返回 CoAP `InternalServerError / DESKTOP_OWNER_UNAVAILABLE / no-client-found`，请求已到达服务。当前协调会话实际为 Warp 中的 Codex CLI，官方 `0.159.3` daemon 的 loaded list 包含该线程，`canAcceptDirectInput=true`；RA2A 配置却未登记 CLI，共享历史因此走 Desktop。
 - 已备份原二进制与 RA2A 配置，原子部署干净提交 `6a9e810`，显式登记 `01a0f6ff-b902-7970-acba-ef8d3451c6f7`，仅重启 RA2A 服务。当前端点已发布为 `codex-cli`，具备 `steerActiveTurn`。
 - 正式 CLI daemon、App 主进程及后端 PID 保留；Codex 配置、认证文件、官方 socket、App 桌面入口和代理配置的 inode/mtime/size 未变；RA2A 其他配置字段未变。
-- 两端指定验收会话仍发布为 `codex-app`，需各自完成显式登记及服务重载。ROG 重试实际通知、CLI 双向投递和多轮矩阵均尚未确认通过；上述修复不作为完整跨设备验收结论。
+- ROG 重试通知 `f57a2ead5aab661fd844e4436cdcc584` 已实际到达本机 CLI，本机收件阻断恢复。两端指定验收会话仍发布为 `codex-app`，向 ROG 原地址回投也返回 Desktop `no-client-found`；需各自完成显式登记及服务重载。CLI 双向投递和多轮矩阵均尚未确认通过，不能将本次通知恢复记为正式 CLI↔CLI 验收。
+
+### Windows 测试配置污染修复（2026-10-02）
+
+ROG 现场确认：运行 `cmd/ra2a` 的 OpenCode-only 测试后，节点身份变为 `open-node`，测试 PIN 覆盖正式 PIN，引发 DTLS 握手超时；已从本地备份恢复身份与 PIN，通知恢复。源码独立核对确认两个测试仅设置 `HOME`，而 Windows 的 `os.UserHomeDir` 使用 `USERPROFILE`。
+
+六个相关测试现共用临时 `HOME`、`USERPROFILE`、`LOCALAPPDATA`，写入前断言 `operator.ConfigPath()` 精确落在临时目录；同时避免四个 selftest/send/serve 测试读取正式 CLI 登记、mailbox 或迁移旧 Windows 配置。仅修改测试，不改生产路径。六项 Linux `-race` 回归通过，Windows amd64 测试二进制交叉编译通过；Windows 原生复验待 ROG 完成。正式 CLI/App 的关键 PID 和配置、认证、代理文件元数据保持不变。
+
+ROG 另报 `codexcli` 的 `.cmd` 临时路径执行失败；当前 fake fixture 使用批处理，而宿主探测直接执行二进制。该项单独记录，完整错误与 Windows 原生复现尚待补齐，不通过增加生产 shell fallback 绕过测试。
 
 ## 本机 Codex App 地区登录错误调查（2026-10-01）
 

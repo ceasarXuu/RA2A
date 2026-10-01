@@ -19,8 +19,7 @@ import (
 )
 
 func TestOpenCodeOnlyNodesDeliverInBothDirections(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := isolatedOperatorHome(t)
 	t.Setenv("RA2A_DISABLE_OPENCODE", "0")
 	t.Setenv("RA2A_OC_SESSION_DIR", filepath.Join(home, "leases"))
 	if err := operator.Save(operator.Config{NodeID: "node-a", Name: "node-a", PIN: "A1B2C3", OpenCode: "/installed/opencode"}); err != nil {
@@ -106,8 +105,7 @@ func TestOpenCodeOnlyNodesDeliverInBothDirections(t *testing.T) {
 }
 
 func TestOpenCodeOnlyAdapterBecomesReadyWithoutDaemonRestart(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := isolatedOperatorHome(t)
 	t.Setenv("RA2A_DISABLE_OPENCODE", "0")
 	t.Setenv("RA2A_OC_SESSION_DIR", filepath.Join(home, "leases"))
 	if err := operator.Save(operator.Config{NodeID: "open-node", Name: "open-node", PIN: "A1B2C3", OpenCode: "/installed/opencode"}); err != nil {
@@ -159,4 +157,19 @@ func TestOpenCodeOnlyAdapterBecomesReadyWithoutDaemonRestart(t *testing.T) {
 	if endpoints, problems := registry.Endpoints(context.Background()); len(problems) != 0 || len(endpoints) != 1 {
 		t.Fatalf("late OpenCode server must become visible without restart: %v %v", endpoints, problems)
 	}
+}
+
+// Verify the actual operator path before tests can write node identity or PIN.
+func isolatedOperatorHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	path, err := operator.ConfigPath()
+	want := filepath.Join(home, ".config", "ra2a", "config.json")
+	if err != nil || path != want {
+		t.Fatalf("operator config must stay in isolated home: got %q, want %q, err %v", path, want, err)
+	}
+	return home
 }
