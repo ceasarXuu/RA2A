@@ -43,3 +43,17 @@ sh -n install.sh && sh -n install-remote.sh
 - Go 测试缓存不会追踪被 shell 测试调用的外部安装脚本。改动 `install*.sh` 后要用 `go test -count=1 ./installer`，不能以 `(cached)` 结果为准。
 - `list_targets` 的会话 ID 不是供 Agent 拼接的地址；返回数据现在包含完整 `address`，MCP `send_message` schema 也允许传 `from`。多 OpenCode 会话时必须提供本会话的 `from`，否则来源无法自动识别。
 - 每次升级后以运行进程的可执行路径、PID 和构建提交核验；仅看磁盘二进制、版本字符串或任务启动命令的成功输出都可能误判。
+
+## Linux Codex App 登录地区错误的诊断边界
+
+2026-10-01 在 Ubuntu、App `26.924.22138` 上确认过以下组合：CLI 和网页可用，但 App 在浏览器授权返回后提示地区不符合条件。App 的 Chromium 使用 GNOME 系统代理，独立 Rust 后端却没有继承 shell 中的 `HTTP_PROXY` / `HTTPS_PROXY`。原生日志记录 `oauth token exchange returned non-success status`、HTTP 403 和 `unsupported_country_region_territory`；浏览器 callback 的 `state_valid=true`、`has_error=false`。不能把此错误自动归因于 RA2A。
+
+按以下顺序收集证据：
+
+1. 比较 App、其 bundled `codex app-server` 和正常 CLI 后端的**代理变量存在性**、实际连接路径。桌面系统代理设置不能证明原生子进程也使用代理。
+2. 用 App `stdio_transport_spawned` 日志、父 PID 与 `/proc/<pid>/exe` 确认后端是否来自 App 自带路径，或确实经过 RA2A wrapper/managed host。
+3. 在原生日志中区分浏览器 callback 失败、token 兑换失败与账号读取失败；按 App 后端 PID 和时间筛选，避免混入 CLI 的日志。当前安装的原生日志为 `~/.codex/logs_2.sqlite`，以只读方式查询；日志格式和位置需随版本核实。
+4. 可对公开无凭据认证元数据端点作正常路径与直连对照，记录 HTTP 状态即可。公开 GET 的拒绝页不能替代 OAuth 错误 code 的证据。不要输出 OAuth code、token、Authorization 或完整认证文件。
+5. 若确认 App 未继承用户正常 CLI 的现有网络环境，候选操作是保存当前工作、关闭 App 后从该 shell 重新启动，再由用户实际登录验证。此操作尚未在本次调查中完成；不要据此标记已恢复，不要删除 `auth.json` 或会话缓存。
+
+本次进程树确认 App 直接启动 `/usr/lib/chatgpt/resources/codex`，不经过 RA2A wrapper；未发现 RA2A 产品代码写认证文件或调用登录/退出接口。共享后端可能自动刷新凭据，因此结论限于当前有证据的失败路径。官方认证缓存说明见 [OpenAI Docs](https://learn.chatgpt.com/docs/auth)。
