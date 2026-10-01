@@ -113,6 +113,7 @@ PTY 注意事项：不设窗口大小时 TUI 可能只输出 splash；用 `fcntl
 - `thread/unsubscribe` 永不报错，返回 `notLoaded` / `notSubscribed` / `unsubscribed`
 - `experimentalApi: false` 时 `thread/queue/add` 被拒（`requires experimentalApi capability`），`turn/start` 不被拒
 - `thread/start` 无需认证即可创建 thread 并返回 `id`、`sessionId`、`path`
+- `0.159.3` 实测新线程在首个回合持久化前，第二客户端的 `thread/resume` 返回 `no rollout found`；验证已有会话收件时，须由原客户端先完成种子回合，不能只用新建线程的 loaded 状态代替真实会话前置条件。
 - `Thread.source` 对所有 app-server 客户端恒为 `vscode`
 - `Thread.originator` 是 daemon 进程级全局值、first-writer-wins（首个 `initialize` 的 `clientInfo.name` 决定后续所有 thread 的取值）
 - 多订阅者 fan-out：`turn/start` 的 `thread/status/changed` 会广播给所有 `thread/resume` 订阅者
@@ -166,6 +167,22 @@ data: {"type":"response.completed","response":{"id":"resp_1","usage":{...}}}
 ### PTY 自动化注意
 
 文本与回车必须**分两次写入**（中间至少 0.5s）。一次性写入 `text\r` 会让 TUI 只把文本填进输入框而不提交，实测不产生新 thread 与新回合。
+
+### 自动验证真实 Adapter 协议（2026-10-02）
+
+Linux 可直接运行已纳入仓库的 opt-in 验证，默认日常测试跳过，不启动 daemon：
+
+```sh
+RA2A_TEST_CODEX_BIN=/absolute/path/to/native/codex \
+  go test -race -count=1 -timeout 180s -v \
+  -run '^TestNativeCLIIsolatedDelivery$' ./internal/codexcli
+```
+
+必须指定原生二进制的绝对路径，不覆盖正式 CLI 安装。测试自动创建独立 home、loopback 模拟模型与假凭据，关闭实验 daemon 自动更新/远程控制，过滤子进程账户密钥和代理注入环境；通过显式 `Config.CodexHome` 连接实验实例，结束时仅停止该 home 的 daemon。不需要登录或复制 `auth.json`。
+
+`0.159.3` 已通过：22 轮投递及来源保留、独立 RPC 拥有者继续、活跃回合 steer、实验 daemon 重启恢复、模型保留及未认证检查。独立 RPC 客户端保持线程订阅，不使用正式 TUI。此测试不覆盖 TUI 人工继续、真实模型与限流、跨设备通信或 Windows/macOS 原生验收。
+
+Go 临时 home 在 `/tmp` 时，Codex 会提示拒绝在临时目录创建 PATH helper aliases；上述仅输出文本的模拟模型流程已通过该环境，不将此结果扩展到工具执行能力。
 
 ## 8. 仍需账号才能验证的部分
 

@@ -82,6 +82,23 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 - 适配器连接、重连及健康检查将已保存的 home 传给私有探测函数，仅覆盖子进程 `CODEX_HOME`，不修改全局环境；缺省 socket 同样使用该 home。公开 `DetectDaemon` 保留继承环境的行为，daemon 返回的迁移 socket 仍优先。
 - 回归覆盖指定 home 运行/未运行、默认实例零 RPC、零回退、原进程环境不变、公开默认探测和无 socket 字段的目录回退。`go test -race -count=1 ./internal/codexcli ./cmd/codex-wrapper ./cmd/ra2a` 通过。
 
+### Linux 真实 app-server 隔离验证（2026-10-02）
+
+新增默认跳过、需显式指定绝对原生二进制路径的 `TestNativeCLIIsolatedDelivery`，使用独立临时 `CODEX_HOME`、关闭自动更新和远程控制的实验 daemon、动态 loopback 端口与本地 Responses SSE 模型。启动环境不继承代理注入、Agent 路由或账户密钥，不复制正式配置和认证；实验结束正常停止自己启动的 daemon。
+
+已在 Codex CLI / app-server `0.159.3` 执行带 `-race` 的真实协议验证：
+
+| 项目 | 结果与边界 |
+| --- | --- |
+| 多轮收件 | 22 轮端点发现及投递成功，每轮以 `turn/completed` 确认；本地模型请求含来源与对应消息标记。 |
+| 原客户端继续 | 独立拥有线程的 RPC 客户端在多轮收件后仍能发起并完成回合；不代替 TUI 人工操作验收。 |
+| 活跃回合追加 | 模拟模型保持回合活跃，适配器 steer 在相同 turn ID 上确认完成，follow-up 到达模型。 |
+| daemon 重启恢复 | 只停止并重启实验 daemon，重新加载线程后原适配器恢复投递，模型收到对应消息。 |
+| 配置与认证 | 模型始终为 `mock-model`；模型请求仅使用实验假凭据；独立 home 未生成 `auth.json`。 |
+| 本机保护 | 正式 CLI daemon、App 主进程/后端、RA2A 的关键 PID 保留；正式配置、socket、App 桌面入口及代理配置的 inode、mtime、size 与实验前一致。 |
+
+新能力/隔离回归的 Windows amd64 测试二进制交叉编译通过。该验证仍不覆盖 Windows/macOS 原生运行、真实模型/工具/限流、TUI 人工继续、跨设备四方向及其 20+ 多轮矩阵；正式服务未部署本阶段源码。复用入口见 [隔离实验 runbook](../../runbooks/codex-cli-isolated-daemon-experiment.md#自动验证真实-adapter-协议2026-10-02)。
+
 ## 本机 Codex App 地区登录错误调查（2026-10-01）
 
 - 环境：Ubuntu，App `26.924.22138`，bundled Codex `0.158.0-alpha.2.1`；正常 CLI / 官方 daemon 为 `0.159.3`。
