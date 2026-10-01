@@ -47,3 +47,34 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 3. **官方 daemon 先启动**：先启动官方 daemon，再启动和重启 RA2A；官方 daemon 与 RA2A 的受管宿主均保持各自所有权，既有 Codex 会话仍可继续使用。
 4. **边界回归**：已满足私有权限要求的 Windows 环境继续正常工作；macOS/Linux 的相关宿主生命周期检查通过，配置与会话数据保留。
 5. **证据交付**：记录验证使用的 CLI/app-server 版本、启动顺序、目录 ACL 与 daemon 状态，并更新现有 Windows runbook；当前本机临时修复不能替代上述复现与验收。
+
+
+## Codex CLI 实现缺陷修复（2026-10-01）
+
+以下缺陷先通过隔离诊断复现，再实现局部修复；当前为源码回归通过，尚未发布 v0.0.18，也未部署到本机正式服务。
+
+| 缺陷 | 修复结果 | 验证范围 |
+| --- | --- | --- |
+| 已登记 CLI 被共享 App 历史覆盖，走错写入通道 | App 枚举排除 CLI 成功登记的 IDs；CLI 未加载也不回退 App | 真实 Registry 的 Lookup/Deliver、buildRegistry 接线、未登记 Desktop 与无效登记边界。提交 `e7aa4ae`。 |
+| CLI 输入只含正文，丢失来源和消息 ID | start/steer 统一使用 `RenderIncomingText` | 捕获实际 WebSocket 输入并核对完整包络。提交 `dd02ee1`。 |
+| 终态先于提交响应到达，确认被丢弃 | 短期保留提前到达的终态 | fake 宿主先通知、后 response；移除原固定 30ms 延迟。提交 `dd02ee1`。 |
+| 同一 turn 多等待者互相覆盖 | 共享终态并广播确认 | completed/failed、单等待取消、Close 释放、重复通知及过期保留；验证限定于等待器层。提交 `dd02ee1`。 |
+| 断线后一直复用失效 RPC | 后续操作重建连接；不重放不确定写入 | 断线后恢复端点、已提交写入仅发生一次且返回 unknown；同时修正通知 handler 同步。提交 `dd02ee1`。 |
+
+本次验证：
+
+- `go test -race -count=1 ./internal/codexcli ./internal/codexapp ./internal/agentbridge ./cmd/ra2a ./cmd/codex-wrapper` 通过。
+- `go test -count=1 ./internal/codexhost ./internal/appserverprobe ./internal/lannode ./internal/control ./internal/mcpserver ./internal/operator` 通过。
+- Windows arm64、Darwin arm64 的 `ra2a` / `codex-wrapper` 交叉构建通过；Windows amd64 ACL 测试编译通过。均不替代目标平台原生运行。
+
+上述回归不覆盖真实宿主的并发订阅生命周期、跨设备 App/CLI 四方向互通、20+ 多轮、人工继续和恢复矩阵。[PD31 与原互通验收](../v0.0.15/engineering-plan.md)仍需现场完成，不能将局部缺陷修复等同于 CLI 正式支持准入。
+
+## 本机 Codex App 地区登录错误调查（2026-10-01）
+
+- 环境：Ubuntu，App `26.924.22138`，bundled Codex `0.158.0-alpha.2.1`；正常 CLI / 官方 daemon 为 `0.159.3`。
+- 直接失败证据：浏览器 OAuth callback 成功，App 自带原生后端随后三次在 token 兑换收到 HTTP403、`unsupported_country_region_territory`。因此拒绝发生在后端兑换阶段。
+- 网络对照：App Chromium 使用 GNOME 的现有 localhost 代理，原生后端没有继承 HTTP(S) proxy 环境；CLI 后端使用该现有代理。公开无凭据认证元数据 GET 经现有代理为 HTTP200、直连为 HTTP403，但 GET 拒绝页本身不作为 OAuth 地区 code 的替代证据。
+- RA2A 归因边界：App 直接启动自己的 bundled 后端，进程树和启动日志不经过 RA2A wrapper/managed host；未发现 RA2A 产品代码写认证文件或调用登录/退出接口的因果证据。当前证据支持 App 原生网络环境差异，而非 RA2A 启动接管。
+- 状态：调查已定位失败阶段与网络差异，实际恢复未验证。让 App 继承正常 CLI 的现有网络环境重新启动并登录，需要先关闭当前 App 窗口，已向用户提出验证请求；没有修改凭据、删除缓存或重启正式 RA2A/CLI 服务。
+
+复用诊断步骤见 [Harness runbook](../../runbooks/auto-harness-install.md#linux-codex-app-登录地区错误的诊断边界)。
