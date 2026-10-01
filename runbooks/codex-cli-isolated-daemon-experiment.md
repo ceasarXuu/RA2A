@@ -14,6 +14,8 @@
 
 因此**换一个 `CODEX_HOME` 就等于同时隔离了 daemon、socket 与 session 存储**，不再需要 `-c ephemeral=true` 这类手段（V6 已实测其无效，仍产生 `ephemeral=false` 的持久 thread）。
 
+Go 适配器实验可以显式传 `codexcli.Config.CodexHome`。2026-10-02 的双 fake 宿主回归已确认：该值同时限定 daemon 探测子进程与缺省 socket，连接、重连和 Health 均使用同一目录，指定实例未运行时不回退默认实例。公开 `DetectDaemon` 仍使用调用进程环境；实验调用它时必须在独立子进程中设置 `CODEX_HOME`，不要修改正在提供服务的进程环境。
+
 注意符号链接：真实 socket 位于 `/tmp/codex-daemon-<uid>/<sha256>`（规避 AF_UNIX 108 字节上限），`$CODEX_HOME` 下是符号链接。校验权限要看真实目标：
 
 ```sh

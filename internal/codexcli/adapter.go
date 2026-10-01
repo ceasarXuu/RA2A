@@ -144,7 +144,7 @@ func (adapter *Adapter) connect(ctx context.Context) (*appServer, error) {
 		_ = stale.Close()
 	}
 
-	daemon, err := DetectDaemon(ctx, adapter.config.CodexPath)
+	daemon, err := detectDaemon(ctx, adapter.config.CodexPath, adapter.codexHome)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +247,7 @@ func (adapter *Adapter) pruneTurnOutcomes() {
 }
 
 func (adapter *Adapter) Health(ctx context.Context) agentbridge.Health {
-	daemon, err := DetectDaemon(ctx, adapter.config.CodexPath)
+	daemon, err := detectDaemon(ctx, adapter.config.CodexPath, adapter.codexHome)
 	if err != nil {
 		return agentbridge.Unhealthy(agentbridge.ResultUnknown, err.Error())
 	}

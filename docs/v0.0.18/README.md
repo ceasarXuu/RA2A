@@ -76,6 +76,12 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 - 新增 true/false/missing/null × idle/active 八项协议回归，以及三项能力变化后的旧地址回归；实际捕获 start/steer 调用。上述五个包的 `go test -race -count=1` 通过。
 - 本阶段仅修改源码并运行临时 fake 宿主，没有连接正式 daemon、发真实模型任务或部署本机服务；本机 CLI/App、认证和代理配置未修改。正式支持准入仍遵循上述 PD31 验收边界。
 
+### 显式 CLI 实例目录隔离修复（2026-10-02）
+
+- 双 fake 宿主复现确认：`Config.CodexHome` 原先未传给 daemon 探测；显式 home 可用或未运行时，均可能错误连接环境默认 home 并实际写入，健康检查也会误报 ready。
+- 适配器连接、重连及健康检查将已保存的 home 传给私有探测函数，仅覆盖子进程 `CODEX_HOME`，不修改全局环境；缺省 socket 同样使用该 home。公开 `DetectDaemon` 保留继承环境的行为，daemon 返回的迁移 socket 仍优先。
+- 回归覆盖指定 home 运行/未运行、默认实例零 RPC、零回退、原进程环境不变、公开默认探测和无 socket 字段的目录回退。`go test -race -count=1 ./internal/codexcli ./cmd/codex-wrapper ./cmd/ra2a` 通过。
+
 ## 本机 Codex App 地区登录错误调查（2026-10-01）
 
 - 环境：Ubuntu，App `26.924.22138`，bundled Codex `0.158.0-alpha.2.1`；正常 CLI / 官方 daemon 为 `0.159.3`。

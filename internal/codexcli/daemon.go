@@ -86,12 +86,25 @@ func socketPathProblem(socketPath string) string {
 // non-zero with a connection error instead of printing JSON, which is exactly
 // the start_required signal the product decision requires.
 func DetectDaemon(ctx context.Context, codexPath string) (DaemonState, error) {
-	state := DaemonState{SocketPath: controlSocketPath(defaultCodexHome())}
+	return detectDaemon(ctx, codexPath, "")
+}
+
+// A configured home scopes both the lifecycle probe and its socket fallback.
+// The public probe keeps the caller's ambient environment for wrapper use.
+func detectDaemon(ctx context.Context, codexPath, codexHome string) (DaemonState, error) {
+	home := codexHome
+	if home == "" {
+		home = defaultCodexHome()
+	}
+	state := DaemonState{SocketPath: controlSocketPath(home)}
 	if codexPath == "" {
 		return state, errors.New("codex executable path is required")
 	}
 	command := exec.CommandContext(ctx, codexPath, "app-server", "daemon", "version")
 	command.Env = append(os.Environ(), "CODEX_NO_UPDATE=1")
+	if codexHome != "" {
+		command.Env = append(command.Env, "CODEX_HOME="+codexHome)
+	}
 	output, runErr := command.Output()
 	trimmed := strings.TrimSpace(string(output))
 	if runErr != nil || trimmed == "" {
