@@ -12,7 +12,8 @@
 | 无可用宿主 | 安装 RA2A 命令，但提示尚无接入对象 | setup 明确失败，不报告服务就绪 |
 
 首次设置后，重复安装会重新检测当前宿主并刷新配套；已有配置的 daemon 重启后也会注册新检测到的适配器。Codex App 与 OpenCode 混用时两者独立接入。已经运行的 TUI 不会因更换 wrapper 而自行升级，必须由用户主动重开。
-Codex CLI 有健康的官方共享 daemon 时，自动安装的 wrapper 仍让普通 TUI 走原生启动；仅官方 daemon 不可用且 RA2A managed socket 可用时注入 managed 连接，并记录 `codex_wrapper_managed_fallback` 日志。
+Codex CLI 有健康的官方共享 daemon 时，自动安装的 wrapper 仍让普通 TUI 走原生启动；仅官方 daemon 不可用且 RA2A managed socket 可用时注入 managed 连接，并记录 `codex_wrapper_managed_fallback` 日志。纯 flag 启动（如 `codex --yolo`）同样按 TUI 处理；`--help`/`--version` 一类信息 flag 始终透传。
+注入前必须通过可用性门禁：托管 host 需报告与调用方一致的 Codex home，并在限时内完成一次账号读取（`account/rateLimits/read`）。门禁失败或 socket 不可用时保持原生启动并记录 `codex_wrapper_managed_skipped`。这样当 RA2A 服务环境与用户 shell 环境不一致（典型为代理变量只导出在 `~/.bashrc`）时，用户 TUI 不会被静默切到连不上账号后端的 host。Codex 0.159+ 将真实 UDS 放在 `/tmp/codex-daemon-<uid>/` 并在控制目录留下符号链接，wrapper 读取 owner lease 时先解析符号链接，再校验 socket 类型与连通性，并把这个解析后的路径交给 `--remote`。
 曾经检测到的宿主若后来被卸载，下一次安装会将没有 backing native 的 RA2A launcher 移入带时间戳的备份，而不是阻止其他宿主；daemon 配置只保留仍能运行的可执行文件。
 
 ## 发布资产和入口一致性

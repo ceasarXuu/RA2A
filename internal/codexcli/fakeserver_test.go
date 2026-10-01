@@ -43,6 +43,12 @@ type fakeAppServer struct {
 	failTurn          map[string]string
 	rejectResume      map[string]string
 	noDirectIn        map[string]bool
+
+	// codexHome is reported by initialize; accountReadErr and
+	// accountReadSilent shape the account read the managed-host gate performs.
+	codexHome         string
+	accountReadErr    string
+	accountReadSilent bool
 }
 
 type fakeThread struct {
@@ -72,6 +78,7 @@ func newFakeAppServer(t *testing.T) *fakeAppServer {
 		failTurn:     map[string]string{},
 		rejectResume: map[string]string{},
 		noDirectIn:   map[string]bool{},
+		codexHome:    "/none",
 	}
 	server.codexPath = writeFakeCodex(t, socketPath)
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
@@ -199,13 +206,28 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 
 	switch method {
 	case "initialize":
+		server.mu.Lock()
+		home := server.codexHome
+		server.mu.Unlock()
 		server.writeJSON(conn, map[string]any{
 			"id": id, "jsonrpc": "2.0",
 			"result": map[string]any{
 				"userAgent": "ra2a_codex_cli/0.158.0 (Ubuntu 24.4.0; x86_64)",
-				"codexHome": "/none", "platformFamily": "unix", "platformOs": "linux",
+				"codexHome": home, "platformFamily": "unix", "platformOs": "linux",
 			},
 		})
+	case "account/rateLimits/read":
+		server.mu.Lock()
+		accountErr := server.accountReadErr
+		silent := server.accountReadSilent
+		server.mu.Unlock()
+		if silent {
+			return nil
+		}
+		if accountErr != "" {
+			return server.rpcError(conn, id, -32603, accountErr)
+		}
+		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": map[string]any{"rateLimits": map[string]any{}}})
 	case "thread/loaded/list":
 		server.mu.Lock()
 		loaded := make([]string, 0, len(server.threads))

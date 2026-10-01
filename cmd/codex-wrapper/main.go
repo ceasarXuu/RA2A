@@ -23,6 +23,10 @@ import (
 
 const remoteFlag = "--remote"
 
+// managedHostTimeout bounds the usability gate that must pass before the
+// wrapper points a TUI at the RA2A-managed app-server.
+const managedHostTimeout = 3 * time.Second
+
 var subcommands = map[string]bool{
 	"agents": true, "exec": true, "review": true, "login": true, "logout": true,
 	"mcp": true, "plugin": true, "mcp-server": true, "app-server": true,
@@ -59,6 +63,7 @@ func classify(args []string) plan {
 			return result
 		}
 	}
+	sawPositional := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--remote-auth-token-env" || strings.HasPrefix(arg, "--remote-auth-token-env=") {
@@ -80,7 +85,13 @@ func classify(args []string) plan {
 			continue
 		}
 		result.tuiMode = !subcommands[arg]
+		sawPositional = true
 		break
+	}
+	// A flags-only invocation is still a TUI launch (`codex --yolo`); only the
+	// informational flags pass through untouched.
+	if !sawPositional && !hasInfoFlag(args) {
+		result.tuiMode = true
 	}
 	result.injectRemote = result.tuiMode && !result.explicitRemote && len(args) > 0
 	// A bare `codex` opens the interactive composer and is also a TUI launch.
@@ -89,6 +100,16 @@ func classify(args []string) plan {
 		result.injectRemote = true
 	}
 	return result
+}
+
+func hasInfoFlag(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--help", "-h", "--version", "-V":
+			return true
+		}
+	}
+	return false
 }
 
 func codexHome() string {
@@ -124,15 +145,23 @@ func readySocket() string {
 	if err := json.Unmarshal(raw, &record); err != nil || record.SocketPath == "" {
 		return ""
 	}
-	if info, err := os.Lstat(record.SocketPath); err != nil || info.Mode()&os.ModeSocket == 0 {
+	// Codex 0.159+ may relocate the real socket outside CODEX_HOME to work
+	// around the AF_UNIX path limit and leave a symlink behind, so resolve the
+	// recorded path before the socket type check and hand the resolved path to
+	// --remote.
+	resolved := record.SocketPath
+	if target, err := filepath.EvalSymlinks(record.SocketPath); err == nil && target != "" {
+		resolved = target
+	}
+	if info, err := os.Stat(resolved); err != nil || info.Mode()&os.ModeSocket == 0 {
 		return ""
 	}
-	conn, err := net.DialTimeout("unix", record.SocketPath, 750*time.Millisecond)
+	conn, err := net.DialTimeout("unix", resolved, 750*time.Millisecond)
 	if err != nil {
 		return ""
 	}
 	_ = conn.Close()
-	return record.SocketPath
+	return resolved
 }
 
 func realCodex(exe string) (string, error) {
@@ -236,6 +265,16 @@ func managedArgs(real, socket string, args []string) []string {
 	defer cancel()
 	state, err := codexcli.DetectDaemon(probeCtx, real)
 	if err == nil && state.Running {
+		return args
+	}
+	// The managed host runs with the RA2A service environment, not the caller's
+	// shell environment. Capturing the TUI into a host that cannot serve the
+	// caller (missing proxy settings, different CODEX_HOME, unreachable
+	// backend) silently breaks the user's session, so require a usable host.
+	gateCtx, gateCancel := context.WithTimeout(context.Background(), managedHostTimeout)
+	defer gateCancel()
+	if err := codexcli.CheckManagedHost(gateCtx, socket, codexHome()); err != nil {
+		fmt.Fprintf(os.Stderr, "codex_wrapper_managed_skipped socket=%s reason=%q\n", socket, err.Error())
 		return args
 	}
 	return append([]string{remoteFlag, "unix://" + socket}, args...)
