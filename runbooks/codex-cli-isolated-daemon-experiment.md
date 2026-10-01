@@ -222,3 +222,11 @@ pgrep -af "ra2a daemon"; ls -la ~/.codex/app-server-control/
 | 未关自动更新 | daemon 可能拉取新版本污染实验 | 预置 `settings.json` |
 | 长 `CODEX_HOME`（Windows） | 超过 AF_UNIX 108 字节静默回退 embedded server | 用短路径，必要时缩短 `CODEX_HOME` |
 | Windows 提升权限终端 | detached 启动被拒，回退 embedded | 用非提升 PowerShell |
+
+## 跨设备验收协调会话的登记检查（2026-10-02）
+
+正式 CLI 会话也可能出现在共享 App 历史中。`list_targets` 标为 `codex-app` 不足以证明 Desktop 归属；本次现场未登记的 Warp CLI 被投递到 Desktop，返回 `no-client-found`。先结合实际客户端、官方 daemon loaded list 和明确的 `canAcceptDirectInput=true` 核对线程，不能单凭 `source` 或 `originator` 自动归属。
+
+确认属于 CLI 后，备份 RA2A 二进制与配置，部署含 `e7aa4ae` 排除修复的已验证版本，再执行 `ra2a adopt-cli <完整 thread ID>`。该命令仅保存配置，现有 registry 不热加载，需仅重启 RA2A 服务，再检查端点为 `codex-cli`。重启前核对正式 CLI/App 是否在服务 cgroup 外；重启后核对关键 PID 和配置/认证/代理文件元数据。不要通过重启 App 或开启 Desktop 失败后的 managed fallback 来绕过错误归属。
+
+只有对端真实投递收到并完成后才记录通过。若协调会话正在执行长任务，发送方等待 `turn/completed` 可能超时；不要自动重发。两端需要互发时分开回合，避免收到请求的回合又同步等待向原发送方回投，形成互相等待。

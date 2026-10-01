@@ -51,7 +51,7 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 
 ## Codex CLI 实现缺陷修复（2026-10-01）
 
-以下缺陷先通过隔离诊断复现，再实现局部修复；当前为源码回归通过，尚未发布 v0.0.18，也未部署到本机正式服务。
+以下缺陷先通过隔离诊断复现，再实现局部修复；源码回归已通过，尚未发布 v0.0.18；本机正式服务部署状态见下方协调会话修复记录。
 
 | 缺陷 | 修复结果 | 验证范围 |
 | --- | --- | --- |
@@ -97,7 +97,14 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 | 配置与认证 | 模型始终为 `mock-model`；模型请求仅使用实验假凭据；独立 home 未生成 `auth.json`。 |
 | 本机保护 | 正式 CLI daemon、App 主进程/后端、RA2A 的关键 PID 保留；正式配置、socket、App 桌面入口及代理配置的 inode、mtime、size 与实验前一致。 |
 
-新能力/隔离回归的 Windows amd64 测试二进制交叉编译通过。该验证仍不覆盖 Windows/macOS 原生运行、真实模型/工具/限流、TUI 人工继续、跨设备四方向及其 20+ 多轮矩阵；正式服务未部署本阶段源码。复用入口见 [隔离实验 runbook](../../runbooks/codex-cli-isolated-daemon-experiment.md#自动验证真实-adapter-协议2026-10-02)。
+新能力/隔离回归的 Windows amd64 测试二进制交叉编译通过。该验证仍不覆盖 Windows/macOS 原生运行、真实模型/工具/限流、TUI 人工继续、跨设备四方向及其 20+ 多轮矩阵；本机已部署 `6a9e810`，但跨机投递仍待现场验证。复用入口见 [隔离实验 runbook](../../runbooks/codex-cli-isolated-daemon-experiment.md#自动验证真实-adapter-协议2026-10-02)。
+
+### 跨机 CLI 协调会话归属修复（2026-10-02）
+
+- ROG306 投递 ubuntu407 返回 CoAP `InternalServerError / DESKTOP_OWNER_UNAVAILABLE / no-client-found`，请求已到达服务。当前协调会话实际为 Warp 中的 Codex CLI，官方 `0.159.3` daemon 的 loaded list 包含该线程，`canAcceptDirectInput=true`；RA2A 配置却未登记 CLI，共享历史因此走 Desktop。
+- 已备份原二进制与 RA2A 配置，原子部署干净提交 `6a9e810`，显式登记 `01a0f6ff-b902-7970-acba-ef8d3451c6f7`，仅重启 RA2A 服务。当前端点已发布为 `codex-cli`，具备 `steerActiveTurn`。
+- 正式 CLI daemon、App 主进程及后端 PID 保留；Codex 配置、认证文件、官方 socket、App 桌面入口和代理配置的 inode/mtime/size 未变；RA2A 其他配置字段未变。
+- 两端指定验收会话仍发布为 `codex-app`，需各自完成显式登记及服务重载。ROG 重试实际通知、CLI 双向投递和多轮矩阵均尚未确认通过；上述修复不作为完整跨设备验收结论。
 
 ## 本机 Codex App 地区登录错误调查（2026-10-01）
 
