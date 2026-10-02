@@ -122,6 +122,14 @@ ROG 完成显式登记后，刷新发现确认双方端点均为 `codex-cli`、�
 
 阶段结束保护检查发现官方 CLI daemon 已从 `0.159.3` 更换为 `0.160.0`（当前 PID `3173242`、同一 Warp cgroup，官方 updater 仍运行），官方 socket 元数据改变；本阶段未调用 daemon stop/start，日志未给出可归因的更新记录，因此只记环境变化，不宣称受控重启验收通过。CLI 客户端仍报 `0.159.3`，RA2A 刷新后当前线程仍为可收件的 `codex-cli`。App 主进程/后端保留，Codex 配置、认证、App 桌面入口和代理配置元数据未变。
 
+### MacMini→ROG 真实 CLI 多轮阶段（2026-10-02）
+
+双方已登记为 `codex-cli`、节点 ready、sessionsStale=false。Mac 完成报告 `9c21d92f75591f39c788bd293088806a` 确认 `RA2A_V18_MAC_ROG_MULTI_01` 至 `_22` 串行工具成功 22/22、失败0、unknown0、无重试。原始完整入参/结果、发现快照和保护校验在 Mac `/tmp/ra2a-v18-mac-rog.4oFEtC/evidence.json`；本机尚未读取该文件，ROG 的 ACK/回合输出待接收端独立核对。
+
+Mac 报告原生 CLI `0.159.3`、RA2A 协商 app-server `0.160.0`、已部署 `6a9e810`（version仍为v0.0.17）；RA2A config、Codex config/auth、codex launcher/codex.bin 前后 SHA256 均一致，未重启/升级/恢复或修改生产代码。ROG 实际版本待其补证。
+
+已向 ROG 发出独立反向22轮任务，要求先等待 Mac 验收会话 ready、逐条确认、错误或unknown停止且不重发，并核对上述收件及此前活跃测试证据。长任务启动请求的确认窗口不作为22轮结果；反向完成报告尚待收到。该阶段不代表完整互通、TUI人工继续或恢复矩阵通过。
+
 ### Windows 测试配置污染修复（2026-10-02）
 
 ROG 现场确认：运行 `cmd/ra2a` 的 OpenCode-only 测试后，节点身份变为 `open-node`，测试 PIN 覆盖正式 PIN，引发 DTLS 握手超时；已从本地备份恢复身份与 PIN，通知恢复。源码独立核对确认两个测试仅设置 `HOME`，而 Windows 的 `os.UserHomeDir` 使用 `USERPROFILE`。
