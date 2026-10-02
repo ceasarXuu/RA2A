@@ -128,7 +128,7 @@ ROG 完成显式登记后，刷新发现确认双方端点均为 `codex-cli`、�
 
 Mac 报告原生 CLI `0.159.3`、RA2A 协商 app-server `0.160.0`、已部署 `6a9e810`（version仍为v0.0.17）；RA2A config、Codex config/auth、codex launcher/codex.bin 前后 SHA256 均一致，未重启/升级/恢复或修改生产代码。ROG 实际版本待其补证。
 
-已向 ROG 发出独立反向22轮任务，要求先等待 Mac 验收会话 ready、逐条确认、错误或unknown停止且不重发，并核对上述收件及此前活跃测试证据。长任务启动请求的确认窗口不作为22轮结果；反向完成报告尚待收到。该阶段不代表完整互通、TUI人工继续或恢复矩阵通过。
+已向 ROG 发出独立反向22轮任务，要求先等待 Mac 验收会话 ready、逐条确认、错误或unknown停止且不重发，并核对上述收件及此前活跃测试证据。长任务启动请求的确认窗口不作为22轮结果；反向完成报告及接收核验现已收到，见下节。该阶段不代表完整互通、TUI人工继续或恢复矩阵通过。
 
 ### ROG→Mac 反向结果与接收核验（2026-10-02）
 
@@ -137,12 +137,18 @@ ROG 完成报告 `627d579b30d15cb659b346df17a26a81` 确认 `RA2A_V18_ROG_MAC_MUL
 | 项目 | 接收端证据 | 当前结论 |
 | --- | --- | --- |
 | Mac→ROG 22轮 | ROG本地22个对应ACK及独立task_complete turn ID | 双方报告互相印证，22轮完成。 |
-| ROG→Mac 22轮 | ROG发送侧22/22 accepted | Mac接收端ACK/turn只读核验已下达，完成报告待收。 |
+| ROG→Mac 22轮 | ROG发送侧22/22 accepted；Mac核验22条原始输入、22条精确ACK及22个独立task_complete turn逐条匹配，无缺失/重复 | 双方报告互相印证，22轮完成。 |
 | Ubuntu→ROG活跃追加 | BASE/FOLLOWUP输入元数据与双ACK属于同一turn `01a0fd08-e5ff-7ca3-bc0b-aabc3840700f`，task_complete=`2026-10-02T14:33:54.928Z` | 接收端同回合完成已确认；发送侧BASE DELIVERY_UNKNOWN仍保留，不判端到端整项通过、不重发。 |
 
 ROG 原始入参/结果及本地核对证据位于 `C:\Users\77585\AppData\Local\Temp\ra2a-v18-rog-mac-20261002\evidence.json`。原生 launcher CLI 为 `0.159.0`，运行 app-server 的 releases/0.159.3 原生二进制为 `0.159.3`；前者不支持 daemon version，不能将 launcher 和宿主版本混写。ROG报告 Codex config/auth、RA2A config 的 SHA256、长度、mtime前后一致，本阶段无配置改动/重启/升级/生产代码改动。
 
-长任务启动消息的15秒控制客户端超时另记为 DELIVERY_UNKNOWN，22轮结果依据实际逐条证据而非启动请求返回值。下一步仅补 Mac 接收核验；TUI人工继续、工具/真实模型行为与受控恢复矩阵仍不在本阶段通过结论内。
+长任务启动消息的15秒控制客户端超时另记为 DELIVERY_UNKNOWN，22轮结果依据实际逐条证据而非启动请求返回值。Mac 接收核验现已完成；本阶段 MacMini↔ROG CLI 双向各22轮文本投递通过，TUI人工继续、工具/真实模型行为与受控恢复矩阵仍不在通过结论内。
+
+### 本轮双向多轮验收结论（2026-10-02）
+
+Mac 只读核验完成报告 `8f58ad4037420091feee9e69f4437a9a`：ROG→Mac `_01` 至 `_22` 原始消息22条、精确ACK22条、task_complete22个及独立turn ID22个，均缺失0、重复0；每轮消息/ACK/task_complete同turn匹配22/22，均有task_started、无工具调用。证据为 Mac `/tmp/ra2a-v18-mac-receipt.ykj8Wt/evidence.json`，含逐轮message-id、turn_id、原始JSON事件及源行号；核验脚本 `verify.cjs` 同目录。接收源为 `/Users/zhangxu/.codex/sessions/2026/10/02/rollout-2026-10-02T02-37-19-01a0f8c1-b41a-79b1-85f2-5e0380b1d361.jsonl`。本机依据两端独立发送结果与接收记录核验报告，不声称已直接读取远端原始文件。
+
+结论：本轮 MacMini↔ROG 的 CLI 双向各22轮文本投递通过，无错误/unknown/自动重试、无缺失/重复；本机→ROG额外22轮发送成功。接收核验未新增投递、修改生产代码/配置或重启。活跃回合追加的接收端同turn完成得到证明，但发送端BASE仍为 DELIVERY_UNKNOWN，保留未完整通过状态。单次成功和多轮完成不升级为 v0.0.18 正式发布或 CLI 全量准入；TUI人工继续、受控网络/daemon恢复及其余已记录缺陷仍待后续阶段。
 
 ### Windows 测试配置污染修复（2026-10-02）
 
