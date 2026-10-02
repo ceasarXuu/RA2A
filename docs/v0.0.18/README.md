@@ -106,6 +106,20 @@ RA2A 的[默认 socket 路径](../../internal/codexhost/owner.go)与官方 daemo
 - 正式 CLI daemon、App 主进程及后端 PID 保留；Codex 配置、认证文件、官方 socket、App 桌面入口和代理配置的 inode/mtime/size 未变；RA2A 其他配置字段未变。
 - ROG 重试通知 `f57a2ead5aab661fd844e4436cdcc584` 已实际到达本机 CLI，本机收件阻断恢复。两端指定验收会话仍发布为 `codex-app`，向 ROG 原地址回投也返回 Desktop `no-client-found`；需各自完成显式登记及服务重载。CLI 双向投递和多轮矩阵均尚未确认通过，不能将本次通知恢复记为正式 CLI↔CLI 验收。
 
+### Ubuntu→ROG 真实 CLI 投递阶段（2026-10-02）
+
+ROG 完成显式登记后，刷新发现确认双方端点均为 `codex-cli`、节点 ready、sessionsStale=false。使用现有 CLI 验收会话，不新建会话、不重启 CLI/App：
+
+| 检查 | 结果 | 证据边界 |
+| --- | --- | --- |
+| Ubuntu→ROG 基础投递 | 成功 | `RA2A_V18_CLI_U407_ROG_BASIC_001` 返回 accepted。 |
+| Ubuntu→ROG 连续投递 | 22/22 成功 | `RA2A_V18_U407_ROG_MULTI_01` 至 `_22` 逐条发送、全部 accepted，无自动重试。 |
+| 活跃回合追加 | 未完整通过 | 观察到 ROG busy；`ACTIVE_FOLLOWUP` accepted，但 `ACTIVE_BASE` 返回 DELIVERY_UNKNOWN。禁止重发，等待 ROG 核对本地 ACK、turn 与完成证据；不能单凭追加成功判整项通过。 |
+| ROG→Ubuntu 正式反向 | 待执行 | 已向 ROG 下达独立回合指令，接收本控制消息的回合仅 ACK，避免同步回投形成互相等待。此前准备通知不代替此项。 |
+| MacMini↔ROG CLI | 待执行 | MacMini 指定会话仍发布为 codex-app；未向该地址发送正式 CLI 验收消息。 |
+
+工具成功结果依据 adapter 的完成确认；ROG 本地输出、同一 turn 证明、TUI 人工继续与恢复矩阵仍需补齐。原始本机工具结果保留于忽略目录 `.cache/cross-cli-acceptance/ubuntu-rog-results.json`。本阶段不修改生产代码或正式配置，不重放不确定消息；不是完整跨设备准入结论。
+
 ### Windows 测试配置污染修复（2026-10-02）
 
 ROG 现场确认：运行 `cmd/ra2a` 的 OpenCode-only 测试后，节点身份变为 `open-node`，测试 PIN 覆盖正式 PIN，引发 DTLS 握手超时；已从本地备份恢复身份与 PIN，通知恢复。源码独立核对确认两个测试仅设置 `HOME`，而 Windows 的 `os.UserHomeDir` 使用 `USERPROFILE`。
