@@ -7,6 +7,7 @@
 | 本机可运行的宿主 | 正常安装后的行为 | 初始化要求 |
 | --- | --- | --- |
 | Codex CLI | 安装 `codex` wrapper；原生命令保留为 `codex.bin` 或记入 native-path 文件；非 TUI 透传 | 可单独初始化 |
+| Codex standalone 安装 | 本机存在 standalone 安装时优先记入 native-path（唯一支持 `codex update` 的布局）；显式 `-Codex` 仍然优先 | 可单独初始化 |
 | OpenCode | 安装 `opencode` wrapper；普通 TUI 自动连接共享 server、建立会话租约，子命令透传 | 可单独初始化，不要求 Codex |
 | Codex App 内置的 Codex 可执行文件 | 注册 Codex MCP 并启动适配器；无独立 CLI 时不需要 CLI wrapper | 可单独初始化 |
 | 无可用宿主 | 安装 RA2A 命令，但提示尚无接入对象 | setup 明确失败，不报告服务就绪 |
@@ -15,6 +16,8 @@
 Codex CLI 有健康的官方共享 daemon 时，自动安装的 wrapper 仍让普通 TUI 走原生启动；仅官方 daemon 不可用且 RA2A managed socket 可用时注入 managed 连接，并记录 `codex_wrapper_managed_fallback` 日志。纯 flag 启动（如 `codex --yolo`）同样按 TUI 处理；`--help`/`--version` 一类信息 flag 始终透传。
 注入前必须通过可用性门禁：托管 host 需报告与调用方一致的 Codex home，并在限时内完成一次账号读取（`account/rateLimits/read`）。门禁失败或 socket 不可用时保持原生启动并记录 `codex_wrapper_managed_skipped`。这样当 RA2A 服务环境与用户 shell 环境不一致（典型为代理变量只导出在 `~/.bashrc`）时，用户 TUI 不会被静默切到连不上账号后端的 host。Codex 0.159+ 将真实 UDS 放在 `/tmp/codex-daemon-<uid>/` 并在控制目录留下符号链接，wrapper 读取 owner lease 时先解析符号链接，再校验 socket 类型与连通性，并把这个解析后的路径交给 `--remote`。
 曾经检测到的宿主若后来被卸载，下一次安装会将没有 backing native 的 RA2A launcher 移入带时间戳的备份，而不是阻止其他宿主；daemon 配置只保留仍能运行的可执行文件。
+
+Windows 安装器额外遵守一条 Codex 自身的约束：只有 standalone managed install、npm shim 和 Homebrew formula 能被 `codex update` 更新，其余布局一律返回 `Could not detect the Codex installation method`；Codex App 每次更新都会在 `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\` 解包一个新的版本目录，记入那里的路径会随 App 更新静默失效。因此 `install.ps1` / `install-remote.ps1` 在自动检测时优先选择 `$CODEX_HOME/packages/standalone/current/` 下的安装（四种已观察到的 `bin/codex[.exe]` 与 `codex[.exe]` 组合逐一探测，未知布局退回原有检测而不是静默钉空），替换已有 native-path 时打印旧路径和新路径。macOS/Linux 不做同样偏好：那里记录的 `codex.bin` 是指向 `packages/standalone/current/` 这一可轮转指针的符号链接，App 自带的 CLI 是原地替换，npm shim 也能用 npm 自更新，没有可复现的同类失效。
 
 ## 发布资产和入口一致性
 
@@ -43,6 +46,8 @@ sh -n install.sh && sh -n install-remote.sh
 - Go 测试缓存不会追踪被 shell 测试调用的外部安装脚本。改动 `install*.sh` 后要用 `go test -count=1 ./installer`，不能以 `(cached)` 结果为准。
 - `list_targets` 的会话 ID 不是供 Agent 拼接的地址；返回数据现在包含完整 `address`，MCP `send_message` schema 也允许传 `from`。多 OpenCode 会话时必须提供本会话的 `from`，否则来源无法自动识别。
 - 每次升级后以运行进程的可执行路径、PID 和构建提交核验；仅看磁盘二进制、版本字符串或任务启动命令的成功输出都可能误判。
+- `codex update` 报 `Could not detect the Codex installation method` 时，先看 `codex` 实际解析到哪个二进制：`Get-Command codex -All`，再读 `~/.local/bin/.ra2a-codex-native-path`。RA2A wrapper 优先读该文件，其次才是 PATH，所以一条指向 Codex App 版本目录的旧记录会同时造成“无法更新”和“升级后版本不变”。2026-10-03 本机实测：App 自带 bin 为 `AppData\Local\OpenAI\Codex\bin\<hash>\codex.exe`（`0.159.0`），而 standalone 安装在 `%USERPROFILE%\.codex\packages\standalone\current\bin\codex.exe`，`current` 是指向 `releases\<version>-x86_64-pc-windows-msvc` 的 junction；把 native-path 指向它之后 `codex update` 正常执行并把 `current` 从 `0.159.3` 轮转到 `0.160.0`。修复前先备份旧文件（`Copy-Item` 到 `.bak-<时间戳>`），改完执行 `ra2a restart` 让托管 app-server 重新解析。
+- daemon 的 `~/.config/ra2a/config.json` 里 `codex` 记的是 launcher 本身时，托管 host 每次启动都重新读 native-path，`codex update` 后只需 `ra2a restart` 即可生效；若那里记的是某个原生命令的绝对路径，则该路径消失前 daemon 会继续使用旧版本，`DetectHarnesses` 只在二进制不可运行时才重新发现，不会主动追新版本。
 
 ## Linux Codex App 登录地区错误的诊断边界
 

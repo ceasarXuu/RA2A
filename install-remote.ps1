@@ -76,6 +76,28 @@ $OcMarker = Join-Path $BinDir '.ra2a-opencode-wrapper'
 $OcNativePath = Join-Path $BinDir '.ra2a-opencode-native-path'
 if ($Codex -and -not (Test-Path -LiteralPath $Codex -PathType Leaf)) { throw "Codex executable not found: $Codex" }
 $CodexSource = $Codex
+$RecordedCodexSource = if (Test-Path -LiteralPath $CodexNativePath) { (Get-Content -LiteralPath $CodexNativePath -Raw).Trim() } else { $null }
+# The standalone managed install is the only layout Codex can update by itself:
+# `codex update` answers "Could not detect the Codex installation method" through
+# anything else, and the Codex App unpacks a fresh hash-versioned bin per update
+# (…\AppData\Local\OpenAI\Codex\bin\<hash>\codex.exe), so a pin found there also
+# goes stale silently. Both observed shapes are probed so an unknown layout keeps
+# today's detection instead of silently pinning nothing.
+$CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+$CodexStandalone = @(
+    (Join-Path $CodexHome 'packages\standalone\current\bin\codex.exe'),
+    (Join-Path $CodexHome 'packages\standalone\current\codex.exe'),
+    (Join-Path $CodexHome 'packages\standalone\current\bin\codex'),
+    (Join-Path $CodexHome 'packages\standalone\current\codex')
+) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+# An explicit -Codex still wins, but replacing a recorded pin is a visible state
+# change: name both paths so the swap can be reversed deliberately.
+if (-not $CodexSource -and $CodexStandalone) {
+    $CodexSource = $CodexStandalone
+    if ($RecordedCodexSource -and $RecordedCodexSource -ne $CodexSource) {
+        Write-Output "replacing recorded Codex pin ($RecordedCodexSource) with the self-updatable standalone install ($CodexSource)"
+    }
+}
 if (-not $CodexSource -and (Test-Path -LiteralPath $CodexNativePath)) { $CodexSource = (Get-Content -LiteralPath $CodexNativePath -Raw).Trim() }
 if ($CodexSource -and -not (Test-Path -LiteralPath $CodexSource -PathType Leaf)) { $CodexSource = $null }
 if (-not $CodexSource -and (Test-Path -LiteralPath $CodexMarker)) {

@@ -92,6 +92,80 @@ func TestPowerShellSourceInstallerSupportsOpenCodeOnlySetup(t *testing.T) {
 	}
 }
 
+// Codex only self-updates the standalone managed install. A pin on the Codex App's
+// hash-versioned bin breaks `codex update` and goes stale after every App update,
+// so re-running the installer must repoint the native reference at the standalone
+// install even though another codex.exe is discoverable on PATH. An explicit
+// -Codex must still win over that preference.
+func TestPowerShellSourceInstallerRepointsRotatingAppPinToStandaloneCodex(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("isolated PowerShell fixture uses Unix executable shims")
+	}
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("PowerShell is not installed")
+	}
+	home, fakeBin := installerEnvironment(t, "Linux")
+	for _, name := range []string{"codex.exe", "opencode.exe"} {
+		writeExecutable(t, filepath.Join(fakeBin, name), "#!/bin/sh\nexit 0\n")
+	}
+	standalone := filepath.Join(home, ".codex", "packages", "standalone", "current", "bin", "codex.exe")
+	if err := os.MkdirAll(filepath.Dir(standalone), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, standalone, "#!/bin/sh\nexit 0\n")
+	appPin := filepath.Join(home, "OpenAI", "Codex", "bin", "ca9abb0b4d8ac692", "codex.exe")
+	if err := os.MkdirAll(filepath.Dir(appPin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, appPin, "#!/bin/sh\nexit 0\n")
+	bin := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce an existing RA2A launcher whose native reference is the App's
+	// per-update versioned bin.
+	writeExecutable(t, filepath.Join(bin, "codex.exe"), "#!/bin/sh\nexit 0\n")
+	if err := os.WriteFile(filepath.Join(bin, ".ra2a-codex-wrapper"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, ".ra2a-codex-native-path"), []byte(appPin), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The installers build native paths with Windows separators while this fixture
+	// runs under pwsh on Linux, so compare separator-agnostically.
+	samePath := func(got, want string) bool {
+		return strings.ReplaceAll(strings.TrimSpace(got), `\`, "/") == filepath.ToSlash(want)
+	}
+	command := exec.Command("pwsh", "-NoProfile", "-Command",
+		`function Stop-ScheduledTask { }; function Get-CimInstance { }; & "../install.ps1" -Pin A2B3C4 -NodeId standalone-codex`)
+	command.Env = append(os.Environ(), "HOME="+home, "LOCALAPPDATA="+home,
+		"TEMP="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("PowerShell install over a rotating App pin: %v\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "replacing recorded Codex pin") {
+		t.Fatalf("repointing an existing pin was not reported:\n%s", output)
+	}
+	data, err := os.ReadFile(filepath.Join(bin, ".ra2a-codex-native-path"))
+	if err != nil || !samePath(string(data), standalone) {
+		t.Fatalf("native codex reference was not repointed at the standalone install: %q, %v", data, err)
+	}
+	override := filepath.Join(fakeBin, "pinned-codex.exe")
+	writeExecutable(t, override, "#!/bin/sh\nexit 0\n")
+	command = exec.Command("pwsh", "-NoProfile", "-Command",
+		`function Stop-ScheduledTask { }; function Get-CimInstance { }; & "../install.ps1" -Pin A2B3C4 -NodeId standalone-codex -Codex "`+override+`"`)
+	command.Env = append(os.Environ(), "HOME="+home, "LOCALAPPDATA="+home,
+		"TEMP="+home, "PATH="+fakeBin+":/usr/bin:/bin")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("PowerShell install with an explicit Codex override: %v\n%s", err, output)
+	}
+	data, err = os.ReadFile(filepath.Join(bin, ".ra2a-codex-native-path"))
+	if err != nil || !samePath(string(data), override) {
+		t.Fatalf("explicit -Codex did not win over the standalone install: %q, %v", data, err)
+	}
+}
+
 func TestPowerShellReleaseInstallerVerifiesAndInstallsBothLaunchers(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("isolated PowerShell fixture uses Unix executable shims")

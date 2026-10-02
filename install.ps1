@@ -25,6 +25,20 @@ $ConfigPath = Join-Path $HOME '.config\ra2a\config.json'
 $LegacyInstallRoot = Join-Path $env:LOCALAPPDATA 'RA2A'
 $LegacyConfigPath = Join-Path $LegacyInstallRoot 'config.json'
 $LegacyBinaryPath = Join-Path $LegacyInstallRoot 'bin\ra2a.exe'
+$CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+# The standalone managed install is the only layout Codex can update by itself:
+# `codex update` answers "Could not detect the Codex installation method" through
+# anything else, and the Codex App unpacks a fresh hash-versioned bin per update
+# (…\AppData\Local\OpenAI\Codex\bin\<hash>\codex.exe), so a pin found there also
+# goes stale silently. Both observed shapes are probed so an unknown layout keeps
+# today's detection instead of silently pinning nothing.
+$CodexStandalone = @(
+    (Join-Path $CodexHome 'packages\standalone\current\bin\codex.exe'),
+    (Join-Path $CodexHome 'packages\standalone\current\codex.exe'),
+    (Join-Path $CodexHome 'packages\standalone\current\bin\codex'),
+    (Join-Path $CodexHome 'packages\standalone\current\codex')
+) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+$RecordedCodexNative = if (Test-Path -LiteralPath $WrapperNativePath) { (Get-Content -LiteralPath $WrapperNativePath -Raw).Trim() } else { $null }
 
 if ($Uninstall) {
     if (Test-Path -LiteralPath $BinaryPath) {
@@ -84,6 +98,14 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 $SourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ($Codex -and -not (Test-Path -LiteralPath $Codex -PathType Leaf)) { throw "Codex executable not found: $Codex" }
 $CodexNative = $Codex
+# An explicit -Codex still wins, but replacing a recorded pin is a visible state
+# change: name both paths so the swap can be reversed deliberately.
+if (-not $CodexNative -and $CodexStandalone) {
+    $CodexNative = $CodexStandalone
+    if ($RecordedCodexNative -and $RecordedCodexNative -ne $CodexNative) {
+        Write-Output "replacing recorded Codex pin ($RecordedCodexNative) with the self-updatable standalone install ($CodexNative)"
+    }
+}
 $OpenCodeNative = $null
 if (-not $CodexNative -and (Test-Path -LiteralPath $WrapperMarker)) {
     if (Test-Path -LiteralPath $WrapperNativePath) { $CodexNative = (Get-Content -LiteralPath $WrapperNativePath -Raw).Trim() }
