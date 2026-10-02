@@ -120,6 +120,8 @@ ROG 完成显式登记后，刷新发现确认双方端点均为 `codex-cli`、�
 
 工具成功结果依据 adapter 的完成确认；ROG 本地输出、同一 turn 证明、TUI 人工继续与恢复矩阵仍需补齐。原始本机工具结果保留于忽略目录 `.cache/cross-cli-acceptance/ubuntu-rog-results.json`。本阶段不修改生产代码或正式配置，不重放不确定消息；不是完整跨设备准入结论。
 
+阶段结束保护检查发现官方 CLI daemon 已从 `0.159.3` 更换为 `0.160.0`（当前 PID `3173242`、同一 Warp cgroup，官方 updater 仍运行），官方 socket 元数据改变；本阶段未调用 daemon stop/start，日志未给出可归因的更新记录，因此只记环境变化，不宣称受控重启验收通过。CLI 客户端仍报 `0.159.3`，RA2A 刷新后当前线程仍为可收件的 `codex-cli`。App 主进程/后端保留，Codex 配置、认证、App 桌面入口和代理配置元数据未变。
+
 ### Windows 测试配置污染修复（2026-10-02）
 
 ROG 现场确认：运行 `cmd/ra2a` 的 OpenCode-only 测试后，节点身份变为 `open-node`，测试 PIN 覆盖正式 PIN，引发 DTLS 握手超时；已从本地备份恢复身份与 PIN，通知恢复。源码独立核对确认两个测试仅设置 `HOME`，而 Windows 的 `os.UserHomeDir` 使用 `USERPROFILE`。
