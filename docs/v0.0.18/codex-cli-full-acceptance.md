@@ -23,10 +23,10 @@
 | C06 | 同机多端点 | 明确登记、只写目标、无历史/所有权串线 | PASS：真实native双线程逐项输入计数 |
 | C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | 待ROG |
 | U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 已请用户配合；时机另通知 |
-| R01 | 官方daemon未运行/线程未loaded/旧版本 | 明确错误、零静默拉起/错误writer、零重放 | 相关回归待汇总 |
+| R01 | 官方daemon未运行/线程未loaded/旧版本 | 明确错误、零静默拉起/错误writer、零重放 | 相关适用平台回归PASS；排除/skip单独记 |
 | R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | Linux PASS；3811492加入Darwin归属gate待原生执行；Win仍待验 |
-| R03 | LAN中断与恢复 | 隔离节点/测试路径中断，预写失败与不确定写入分类、恢复后单次成功 | Linux真实native+CoAP预写失败/恢复PASS；后写缺响应补测中 |
-| N01 | 异常/缺失ACK、能力、UUID、归属、home | 无伪成功/回退/实际非目标写入，原始边界结果 | 相关回归待汇总 |
+| R03 | LAN中断与恢复 | 隔离节点/测试路径中断，预写失败与不确定写入分类、恢复后单次成功 | PASS：Linux真实native+CoAP预写失败、后写缺确认、恢复及不重放；跨设备发现恢复仍待验 |
+| N01 | 异常/缺失ACK、能力、UUID、归属、home | 无伪成功/回退/实际非目标写入，原始边界结果 | 相关适用平台回归PASS；排除/skip单独记 |
 | P01 | 正式CLI/App/配置保护 | PID/所属进程组、配置auth/代理/launcher元数据前后一致 | 各阶段记录 |
 
 ## 执行纪律
@@ -79,8 +79,11 @@ Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG
 
 ### 固定版本资源校验与Darwin原生准备
 
-3811492仅修改测试：canonical短临时home；隔离HOME/CODEX_HOME/TMPDIR；start前拒绝已有socket和PID资源；start输出需backend=pid、socket准确匹配、解析后的package位于临时home、PID记录与返回值相同且有启动时间；stop前复核同一记录，只在首个归属gate通过后登记cleanup。Linux0.159.3/0.160.0原生race分别PASS，日志 `.cache/native-port-linux-0.159.3.log` / `linux-0.160.0.log`；Darwin arm64交叉编译PASS，不计Mac原生执行。
+3811492仅修改测试：canonical短临时home；隔离HOME/CODEX_HOME/TMPDIR；start前拒绝已有socket和PID资源；start输出需backend=pid、socket准确匹配、解析后的package位于临时home、PID记录与返回值相同且有启动时间；stop前复核同一记录，只在首个归属gate通过后登记cleanup。Linux0.159.3/0.160.0原生race分别PASS，日志 `.cache/native-port-linux-0.159.3.log` / `.cache/native-port-linux-0.160.0.log`；Darwin arm64交叉编译PASS，不计Mac原生执行。
 
 固定版本依据：官方 [rust-v0.160.0 backend/mod.rs](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/backend/mod.rs)仅PID backend；[lib.rs](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/lib.rs)从指定home派生资源；[pid.rs](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/backend/pid.rs)检查记录的进程身份后停止。这里推导独立home的PID实例可与正式实例分离，仍需每台原生运行与保护证据，不将源码推导升级为实测通过。
 
 当前实际版本：Ubuntu CLI/daemon=0.160.0/0.160.0，Mac=0.159.3/0.160.0，ROG=0.160.0/0.160.0。
+
+- Mac→ROG新版IDLE01–22发送22/22 accepted，error/unknown0、无重试/就绪超时，最低轮间隔9519ms；证据 `/tmp/ra2a-mac-rog-idle22.LBGWv5/evidence.json`。ROG接收核验及反向阶段已下达。Ubuntu发现曾短暂ROG unreachable，随后恢复ready；已下达一次新的只读状态诊断，未重复原测试消息，不能据发现恢复猜测反向阶段成功或故障根因。
+- 06b7ec3增加隔离LAN后写缺确认验证：handler先取得有效native ACK，暂不返回CoAP响应，才取消sender caller；Node返回包装context.Canceled且不为ErrPeerUnreachable，control现有映射为unknown。目标原始userMessage恰1、另一线程0、handler调用1；释放handler后新marker1、旧marker仍1，无重放。0.159.3/0.160.0各race-count=2 PASS，原始日志 `.cache/native-r03-linux-0.159.3.log` / `.cache/native-r03-linux-0.160.0.log`，Darwin交叉编译PASS；尚未以Mac/Windows原生结果补证。
