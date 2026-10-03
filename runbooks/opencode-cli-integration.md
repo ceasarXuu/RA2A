@@ -43,3 +43,11 @@ wrapper 把策略设置给了错误的进程。新版改用 server 暴露的按�
 权限应答测试通过，跨平台构建检查通过。
 本次未重启用户正在运行的 OpenCode TUI，因此现场权限提示是否消失须在用户主动重启
 新版 wrapper 后核验。
+
+
+## CLI↔OpenCode验收已验证经验（2026-10-04）
+
+- `ra2a opencode`无子命令会启动/附着TUI，不能当只读状态查询。只读核验使用既有owner/lease文件、PID/监听归属及已知共享server的GET session/message/status/permission，不猜启动器命令。误启动可能留下空session及dead lease；保留证据，不擅自删历史会话。
+- Windows wrapper PATH测试夹具应生成`opencode.exe`，与生产.exe/.cmd候选一致；无扩展名Unix fixture在Windows会得到空路径，并不证明生产解析错误。
+- 空闲组单独观察ready后发消息；工作中样例应在工具内确认busy后只发一次，不依赖主Agent处理业务回信的速度命中短等待窗口。错过busy则保持零追加写入，新nonce独立样例另记，不能伪称活跃通过。
+- OpenCode仅声明receiveText/replyAddress。实测工作中追加后assistant parent切到新user，原两次等待仍完成且无重复，双marker最终保留；报告原生parent/finish/time，不套用Codex同turn steer含义。

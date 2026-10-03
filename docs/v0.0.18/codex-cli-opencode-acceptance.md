@@ -1,6 +1,6 @@
 # Codex CLI↔OpenCode 验收（2026-10-04）
 
-- 状态：执行中。Owner在CLI↔CLI人工验收通过后要求继续本方向测试。
+- 状态：已测自动收发与工作中继续执行通过；人工TUI待验。控制回复格式偏差、平台skip与未覆盖恢复场景另记。Owner在CLI↔CLI人工验收通过后要求继续本方向测试。
 - Codex CLI：`ra2a://ubuntu407/01a0f6ff-b902-7970-acba-ef8d3451c6f7`。
 - OpenCode：Owner指定 `ra2a://rog306/ses_efcdeaba1ffeWmQEng78CCAXRO`；首次发现node ready/stale=false、agent=opencode/session ready。
 - 收件、业务回信、任务完成分别记录；accepted不等于任务完成。不确定写入不重发。
@@ -10,15 +10,15 @@
 
 | ID | 项目 | 状态/证据要求 |
 | --- | --- | --- |
-| O01 | 适配器、租约、共享server、wrapper相关race回归 | 待执行；skip不计PASS |
+| O01 | 适配器、租约、共享server、wrapper相关race回归 | PASS（适用用例）：Linux四包41pass及显式native1pass；Windows三包26pass、修正后wrapper12pass，4skip另记 |
 | O02 | 双向基本收件与业务回信 | PASS：原生输入一次、一次业务回信、精确final ACK完成 |
 | O03 | CLI→OpenCode 22条串行空闲输入 | PASS：22accepted，原生用户/精确ACK/完成parent匹配22，缺失重复0/工具0 |
 | O04 | OpenCode→CLI 22条串行活跃收件 | PASS：22accepted，Ubuntu原始输入22，缺失重复0，同一活跃任务 |
-| O05 | 双向工作中收件 | OpenCode宿主受理/排队与CLI活跃追加分开；不等待模型完成才收件 |
-| O06 | 单次有界交错业务回复 | 固定次数send，无无限回投或自动重试 |
-| O07 | 多端点归属/故障恢复边界 | 现有隔离夹具，未附着不发布、post未知不重放；不关闭正式server |
-| U01 | 人工显示与继续输入 | 自动最后给清单，不能由后台日志替代 |
-| P01 | CLI/App/OpenCode/认证/代理保护 | 各阶段前后元数据与PID记录；不部署/重启/改正式配置 |
+| O05 | 双向工作中收件 | PASS：OC busy时444ms收件，原两次等待完成、parent切换、双marker；反向CLI活跃22收件 |
+| O06 | 单次有界交错业务回复 | PASS：WORKING_BASE业务回信与忙态FOLLOWUP独立受理，固定次数、零重发 |
+| O07 | 多端点归属/故障恢复边界 | 适配器/租约/故障分类隔离fixture PASS；真实OC server退出恢复、物理断网未测 |
+| U01 | 人工显示与继续输入 | 待Owner按下方清单实操；不由后台日志替代 |
+| P01 | CLI/App/OpenCode/认证/代理保护 | 正式PID/config/auth/launcher/proxy前后保护一致；PRECHECK误启动偏差单独披露 |
 
 ## 执行纪律
 
@@ -64,3 +64,31 @@ Ubuntu证据存忽略目录 `.cache/cli-opencode-acceptance/`；ROG目录由接�
 - 同目录ACTIVE22原生tool匹配证明每标记恰一次、accepted22，工具start>=上一end且标记顺序01–22，严格串行。控制任务final完成19:34:47.459Z，首行ACK正确但有额外摘要，整条精确ACK匹配0；仅此控制输出格式不合规，不据此否定22条已收件，也不声称精确格式通过。
 - 第一WORKING_STAGE收到BASE_01后，ROOT查询发现OC已ready，忙态gate拒绝FOLLOWUP_01，零写入；该轮不计活跃追加通过。原30秒窗口比主Agent处理时延短，不通过重放修复测试。
 - 新独立STAGE_02采用工具内直接观察busy发送：base收件390ms（19:42:08.185Z），followup收件444ms（19:42:14.494Z，明确busy）；完整入参、原始结果与snapshot `.cache/cli-opencode-acceptance/working-02-send.json`。是不同nonce/样例，不重投旧任务或unknown；原生两次等待、输入/任务段与完成由ROG CLI独立只读核验。OpenCode不声明同turn steer，不按Codex原语作通过推断。
+
+### 工作中收件最终核验
+
+- STAGE_02原生user msg_10349c597001wSleBIJP6Ue0aj（created1791056528791）与FOLLOWUP msg_10349de85001ulF3yNkCbmQnEq（created1791056535173）各1；FOLLOWUP落地发生在第一次等待start1791056533258与end1791056563774之间。工具收件444ms早于工作完成。
+- 两次等待实际30516ms/30494ms，状态completed/exit0，取消0/超额重复0；第一次assistant parent=STAGE user，第二次等待与BASE_02 send parent=FOLLOWUP user，parent发生切换；没有独立STAGE-parent finish=stop，不能宣称同turn或两个独立完成任务。
+- BASE_02一次业务send原始accepted，Ubuntu原始收件一次；final finish=stop/completed1791056612650，文本精确为两行ACK_RA2A_CLI_OC_WORKING_STAGE_02及ACK_RA2A_CLI_OC_WORKING_FOLLOWUP_02。原始GET19:44:35.271Z SHA256=919215f2cb3a08fe9c65aa654864d31fb32fb367445ae403368f6fd46ea5f580，证据 `C:/Users/77585/AppData/Local/Temp/ra2a-oc-working-audit-faa14ce4cc604c4c9b40d44c95fb3dce`；Ubuntu `.cache/cli-opencode-acceptance/working-business-receipts.json` 两轮BASE各1、同当前活跃CLI任务。
+- 正式文件/PID/代理/owner/lease保护前后均一致，原失败及误操作空session/stale lease保留。当前任务生产代码新增0，仅Windows测试fixture文件名修正；源码与文档均已提交推送。
+
+## 人工操作与观察清单（现在可执行）
+
+使用当前Ubuntu Codex CLI与ROG指定OpenCode TUI，不关闭或重新启动。每项反馈通过/失败、设备、现象及时间；unknown不重复投递。
+
+| 顺序 | 操作 | 观察 |
+| --- | --- | --- |
+| 1 | ROG OpenCode输入 `RA2A_OC_MANUAL_01 请仅回复ACK_RA2A_OC_MANUAL_01` | 原会话能手工提交、显示并回复，之后可继续输入 |
+| 2 | Ubuntu Codex CLI输入：刷新list_targets，确认指定ROG目标agent=opencode，使用本CLI完整from仅send一次 `RA2A_CLI_OC_MANUAL_02 请仅最终回复ACK_RA2A_CLI_OC_MANUAL_02，不回投` | ROG原TUI实时显示标记与回复，未切到其他session；发送收件与后续回复分别观察 |
+| 3 | ROG OpenCode输入：刷新list_targets，向Ubuntu目标codex-cli，使用本OpenCode完整from仅send一次 `RA2A_OC_CLI_MANUAL_03 请仅最终回复ACK_RA2A_OC_CLI_MANUAL_03，不回投` | Ubuntu原CLI实时显示标记并回复；不要求另发业务回信 |
+| 4 | 两端收到远端消息后，各输入 `RA2A_MANUAL_CONTINUE_OC_04 请仅回复ACK` / `RA2A_MANUAL_CONTINUE_CLI_04 请仅回复ACK` | 原TUI可继续、无吞输入/卡死/错误会话跳转；原有正常CLI/App登录仍可使用 |
+
+地址仍按本文件开头；执行前刷新发现，目标消失或agent不匹配则停止该项反馈。人工结果前不宣称完整TUI验收通过。
+
+## 覆盖边界与偏差汇总
+
+- 空闲方向22个OC原生user/精确最终ACK匹配；反向方向是Ubuntu一个持续工作任务收到22条，不伪称22个独立完成任务。
+- Windows四个skip保持skip；Linuxnative用例验证隔离server的session/权限回复，不替代Windows native权限或真实模型故障恢复。
+- 正式OpenCode server未停止/重启，物理断网、真实OC server崩溃恢复未测；已有适配器fake/租约/监督恢复用例只证明自身范围。
+- ACTIVE22控制任务final附加摘要，整条精确ACK不合规；该格式偏差保留，不冒充通过或归因RA2A传输。
+- PRECHECK误执行启动器一次留下空session与失效lease，不删除；后续全部使用明确工具和只读GET，没有部署、权限批准或正式配置变更。
