@@ -57,3 +57,10 @@ Ubuntu证据存忽略目录 `.cache/cli-opencode-acceptance/`；ROG目录由接�
 - OpenCode→Ubuntu ACTIVE_01–22发送accepted22/error0/unknown0、报告无重发；Ubuntu原生rollout匹配原始输入22、每个round恰1，同一活跃turn 01a1032f-400a-7772-917d-81d7db86a55c，证据 `.cache/cli-opencode-acceptance/oc-cli-active22-receipt.json`。不是22个独立完成任务。发送原始工具记录由ROG保存在OpenCode native store及 `E:/RA2A/.cache/active22/`；工具未返回message-id，不推造。
 - Windows source=a27bac95955cf591e585d63eec964624a569c299/archive SHA256=B917041D7411E4D2F443C85331F447C98E9053C41854085FE8E879B698693A30，四包原生race exit1：opencode18pass，ocsession1pass，ochost7pass/2skip，wrapper11pass/1fail/2skip。唯一FAIL为TestNativeExecutableSkipsTheWrapperItselfInPath，夹具创建无后缀opencode而Windows生产候选只查.exe/.cmd，得到空路径；仅fixture按Windows生成.exe，不改生产解析。Linux针对原断言race PASS1.014秒，保留Windows原FAIL，不计闭环直到原生复验。
 - 四个Windows skip：ochost监督重启/host outlives caller因无Unix shell；wrapper自动attach Unix fake fixture；native权限测试刻意未opt-in（真实现场OpenCode投递不替代权限native用例）。平台排除为ocsession/process_unix.go及ochost/process_unix.go，另记。上述证据目录test原始日志/summary/go-list以及正式前后保护均保留，保护一致，旧误启动空session/stale lease未删除。
+
+### Windows夹具复验与活跃窗口取证
+
+- e57616504ae7ee3e70235dd3c77233e7f5e0b720独立archive SHA256=6C21588423EF0343082F9AF9039F2E5C410EED49C4CB98BF1B92E24F3FEB49C8，仅cmd/oc-wrapper Windows原生race一次exit0/pass12/fail0/skip2；原失败PATH选择断言PASS，已通过其他3包不复跑。证据 `C:/Users/77585/AppData/Local/Temp/ra2a-oc-fixture-ee87e72dec9a4044bb9b807c0037a377`，全部正式保护一致。
+- 同目录ACTIVE22原生tool匹配证明每标记恰一次、accepted22，工具start>=上一end且标记顺序01–22，严格串行。控制任务final完成19:34:47.459Z，首行ACK正确但有额外摘要，整条精确ACK匹配0；仅此控制输出格式不合规，不据此否定22条已收件，也不声称精确格式通过。
+- 第一WORKING_STAGE收到BASE_01后，ROOT查询发现OC已ready，忙态gate拒绝FOLLOWUP_01，零写入；该轮不计活跃追加通过。原30秒窗口比主Agent处理时延短，不通过重放修复测试。
+- 新独立STAGE_02采用工具内直接观察busy发送：base收件390ms（19:42:08.185Z），followup收件444ms（19:42:14.494Z，明确busy）；完整入参、原始结果与snapshot `.cache/cli-opencode-acceptance/working-02-send.json`。是不同nonce/样例，不重投旧任务或unknown；原生两次等待、输入/任务段与完成由ROG CLI独立只读核验。OpenCode不声明同turn steer，不按Codex原语作通过推断。
