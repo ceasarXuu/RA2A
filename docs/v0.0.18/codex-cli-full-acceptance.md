@@ -13,8 +13,8 @@
 | L01 | Linux相关包全部race回归 | 原始包结果、source提交 | PASS：8包race及CLI 54个测试事件 |
 | L02 | 原生0.159.3/0.160.0隔离daemon | ACK先于阻塞模型完成、22轮、owner继续、重启恢复、home/auth保护 | PASS：0.159.3/0.160.0分别原生复验 |
 | M01 | macOS原生相关包 | race结果及所有skip原因 | PASS：5410aea七包race，182个pass事件 |
-| W01 | Windows原生相关包 | 原生执行结果；不以交叉编译代替 | 已下达ROG原生前置任务 |
-| W02 | Windows夹具与ACL边界 | 原生helper替换批处理；已有ACL测试5项 | 5410aea测试修补已push；Linux通过、Windows原生待验 |
+| W01 | Windows原生相关包 | 原生执行结果；不以交叉编译代替 | PASS：5410aea八包Windows原生race |
+| W02 | Windows夹具与ACL边界 | 原生helper替换批处理；已有ACL测试5项 | PASS：原生exe fixture及五个ACL测试；16个runtime skip另记 |
 | C01 | 双向基本投递 | 双方新版、完整from/to、接收标记和ACK/turn匹配 | 待ROG |
 | C02 | 双向各22轮 | 每轮收件ACK、无重复/缺失、完成仅为独立观察 | 待双方新版重跑 |
 | C03 | 双向active follow-up | 单start+同turn steer、原生ACK、marker匹配 | 待执行 |
@@ -56,6 +56,8 @@
 ### 新版现场与网络恢复阶段
 
 - Mac→Ubuntu ACTIVE_01–22：22/22工具accepted，error/unknown0、无重试，耗时528–1036ms。Ubuntu原生rollout独立核验22条、缺失0/重复0、同一持续工作turn；不是22个独立完成回合。Mac证据 `/tmp/ra2a-mac-ubuntu-active22.YnMuEq/evidence.json`，Ubuntu `.cache/full-cli-acceptance/mac-ubuntu-active22-receipt.json`。
-- Ubuntu→Mac IDLE_01–22：逐条发送前确认codex-cli/ready，每轮至少间隔8秒并重新检查ready；22/22工具accepted，原始入参/结果/耗时 `.cache/full-cli-acceptance/ubuntu-mac-idle22.json`。接收端正在独立核验ACK/turn/完成/重复，尚不计22个独立完成回合。
+- Ubuntu→Mac IDLE_01–22：逐条发送前确认codex-cli/ready，每轮至少间隔8秒并重新检查ready；22/22工具accepted，原始入参/结果/耗时 `.cache/full-cli-acceptance/ubuntu-mac-idle22.json`。Mac原始rollout独立核验消息/精确ACK/task_started/task_complete均22，独立turn22，缺失0/重复0，行序及同turn匹配22/22、无工具调用；证据 `/tmp/ra2a-full-mac-idle22.nqMtQy/evidence.json`，保护前后快照一致。
 - 新增Linux测试仅172行helper与1行调用，复用隔离native daemon/mock。0.159.3 race-count=1与count=2通过，0.160.0 count=2通过：两个登记线程仅目标收到一次输入；测试LAN receiver关闭后ErrPeerUnreachable、adapter调用不增加、线程无输入；恢复后新marker一次、离线marker零次。真实DTLS/CoAP，但使用显式loopback peer，不覆盖跨设备发现恢复或native ACK丢失；测试随机身份/PIN/端口，短暂mDNS广告和全接口监听，未操作正式节点/网络。
 - 人工TUI操作按Owner要求最后执行，自动阶段完成后提供操作与观察清单；U01仍待验。
+
+- ROG前置：收到d4147f4831f851e5c06636791cf1ce26证明先前UNKNOWN控制任务实际已到达，未重试。独立5410aea源码构建部署仅RA2A，已有任务daemon16908→28444；CLI/officialdaemon均0.160.0，正式CLI/App/daemon进程与配置/auth/launcher/代理及正式repo保留。8包Windows原生race全部PASS，ACL5项分别PASS，runtime skip16及平台排除另记、不计通过。证据 `C:\Users\77585\AppData\Local\Temp\ra2a-full-rog-precheck-cf8ae21c8a2748b38abe997d02f4e672`。未展开Windows隔离daemon恢复，group/job隔离证据尚缺。
