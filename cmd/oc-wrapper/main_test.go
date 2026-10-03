@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -117,11 +118,15 @@ func TestNativeExecutableSkipsTheWrapperItselfInPath(t *testing.T) {
 	}
 	// The first PATH entry holds this very binary, exactly as the wrapper would
 	// find itself after installation.
-	shadow := filepath.Join(wrapperDir, "opencode")
+	name := "opencode"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	shadow := filepath.Join(wrapperDir, name)
 	if err := os.Symlink(self, shadow); err != nil {
 		t.Fatalf("shadow the current executable: %v", err)
 	}
-	real := filepath.Join(realDir, "opencode")
+	real := filepath.Join(realDir, name)
 	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}

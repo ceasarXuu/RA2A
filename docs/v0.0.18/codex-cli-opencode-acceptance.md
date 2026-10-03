@@ -11,9 +11,9 @@
 | ID | 项目 | 状态/证据要求 |
 | --- | --- | --- |
 | O01 | 适配器、租约、共享server、wrapper相关race回归 | 待执行；skip不计PASS |
-| O02 | 双向基本收件与业务回信 | 前置投递accepted；原始接收、回复、执行待核 |
-| O03 | CLI→OpenCode 22条串行空闲输入 | 每次发现ready、工具原始收件、宿主消息/精确ACK、缺失重复独立核验 |
-| O04 | OpenCode→CLI 22条串行活跃收件 | Ubuntu持续测试工作中接收；同一活跃任务收件不冒充22个完成任务 |
+| O02 | 双向基本收件与业务回信 | PASS：原生输入一次、一次业务回信、精确final ACK完成 |
+| O03 | CLI→OpenCode 22条串行空闲输入 | PASS：22accepted，原生用户/精确ACK/完成parent匹配22，缺失重复0/工具0 |
+| O04 | OpenCode→CLI 22条串行活跃收件 | PASS：22accepted，Ubuntu原始输入22，缺失重复0，同一活跃任务 |
 | O05 | 双向工作中收件 | OpenCode宿主受理/排队与CLI活跃追加分开；不等待模型完成才收件 |
 | O06 | 单次有界交错业务回复 | 固定次数send，无无限回投或自动重试 |
 | O07 | 多端点归属/故障恢复边界 | 现有隔离夹具，未附着不发布、post未知不重放；不关闭正式server |
@@ -50,3 +50,10 @@ Ubuntu证据存忽略目录 `.cache/cli-opencode-acceptance/`；ROG目录由接�
 - IDLE_01–22全部accepted，error0/unknown0/stopped=null，无重发；每次重新发现ROG node ready/stale=false、指定OpenCode session ready；21个间隔均>=8秒。原始selected node/session字段、完整from/to/text、UTC/耗时与原始工具结果保存 `.cache/cli-opencode-acceptance/cli-oc-idle22.json`。接收原生消息/精确ACK/完成由ROG Codex CLI独立GET核验，不直接由accepted推导。
 - OpenCode→Ubuntu活跃22条唯一反向批次已发控制（accepted），Ubuntu持续当前测试工作，不将反向收件视为22个独立完成任务。ROG CLI只读取证和隔离Windows四包race并行执行，不对OpenCode追加投递或改权限。
 - 同机只读诊断已完成：PRECHECK原始输入一次，send回信一次原始accepted，final ACK完成于19:24:18.890Z；session message/status/permission GET均200、unfinished0/pendingPermissions0，原owner/lease/PID配置保护一致。证据 `C:/Users/77585/AppData/Local/Temp/ra2a-oc-readonly-92211df06c344e4fa0957af557f4847f`。当前快照不能证明此前全部延迟原因，误启动等待仅已知贡献，未作额外修复。
+
+### 双向22接收与Windows失败
+
+- CLI→OpenCode收件317–484ms，平均391.9ms，最小轮间9053ms；ROG原生GET独立核验raw users22、exact final ACK22、missing0/duplicates0/tools0，每条messageID/parentID/完成时间匹配。证据 `C:/Users/77585/AppData/Local/Temp/ra2a-oc-audit-34f0b4ee890e44e192cf6c3bee9b2bbc/receipt-matching.json`；19:32:51.607Z原始GET SHA256=17b509d7781a7174b1d18b11916681bf23c49a6721251750e967c240a8fc50ca。
+- OpenCode→Ubuntu ACTIVE_01–22发送accepted22/error0/unknown0、报告无重发；Ubuntu原生rollout匹配原始输入22、每个round恰1，同一活跃turn 01a1032f-400a-7772-917d-81d7db86a55c，证据 `.cache/cli-opencode-acceptance/oc-cli-active22-receipt.json`。不是22个独立完成任务。发送原始工具记录由ROG保存在OpenCode native store及 `E:/RA2A/.cache/active22/`；工具未返回message-id，不推造。
+- Windows source=a27bac95955cf591e585d63eec964624a569c299/archive SHA256=B917041D7411E4D2F443C85331F447C98E9053C41854085FE8E879B698693A30，四包原生race exit1：opencode18pass，ocsession1pass，ochost7pass/2skip，wrapper11pass/1fail/2skip。唯一FAIL为TestNativeExecutableSkipsTheWrapperItselfInPath，夹具创建无后缀opencode而Windows生产候选只查.exe/.cmd，得到空路径；仅fixture按Windows生成.exe，不改生产解析。Linux针对原断言race PASS1.014秒，保留Windows原FAIL，不计闭环直到原生复验。
+- 四个Windows skip：ochost监督重启/host outlives caller因无Unix shell；wrapper自动attach Unix fake fixture；native权限测试刻意未opt-in（真实现场OpenCode投递不替代权限native用例）。平台排除为ocsession/process_unix.go及ochost/process_unix.go，另记。上述证据目录test原始日志/summary/go-list以及正式前后保护均保留，保护一致，旧误启动空session/stale lease未删除。
