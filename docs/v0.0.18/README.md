@@ -178,7 +178,7 @@ Owner 明确：收到了就确认收到，回复与任务完成属于下一阶�
 
 修复提交 `e5d97f2` 已在合并保留远端 Windows 安装器提交 `181b77e` 后推送；本机从干净源码构建、备份原RA2A二进制/配置后原子部署，仅重启RA2A服务。正式官方daemon PID15822保留；Codex config/auth、官方socket、App桌面入口/代理配置的inode/mtime/size未变，RA2A配置字节一致。
 
-M4 收件探针 `a358861a0b60a55fa9da99a0b4c04f54` 已到达，Ubuntu服务在 `2026-10-03T23:15:57.593+08:00` 输出 `cli_message_received`，mode=steer、turn_id=`01a10249-5318-70e2-8387-0a20b885fd1d`；本原生回合仍在处理，日志确认不依赖回合完成。M4的原始发送结果及新版部署完成报告待补。
+M4 收件探针 `a358861a0b60a55fa9da99a0b4c04f54` 已到达，Ubuntu服务在 `2026-10-03T23:15:57.593+08:00` 输出 `cli_message_received`，mode=steer、turn_id=`01a10249-5318-70e2-8387-0a20b885fd1d`；本原生回合仍在处理，日志确认不依赖回合完成。M4报告 `7333db19c1530843e8f12aee33d874fe` 提供探针原始结果：status=accepted、isError=false，确认接收方尚未结束当前工作时发送侧已成功。新版M4部署完成报告待补。
 
 已授权M4保留已有修改、备份后获取此提交，仅构建更新RA2A并重启其服务，不改CLI/App/launcher/登录设置。ROG节点仍ready，但当前不发布验收CLI端点，未向不存在的端点投递新版验收任务。本地修复与跨设备双方新版部署完成应分别记录。
 
