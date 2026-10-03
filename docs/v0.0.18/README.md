@@ -164,6 +164,16 @@ ROG 现场确认：运行 `cmd/ra2a` 的 OpenCode-only 测试后，节点身份�
 
 ROG 另报 `codexcli` 的 `.cmd` 临时路径执行失败；当前 fake fixture 使用批处理，而宿主探测直接执行二进制。该项单独记录，完整错误与 Windows 原生复现尚待补齐，不通过增加生产 shell fallback 绕过测试。
 
+## 收件与回复解耦修复（2026-10-03，PD33）
+
+Owner 明确：收到了就确认收到，回复与任务完成属于下一阶段。产品权威记录于 [PD33](../v0.0.15/prd.md#confirmed-product-decisions)，取代旧实验推导的“等turn/completed才确认投递”。
+
+- CLI adapter 仅等待原生 `turn/start` / `turn/steer` 有效输入 ACK；校验 start 非空turn ID且无内嵌error、steer为expected turn ID。随后返回收件成功，不等待模型、工具、最终回复或task_complete。
+- 移除与收件无关的完成等待/cache、ConfirmWindow及过时白盒测试；保留明确登记、direct-input门禁、来源信封、只退订RA2A自身订阅和断线重连。App既有受理确认路径不改动。
+- 缺失/异常ACK、拒绝、写入后断线或超时保留unknown，不自动重放、不改走其他writer。以后执行失败不回滚收件成功；接收方原生客户端仍负责执行/回复观察。
+- 隔离复现先证明旧实现start/steer明确ACK后仍unknown；新回归覆盖无completed立即成功、后续执行失败、异常/缺失ACK、错turn及丢ACK只写一次。相关五包 `-race` 回归通过。
+- 真实 `0.159.3` 独立home/mock模型实验通过：22轮收件与独立完成观察、原客户端继续、模型仍阻塞时active steer已经ACK、解除后完成及实验daemon重启恢复。正式home/认证未复制。`0.160.0` 同一隔离实验亦通过（3.46秒）；Windows amd64交叉编译通过。本机部署验证另补结果；跨机双方仍需部署新语义后复验，不将旧22轮结果当新契约验收。
+
 ## 本机 Codex App 地区登录错误调查（2026-10-01）
 
 - 环境：Ubuntu，App `26.924.22138`，bundled Codex `0.158.0-alpha.2.1`；正常 CLI / 官方 daemon 为 `0.159.3`。

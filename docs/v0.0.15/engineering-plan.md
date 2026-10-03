@@ -4,7 +4,11 @@
 - 计划日期：2026-09-02
 - 最近修订：2026-09-28（依据 Codex CLI `0.158.0` 的 V10 实测重定向投递入口、wrapper 定位与所有权结论；同日落地 Phase 1-3 主体与归属登记）
 - Product Authority Source：[prd.md](./prd.md)
-- Applicable Decisions：PD25、PD26、PD27、PD28、PD29、PD30、PD31、PD32
+- Applicable Decisions：PD25、PD26、PD27、PD28、PD29、PD30、PD31、PD32、PD33
+
+## 当前收件确认契约（2026-10-03，PD33）
+
+Owner 已明确收件、回复与任务完成分阶段。此决策替代本文件历史 V10 推导的“以 turn/completed 唯一确认投递”实现口径，实验中的终态观测保留为执行证据。Codex CLI 在 `turn/start` 返回有效 turn ID 且无内嵌错误，或 `turn/steer` 明确确认 expected turn ID 后返回收件成功；不等待终态、不依赖模型输出。RPC拒绝、异常/缺失确认、写入后断线或超时保持未知且不重放。App、OpenCode已有宿主受理确认路径保持一致。
 
 ## 0. 发布状态与范围偏差（需 Owner 确认）
 
@@ -181,7 +185,7 @@ v0.0.15 保持文本消息，候选字段：
 
 - **零动作路线成立，wrapper 降级**：`DaemonAutoStart` 已是默认开启的稳定特性。实测 daemon 不存在时普通 `codex` 约 5 秒内自行拉起 daemon 并建 socket，daemon 已存在时直接接入，socket inode 与 `ss -xap` 双向比对确认 TUI 与 daemon 之间 ESTABLISHED。V9 在 `0.153.4` 上的失败结论仅对该版本有效。`cmd/codex-wrapper` 保留为排除场景兜底（`--no-daemon`、`--oss`、`-c`/`--enable`/`--disable`/`--search`、`--profile`、自定义 config loader、`--strict-config`、`--dangerously-bypass-hook-trust`、workload identity、`CODEX_EXEC_SERVER_URL`、Bedrock 向导、Windows 非提升终端），不再是主路径。
 - **投递入口改为 stable 路径**：`thread/queue/*` 全部 experimental 且要求 thread 已 loaded，退出主路径；投递固定为 `thread/resume` 建立订阅 + `turn/start`（空闲）/ `turn/steer`（活跃，带 `expectedTurnId`）。`turn/start` 不受 `experimentalApi` 门禁。
-- **投递确认口径唯一**：`turn/start` 先返回 turn ID 且 `error: null`，失败在 5 次 `Reconnecting... N/5` 后由 `turn/completed`（`status: failed`）暴露。适配器必须以 `turn/completed` 为唯一成功判据，`DELIVERY_UNKNOWN` 不重试、不切路径。
+- **投递确认口径唯一**：`turn/start` 先返回 turn ID 且 `error: null`，失败在 5 次 `Reconnecting... N/5` 后由 `turn/completed`（`status: failed`）暴露。历史实现以 `turn/completed` 为唯一成功判据；现按 PD33 改为宿主收件 ACK，`DELIVERY_UNKNOWN` 不重试、不切路径。
 - **所有权仍需 RA2A 侧自建登记**：`Thread.source` 恒为 `vscode`；`Thread.originator` 为进程级全局值。服务端 `thread → connection` 映射为 `pub(crate)`，未映射到任何协议方法。未知归属 thread 不得发布为 ready。
 - **PD32 隔离成本下降**：`CODEX_HOME` 决定 daemon socket，独立 `CODEX_HOME` 即等于隔离 daemon、socket、session 存储三件事，不再需要 `-c ephemeral=true`（V6 已证明其无效）。
 - **剩余硬前置**：隔离环境的独立认证需用户参与；未认证时 `account/rateLimits/read` 返回 `codex account authentication required`，无法按 `runbooks/codex-account-usage-check.md` 核对 plan 桶用量，因此真实投递实验前必须先完成独立登录与用量门禁。
@@ -266,7 +270,7 @@ Phase 0 冻结条件更新：V10 已通过；V8-R 剩余项（真实后端回合
 - **建立 thread 所有权登记**：记录本连接 create/resume 的 thread ID 作为归属证据；禁止用 `Thread.source`（实测恒为 `vscode`）或 `Thread.originator`（实测为 daemon 进程级全局值、first-writer-wins）推断类型。未知归属不得作为 ready 端点发布。
 - **管理 originator 副作用**：非 `codex_app_server_daemon` / `codex-backend` 的 `clientInfo.name` 会成为 daemon 进程级默认 originator，影响之后所有连接创建的 thread。适配器必须固定连接命名与连接顺序，并把该副作用写入可观测性事件。
 - **投递路径**：`thread/resume` 建立订阅 → 空闲用 `turn/start`、活跃用 `turn/steer`（必须带 `expectedTurnId`）。不使用 `thread/queue/*`（experimental 且要求 thread 已 loaded）。**必须等 `thread/resume` 响应后再发 `turn/start`**，否则调用方收不到任何回合通知，投递无法确认。
-- **投递确认**：以 `turn/completed` 为唯一成功判据，检查 `turn.status` 与 `turn.error`。`turn/start` 响应只用于取得 turn ID。宿主内置 5 次重连，确认窗口为秒级，窗口内不重试、不切换投递路径。
+- **投递确认**：按 PD33，以目标宿主的有效输入 ACK 确认收件；`turn/completed` 仅作为后续执行证据。宿主内置 5 次重连，确认窗口为秒级，窗口内不重试、不切换投递路径。
 - **写入前门禁**：thread 已 loaded（`thread/loaded/list`）、`canAcceptDirectInput` 为真、`threadId` 为合法 UUID、显式携带 `textElements: []`；前置不足时先拒绝不投递。
 - **订阅纪律**：不用即 `thread/unsubscribe`（订阅会钉住 thread 内存，最后一个订阅者离开后 thread 会被卸载并广播 `notLoaded` + `thread/closed`）；不代答审批类服务端请求（会 fan-out 给所有订阅者）；忽略与本次投递无关的 `error` / `warning` 通知。
 - **已知宿主约束**：注入的 turn 运行在 daemon 启动时的环境变量下，不是用户终端环境；Windows 需非提升终端且 `CODEX_HOME` 路径需满足 AF_UNIX 108 字节限制，否则静默回退到 embedded server。
@@ -340,13 +344,13 @@ Phase 0 冻结条件更新：V10 已通过；V8-R 剩余项（真实后端回合
 | `cli_caller_bound` | 本连接 create/resume thread 成功登记归属 | 所有权登记审计 |
 | `cli_ownership_unknown` | 发现未归属 thread 而跳过发布 | 解释端点缺失 |
 | `cli_originator_side_effect` | 本连接 `clientInfo.name` 成为 daemon 进程级默认 originator | 跨客户端污染取证 |
-| `cli_turn_accepted_unconfirmed` | `turn/start` 返回 turn ID 但确认窗口内未收到 `turn/completed` | 区分"已接受"与"已投递" |
-| `cli_turn_failed` | `turn/completed` 带 `status: failed` 与 `error` | 宿主终态失败分类 |
+| `cli_message_received` | 目标宿主返回有效 start/steer 输入 ACK | 按 PD33 确认收件，与执行完成分离 |
+| 原生回合失败记录 | 宿主后续执行失败 | 由原生客户端观察，不改写收件结果 |
 | `cli_unsubscribed` | 主动 `thread/unsubscribe` | 防止 thread 内存被钉住 |
 
 原 `cli_queue_added` 随投递入口改到 `turn/*` 而退役。
 
-关键路径应能区分“LAN 未到达、远端路由失败、适配器拒绝、宿主结果未知”，避免统一表现为超时。特别地，`turn/start` 返回成功**不得**映射为 `delivered`，必须等 `turn/completed`。
+关键路径应能区分“LAN 未到达、远端路由失败、适配器拒绝、宿主结果未知”，避免统一表现为超时。特别地，依 PD33，有效 `turn/start` / `turn/steer` ACK 映射为收件成功，不能等待 `turn/completed`。
 
 ## 9. Execution Contract
 
@@ -585,7 +589,7 @@ daemon」是同一类错误的不同载体——**命令返回成功不等于运
 | --- | --- | --- | --- |
 | D1 | CLI 侧 App Server owner 用官方 daemon 还是 `internal/codexhost` | Phase 3 全部 | 用官方 daemon（生命周期、升级、`start_required` 判定均已官方化）；`codexhost` 保留 Desktop 与 RA2A 内部路径 |
 | D2 | RA2A 连接的 `clientInfo.name` 取值与连接顺序 | Phase 3 归属登记 | 固定名称 + 单连接长驻，避免污染 daemon 全局 originator；配合 `cli_originator_side_effect` 事件 |
-| D3 | `delivered` 是否必须等待 `turn/completed` | Phase 3 投递结果映射与超时 | **按宿主分别判定**：Codex CLI 的 `turn/start` 异步且每条 turn 有终态，`turn/completed` 是权威判据；opencode 的 `prompt_async` 受理即回 204，**204 即判据，绝不等 turn**（见 §11.5：等待 turn 会使投递耗时等于收信方工作量，必然超时） |
+| D3 | `delivered` 是否必须等待 `turn/completed` | Phase 3 投递结果映射与超时 | **已由 Owner 的 PD33 纠正**：各宿主明确受理输入即确认收件，CLI 使用有效 start/steer ACK，OpenCode 使用 prompt_async 204；均不等待回合终态。历史 V10 的异步执行失败作为后续执行证据。 |
 | D4 | 承载版本号（见 §0） | Phase 6 发布 | 由 Owner 在选项 A / B 中选择 |
 
 执行过程中若发现原确认决策不可实现，必须记录：受影响 PD、证据、用户影响、建议选项和 Owner 决定。不得把工程限制静默改写为产品行为。

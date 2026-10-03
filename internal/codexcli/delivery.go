@@ -2,15 +2,12 @@ package codexcli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
 )
-
-func jsonUnmarshal(payload []byte, target any) error { return json.Unmarshal(payload, target) }
 
 func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoint, error) {
 	registered := adapter.Registered()
@@ -87,9 +84,8 @@ func (adapter *Adapter) Deliver(ctx context.Context, address agentbridge.Address
 	return adapter.deliverToThread(ctx, server, threadID, agentbridge.RenderIncomingText(envelope))
 }
 
-// deliverToThread follows the verified order: subscribe first and wait for the
-// resume response, then start or steer, then confirm on turn/completed. The
-// request response alone is not a delivery confirmation.
+// A successful start/steer response confirms receipt of the input. Replies and
+// turn completion belong to the native client and never delay delivery ACKs.
 func (adapter *Adapter) deliverToThread(ctx context.Context, server *appServer, threadID, text string) agentbridge.DeliveryResult {
 	callCtx, cancel := context.WithTimeout(ctx, adapter.config.CallTimeout)
 	defer cancel()
@@ -138,20 +134,8 @@ func (adapter *Adapter) deliverToThread(ctx context.Context, server *appServer, 
 			Detail:           err.Error(),
 		}
 	}
-	final := adapter.awaitTurnOutcome(ctx, turn.ID)
 	adapter.unsubscribe(ctx, server, threadID)
-	if final.Status != "completed" {
-		detail := "turn did not complete"
-		if final.Error != nil {
-			detail = final.Error.Message
-		}
-		adapter.logger.Info("cli_turn_failed", "endpoint_id", threadID, "turn_id", turn.ID, "status", final.Status)
-		return agentbridge.DeliveryResult{
-			Code: agentbridge.ResultUnknown, TurnID: turn.ID, Detail: detail,
-			NativeErrorClass: "turn_" + final.Status,
-		}
-	}
-	adapter.logger.Info("cli_turn_delivered", "endpoint_id", threadID, "turn_id", turn.ID, "mode", submitMode(activeTurnID))
+	adapter.logger.Info("cli_message_received", "endpoint_id", threadID, "turn_id", turn.ID, "mode", submitMode(activeTurnID))
 	return agentbridge.Delivered(turn.ID)
 }
 
@@ -169,40 +153,6 @@ func (adapter *Adapter) submitTurn(ctx context.Context, server *appServer, threa
 		return server.turnSteer(callCtx, threadID, activeTurnID, text)
 	}
 	return server.turnStart(callCtx, threadID, text)
-}
-
-func (adapter *Adapter) awaitTurnOutcome(ctx context.Context, turnID string) turnRecord {
-	adapter.mu.Lock()
-	adapter.pruneTurnOutcomes()
-	outcome := adapter.turnWaiters[turnID]
-	if outcome == nil {
-		outcome = &turnOutcome{done: make(chan struct{})}
-		adapter.turnWaiters[turnID] = outcome
-	}
-	outcome.waiters++
-	adapter.mu.Unlock()
-	defer func() {
-		adapter.mu.Lock()
-		defer adapter.mu.Unlock()
-		outcome.waiters--
-		if outcome.waiters == 0 && outcome.completedAt.IsZero() && adapter.turnWaiters[turnID] == outcome {
-			delete(adapter.turnWaiters, turnID)
-		}
-	}()
-
-	timer := time.NewTimer(adapter.config.ConfirmWindow)
-	defer timer.Stop()
-	select {
-	case <-outcome.done:
-		return outcome.turn
-	case <-timer.C:
-		adapter.logger.Info("cli_turn_accepted_unconfirmed", "turn_id", turnID)
-		return turnRecord{ID: turnID, Status: "unconfirmed"}
-	case <-ctx.Done():
-		return turnRecord{ID: turnID, Status: "unconfirmed"}
-	case <-adapter.done:
-		return turnRecord{ID: turnID, Status: "unconfirmed"}
-	}
 }
 
 func (adapter *Adapter) unsubscribe(ctx context.Context, server *appServer, threadID string) {

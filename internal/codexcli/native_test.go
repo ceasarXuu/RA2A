@@ -71,9 +71,18 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	lifecycle("start")
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	adapter := New("native-fixture", Config{CodexPath: binary, CodexHome: home, Stderr: io.Discard, ConfirmWindow: 10 * time.Second})
+	adapter := New("native-fixture", Config{CodexPath: binary, CodexHome: home, Stderr: io.Discard})
 	t.Cleanup(func() { _ = adapter.Close() })
 	var observer *rpcConn
+	completed := make(chan turnRecord, 64)
+	notify := func(method string, params json.RawMessage) {
+		if method == "turn/completed" {
+			var done turnCompletedParams
+			if json.Unmarshal(params, &done) == nil {
+				completed <- done.Turn
+			}
+		}
+	}
 	openObserver := func(threadID string) *appServer {
 		t.Helper()
 		state, err := detectDaemon(ctx, binary, home)
@@ -88,6 +97,7 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 		if err != nil || normalizeCodexHome(init.CodexHome) != normalizeCodexHome(home) {
 			t.Fatalf("observer attached to wrong home: %+v, %v", init, err)
 		}
+		observer.setNotificationHandler(notify)
 		server := &appServer{conn: observer}
 		if threadID != "" {
 			if _, err := server.threadResume(ctx, threadID); err != nil {
@@ -102,15 +112,6 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 		}
 	})
 	owner := openObserver("")
-	completed := make(chan turnRecord, 64)
-	observer.setNotificationHandler(func(method string, params json.RawMessage) {
-		if method == "turn/completed" {
-			var done turnCompletedParams
-			if json.Unmarshal(params, &done) == nil {
-				completed <- done.Turn
-			}
-		}
-	})
 	awaitOwnerTurn := func(turnID string) {
 		t.Helper()
 		timer := time.NewTimer(10 * time.Second)
@@ -155,9 +156,12 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 			t.Fatalf("round %d endpoint: %+v, %v", round, endpoints, err)
 		}
 		marker := fmt.Sprintf("native-round-%02d", round)
-		if result := deliver(marker); !result.Delivered() {
-			t.Fatalf("round %d delivery: %+v", round, result)
+		result := deliver(marker)
+		if !result.Delivered() {
+			t.Fatalf("round %d receipt: %+v", round, result)
 		}
+		// Execution is checked separately by the owning client's observer.
+		awaitOwnerTurn(result.TurnID)
 		if !mock.contains(marker, "ra2a://fixture-sender/source") {
 			t.Fatalf("round %d lost envelope provenance at native provider boundary", round)
 		}
@@ -178,13 +182,17 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("mock provider did not hold active turn")
 	}
-	steered := make(chan agentbridge.DeliveryResult, 1)
-	go func() { steered <- deliver("native-active-followup") }()
-	waitForTurnWaiters(t, adapter, active.ID, 1)
-	mock.releaseOnce.Do(func() { close(mock.release) })
-	if result := <-steered; !result.Delivered() || result.TurnID != active.ID {
-		t.Fatalf("active delivery must complete on the same native turn: %+v, active=%s", result, active.ID)
+	// The mock remains blocked until AFTER receipt has returned.
+	ackCtx, ackCancel := context.WithTimeout(ctx, 2*time.Second)
+	result := adapter.Deliver(ackCtx, agentbridge.Address{EndpointID: threadID}, agentbridge.MessageEnvelope{
+		ID: "native-active-followup", SourceAddress: "ra2a://fixture-sender/source", Text: "native-active-followup",
+	})
+	ackCancel()
+	if !result.Delivered() || result.TurnID != active.ID {
+		t.Fatalf("receipt must return while native execution is still held: %+v, active=%s", result, active.ID)
 	}
+	mock.releaseOnce.Do(func() { close(mock.release) })
+	awaitOwnerTurn(active.ID)
 	if !mock.contains("native-active-followup", "ra2a://fixture-sender/source") {
 		t.Fatal("active followup did not reach the native provider")
 	}
@@ -192,16 +200,18 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	lifecycle("stop")
 	lifecycle("start")
 	_ = openObserver(threadID)
-	if result := deliver("native-after-restart"); !result.Delivered() {
+	result = deliver("native-after-restart")
+	if !result.Delivered() {
 		t.Fatalf("native daemon restart recovery: %+v", result)
 	}
+	awaitOwnerTurn(result.TurnID)
 	if !mock.contains("native-after-restart", "ra2a://fixture-sender/source") {
 		t.Fatal("delivery after restart did not reach the native provider")
 	}
 	if _, err := os.Stat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
 		t.Fatalf("fixture must remain unauthenticated: %v", err)
 	}
-	t.Logf("native app-server %s: 22 rounds, independent owner continue, active steer and daemon restart passed; home=%s", adapter.serverVersion, home)
+	t.Logf("native app-server %s: 22 receipt rounds, independent execution/owner continue, receipt while active model held and daemon restart passed; home=%s", adapter.serverVersion, home)
 }
 
 type nativeMock struct {

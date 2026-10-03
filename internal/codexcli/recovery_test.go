@@ -3,9 +3,7 @@ package codexcli
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"testing"
-	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
 )
@@ -35,7 +33,7 @@ func TestDeliverPreservesEnvelopeWhenCompletionPrecedesResponse(t *testing.T) {
 			envelope.ID = "message-1"
 			result := adapter.Deliver(context.Background(), agentbridge.Address{EndpointID: testThreadID}, envelope)
 			if !result.Delivered() {
-				t.Fatalf("completion before response must confirm delivery: %+v", result)
+				t.Fatalf("receipt must survive an earlier completion notification: %+v", result)
 			}
 			server.mu.Lock()
 			inputs := append([]json.RawMessage(nil), server.inputs...)
@@ -53,126 +51,6 @@ func TestDeliverPreservesEnvelopeWhenCompletionPrecedesResponse(t *testing.T) {
 				t.Fatalf("host input lost envelope provenance: %s", inputs[0])
 			}
 		})
-	}
-}
-
-func completionPayload(t *testing.T, turnID, status string) json.RawMessage {
-	t.Helper()
-	payload, err := json.Marshal(turnCompletedParams{ThreadID: testThreadID, Turn: turnRecord{ID: turnID, Status: status}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return payload
-}
-
-func newOutcomeTestAdapter(t *testing.T) *Adapter {
-	t.Helper()
-	adapter := New("node-a", Config{Stderr: io.Discard, ConfirmWindow: time.Second})
-	t.Cleanup(func() { _ = adapter.Close() })
-	return adapter
-}
-
-func waitForTurnWaiters(t *testing.T, adapter *Adapter, turnID string, count int) {
-	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		adapter.mu.Lock()
-		outcome := adapter.turnWaiters[turnID]
-		ready := outcome != nil && outcome.waiters == count
-		adapter.mu.Unlock()
-		if ready {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("expected %d waiters for %s", count, turnID)
-}
-
-func TestTurnCompletionIsRetainedAndBroadcast(t *testing.T) {
-	for _, status := range []string{"completed", "failed"} {
-		t.Run(status, func(t *testing.T) {
-			adapter := newOutcomeTestAdapter(t)
-			adapter.onNotification("turn/completed", completionPayload(t, "early", status))
-			if turn := adapter.awaitTurnOutcome(context.Background(), "early"); turn.Status != status {
-				t.Fatalf("early terminal state lost: %+v", turn)
-			}
-			results := make(chan turnRecord, 2)
-			for index := 0; index < 2; index++ {
-				go func() { results <- adapter.awaitTurnOutcome(context.Background(), "shared") }()
-			}
-			waitForTurnWaiters(t, adapter, "shared", 2)
-			adapter.onNotification("turn/completed", completionPayload(t, "shared", status))
-			for index := 0; index < 2; index++ {
-				if turn := <-results; turn.Status != status {
-					t.Fatalf("one completion must confirm every waiter: %+v", turn)
-				}
-			}
-			adapter.onNotification("turn/completed", completionPayload(t, "shared", "duplicate"))
-			if turn := adapter.awaitTurnOutcome(context.Background(), "shared"); turn.Status != status {
-				t.Fatalf("duplicate notification replaced terminal state: %+v", turn)
-			}
-		})
-	}
-}
-
-func TestCanceledTurnWaiterDoesNotRemoveOtherWaiters(t *testing.T) {
-	adapter := newOutcomeTestAdapter(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	canceled, remaining := make(chan turnRecord, 1), make(chan turnRecord, 1)
-	go func() { canceled <- adapter.awaitTurnOutcome(ctx, "shared") }()
-	go func() { remaining <- adapter.awaitTurnOutcome(context.Background(), "shared") }()
-	waitForTurnWaiters(t, adapter, "shared", 2)
-	cancel()
-	if turn := <-canceled; turn.Status != "unconfirmed" {
-		t.Fatalf("canceled wait must remain unconfirmed: %+v", turn)
-	}
-	waitForTurnWaiters(t, adapter, "shared", 1)
-	adapter.onNotification("turn/completed", completionPayload(t, "shared", "completed"))
-	if turn := <-remaining; turn.Status != "completed" {
-		t.Fatalf("canceling one wait removed its peer: %+v", turn)
-	}
-}
-
-func TestCloseReleasesTurnWaiters(t *testing.T) {
-	adapter := newOutcomeTestAdapter(t)
-	results := make(chan turnRecord, 2)
-	for index := 0; index < 2; index++ {
-		go func() { results <- adapter.awaitTurnOutcome(context.Background(), "shared") }()
-	}
-	waitForTurnWaiters(t, adapter, "shared", 2)
-	if err := adapter.Close(); err != nil {
-		t.Fatal(err)
-	}
-	for index := 0; index < 2; index++ {
-		select {
-		case turn := <-results:
-			if turn.Status != "unconfirmed" {
-				t.Fatalf("closing adapter must not confirm a turn: %+v", turn)
-			}
-		case <-time.After(200 * time.Millisecond):
-			t.Fatal("Close left a turn waiter blocked")
-		}
-	}
-	adapter.onNotification("turn/completed", completionPayload(t, "late", "completed"))
-	adapter.mu.Lock()
-	defer adapter.mu.Unlock()
-	if len(adapter.turnWaiters) != 0 {
-		t.Fatal("closed adapter retained late notifications")
-	}
-}
-
-func TestTerminalOutcomesExpire(t *testing.T) {
-	adapter := newOutcomeTestAdapter(t)
-	adapter.onNotification("turn/completed", completionPayload(t, "old", "completed"))
-	adapter.mu.Lock()
-	adapter.turnWaiters["old"].completedAt = time.Now().Add(-adapter.config.CallTimeout - adapter.config.ConfirmWindow - time.Second)
-	adapter.mu.Unlock()
-	adapter.onNotification("turn/completed", completionPayload(t, "new", "completed"))
-	adapter.mu.Lock()
-	defer adapter.mu.Unlock()
-	if _, retained := adapter.turnWaiters["old"]; retained {
-		t.Fatal("expired completed turns must be pruned")
 	}
 }
 

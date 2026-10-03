@@ -24,7 +24,7 @@ func testEnvelope(text string) agentbridge.MessageEnvelope {
 	}
 }
 
-func TestDeliverConfirmsOnTurnCompleted(t *testing.T) {
+func TestDeliverConfirmsHostReceipt(t *testing.T) {
 	server := newFakeAppServer(t)
 	server.addThread(testThreadID, false, true)
 	adapter := newTestAdapter(t, server)
@@ -37,7 +37,7 @@ func TestDeliverConfirmsOnTurnCompleted(t *testing.T) {
 		agentbridge.Address{NodeID: "node-a", EndpointID: testThreadID}, testEnvelope("hello"))
 
 	if !result.Delivered() {
-		t.Fatalf("delivery must be confirmed by turn/completed, got %+v", result)
+		t.Fatalf("delivery must be confirmed by the host receipt, got %+v", result)
 	}
 	if result.TurnID == "" {
 		t.Fatal("delivered result must carry the turn id")
@@ -127,35 +127,7 @@ func TestDeliverRefusesWhenHostRejectsDirectInput(t *testing.T) {
 	}
 }
 
-func TestDeliverReportsUnconfirmedWhenTerminalEventNeverArrives(t *testing.T) {
-	server := newFakeAppServer(t)
-	server.addThread(testThreadID, false, true)
-	server.mu.Lock()
-	server.suppressDone[testThreadID] = true
-	server.mu.Unlock()
-	adapter := New("node-a", Config{
-		CodexPath: server.codexPath, Stderr: os.Stderr,
-		ConfirmWindow: 200 * time.Millisecond, CallTimeout: 3 * time.Second,
-	})
-	t.Cleanup(func() { _ = adapter.Close() })
-	if err := adapter.Register(testThreadID); err != nil {
-		t.Fatal(err)
-	}
-	result := adapter.Deliver(context.Background(),
-		agentbridge.Address{NodeID: "node-a", EndpointID: testThreadID}, testEnvelope("hi"))
-	if result.Delivered() {
-		t.Fatalf("a missing terminal event must never count as delivered, got %+v", result)
-	}
-	if result.Code != agentbridge.ResultUnknown {
-		t.Fatalf("unconfirmed delivery must be unknown, got %+v", result)
-	}
-	order := server.callOrder()
-	if countCalls(order, "turn/start") != 1 {
-		t.Fatalf("unconfirmed delivery must not be retried, got %v", order)
-	}
-}
-
-func TestDeliverSurfacesHostTerminalFailure(t *testing.T) {
+func TestDeliverDoesNotTurnLaterExecutionFailureIntoReceiptFailure(t *testing.T) {
 	server := newFakeAppServer(t)
 	server.addThread(testThreadID, false, true)
 	server.mu.Lock()
@@ -168,14 +140,8 @@ func TestDeliverSurfacesHostTerminalFailure(t *testing.T) {
 	}
 	result := adapter.Deliver(context.Background(),
 		agentbridge.Address{NodeID: "node-a", EndpointID: testThreadID}, testEnvelope("hi"))
-	if result.Delivered() {
-		t.Fatalf("failed turn must not be delivered, got %+v", result)
-	}
-	if !strings.Contains(result.Detail, "401") {
-		t.Fatalf("terminal host failure must be preserved for diagnosis, got %+v", result)
-	}
-	if result.NativeErrorClass != "turn_failed" {
-		t.Fatalf("native class must record the terminal state, got %q", result.NativeErrorClass)
+	if !result.Delivered() || result.TurnID == "" {
+		t.Fatalf("execution failure must not invalidate accepted input: %+v", result)
 	}
 }
 

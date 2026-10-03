@@ -47,6 +47,7 @@ type fakeAppServer struct {
 	inputs            []json.RawMessage
 	completeBeforeAck bool
 	disconnectTurn    bool
+	invalidReceipt    string
 
 	// codexHome is reported by initialize; accountReadErr and
 	// accountReadSilent shape the account read the managed-host gate performs.
@@ -328,6 +329,14 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 		if method == "turn/steer" {
 			result = map[string]any{"turnId": turnID}
 		}
+		switch server.invalidReceipt {
+		case "missing":
+			result = map[string]any{}
+		case "error":
+			result = map[string]any{"turn": map[string]any{"id": turnID, "error": map[string]any{"message": "input rejected"}}}
+		case "wrong-steer":
+			result = map[string]any{"turnId": "different-turn"}
+		}
 		completed := fakeTurn{ID: turnID, Status: "completed"}
 		if failure != "" {
 			completed.Status = "failed"
@@ -379,7 +388,7 @@ func newTestAdapter(t *testing.T, server *fakeAppServer) *Adapter {
 	t.Helper()
 	return New("node-a", Config{
 		CodexPath: server.codexPath, Stderr: os.Stderr,
-		ConfirmWindow: 3 * time.Second, CallTimeout: 3 * time.Second,
+		CallTimeout: 3 * time.Second,
 	})
 }
 

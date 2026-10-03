@@ -186,7 +186,13 @@ func (server *appServer) turnStart(ctx context.Context, threadID, text string) (
 	var response turnResponse
 	err := server.conn.call(ctx, "turn/start",
 		map[string]any{"threadId": threadID, "input": userInput(text)}, &response)
-	return response.Turn, err
+	if err != nil {
+		return turnRecord{}, err
+	}
+	if response.Turn.ID == "" || response.Turn.Error != nil {
+		return turnRecord{}, errors.New("turn/start response did not acknowledge input")
+	}
+	return response.Turn, nil
 }
 
 func (server *appServer) turnSteer(ctx context.Context, threadID, expectedTurnID, text string) (turnRecord, error) {
@@ -197,8 +203,8 @@ func (server *appServer) turnSteer(ctx context.Context, threadID, expectedTurnID
 	if err != nil {
 		return turnRecord{}, err
 	}
-	if response.TurnID == "" {
-		return turnRecord{}, errors.New("turn/steer response omitted turnId")
+	if response.TurnID == "" || response.TurnID != expectedTurnID {
+		return turnRecord{}, errors.New("turn/steer response did not acknowledge the expected turn")
 	}
 	return turnRecord{ID: response.TurnID}, nil
 }

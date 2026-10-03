@@ -236,3 +236,9 @@ pgrep -af "ra2a daemon"; ls -la ~/.codex/app-server-control/
 Windows 的 `os.UserHomeDir()` 读取 `USERPROFILE`，仅设置 `HOME` 无法隔离 `operator.Save`。ROG 实际出现 OpenCode-only 测试写入 `open-node` 与测试 PIN、导致 DTLS 超时；恢复正式配置后通知恢复。
 
 需要调用 operator 或 RA2A run 路径的测试同时设置临时 `HOME`、`USERPROFILE`、`LOCALAPPDATA`，并在任何 Save/Load 前断言 `operator.ConfigPath()` 落在临时目录。`LOCALAPPDATA` 用于旧 Windows 配置读取与迁移，也必须隔离；fake 宿主并不自动隔离配置和 mailbox。复用 `cmd/ra2a` 的 `isolatedOperatorHome` fixture。Windows 交叉编译只证明可构建，原生执行结果另行记录。
+
+## 收件与执行验证分开（2026-10-03，PD33）
+
+Owner 已纠正旧的完成确认设计。CLI Deliver 的成功只依据有效 start/steer 输入 ACK，不等待 turn/completed；RPC返回不明确时仍unknown且不重放。不要延长超时来掩盖收件与工作量的耦合。
+
+真实fixture中由独立owner observer另行等待完成，确保每轮模型输入和后续人工客户端调用有序；这属于执行验证，不是Deliver的等待条件。活跃测试保持mock模型阻塞，先断言Deliver已返回成功且turn ID不变，再释放模型、观察完成。observer重连后必须重新绑定完成处理器。RA2A及时退订自己的订阅，独立owner持续观察；不得关闭或退订真实TUI。

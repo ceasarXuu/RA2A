@@ -2,7 +2,6 @@ package codexcli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,12 +20,11 @@ const MinAppServerVersion = "0.158.0"
 const adapterClientName = "ra2a_codex_cli"
 
 type Config struct {
-	CodexPath     string
-	CodexHome     string
-	Stderr        io.Writer
-	ConfirmWindow time.Duration
-	CallTimeout   time.Duration
-	MinVersion    string
+	CodexPath   string
+	CodexHome   string
+	Stderr      io.Writer
+	CallTimeout time.Duration
+	MinVersion  string
 }
 
 type Adapter struct {
@@ -40,22 +38,10 @@ type Adapter struct {
 	serverVersion string
 	codexHome     string
 	registered    map[string]struct{}
-	turnWaiters   map[string]*turnOutcome
-	done          chan struct{}
 	closed        bool
 }
 
-type turnOutcome struct {
-	done        chan struct{}
-	turn        turnRecord
-	completedAt time.Time
-	waiters     int
-}
-
 func New(nodeID string, config Config) *Adapter {
-	if config.ConfirmWindow == 0 {
-		config.ConfirmWindow = 30 * time.Second
-	}
 	if config.CallTimeout == 0 {
 		config.CallTimeout = 20 * time.Second
 	}
@@ -67,11 +53,9 @@ func New(nodeID string, config Config) *Adapter {
 	}
 	return &Adapter{
 		config: config, nodeID: nodeID,
-		logger:      slog.New(slog.NewTextHandler(config.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
-		codexHome:   config.CodexHome,
-		registered:  make(map[string]struct{}),
-		turnWaiters: make(map[string]*turnOutcome),
-		done:        make(chan struct{}),
+		logger:     slog.New(slog.NewTextHandler(config.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		codexHome:  config.CodexHome,
+		registered: make(map[string]struct{}),
 	}
 }
 
@@ -174,7 +158,6 @@ func (adapter *Adapter) connect(ctx context.Context) (*appServer, error) {
 		return nil, fmt.Errorf("codex app-server %s is below the supported minimum %s", version, adapter.config.MinVersion)
 	}
 	server := &appServer{conn: conn}
-	conn.setNotificationHandler(adapter.onNotification)
 	// V10 measured that initialize writes clientInfo.name into the app-server
 	// process-wide default originator unless the name is allow-listed, so every
 	// thread created afterwards on this daemon records this client. The side
@@ -209,43 +192,6 @@ func (err *StartRequiredError) Error() string {
 	return err.Detail
 }
 
-func (adapter *Adapter) onNotification(method string, params json.RawMessage) {
-	if method != "turn/completed" {
-		return
-	}
-	var payload turnCompletedParams
-	if err := jsonUnmarshal(params, &payload); err != nil || payload.Turn.ID == "" {
-		return
-	}
-	adapter.mu.Lock()
-	defer adapter.mu.Unlock()
-	if adapter.closed {
-		return
-	}
-	adapter.pruneTurnOutcomes()
-	outcome := adapter.turnWaiters[payload.Turn.ID]
-	if outcome == nil {
-		outcome = &turnOutcome{done: make(chan struct{})}
-		adapter.turnWaiters[payload.Turn.ID] = outcome
-	}
-	if !outcome.completedAt.IsZero() {
-		return
-	}
-	outcome.turn, outcome.completedAt = payload.Turn, time.Now()
-	close(outcome.done)
-}
-
-// Keep early completions through the request/confirmation window, then remove
-// them lazily. Active waiters retain their own outcome until they return.
-func (adapter *Adapter) pruneTurnOutcomes() {
-	cutoff := time.Now().Add(-adapter.config.CallTimeout - adapter.config.ConfirmWindow)
-	for id, outcome := range adapter.turnWaiters {
-		if outcome.waiters == 0 && !outcome.completedAt.IsZero() && outcome.completedAt.Before(cutoff) {
-			delete(adapter.turnWaiters, id)
-		}
-	}
-}
-
 func (adapter *Adapter) Health(ctx context.Context) agentbridge.Health {
 	daemon, err := detectDaemon(ctx, adapter.config.CodexPath, adapter.codexHome)
 	if err != nil {
@@ -270,8 +216,6 @@ func (adapter *Adapter) Close() error {
 	conn := adapter.conn
 	adapter.conn = nil
 	adapter.server = nil
-	adapter.turnWaiters = make(map[string]*turnOutcome)
-	close(adapter.done)
 	adapter.mu.Unlock()
 	if conn == nil {
 		return nil
