@@ -17,12 +17,12 @@
 | W02 | Windows夹具与ACL边界 | 原生helper替换批处理；已有ACL测试5项 | PASS：原生exe fixture及五个ACL测试；16个runtime skip另记 |
 | C01 | 双向基本投递 | 双方新版、完整from/to、接收标记和ACK/turn匹配 | PASS：Ubuntu↔Mac、Mac↔ROG新版收件匹配 |
 | C02 | 双向各22轮 | 每轮收件ACK、无重复/缺失、完成仅为独立观察 | PASS：Mac↔ROG新版双向各22独立turn，无缺失重复 |
-| C03 | 双向active follow-up | 单start+同turn steer、原生ACK、marker匹配 | Ubuntu→ROG BASE/FOLLOWUP同turn；Mac/ROG双向现场待补 |
+| C03 | 双向active follow-up | 单start+同turn steer、原生ACK、marker匹配 | PASS：Ubuntu→Mac/ROG及Mac↔ROG活跃输入原始同turn核验 |
 | C04 | 长工作收件解耦 | 工作未完成前ACK；随后执行独立核验 | PASS：Linux阻塞native模型；Mac/ROG→Ubuntu持续工作收件22条 |
-| C05 | 交错回复无互等 | 单次有界回复、最多固定hop、无重复写入 | Mac收件与同活跃turn回信通过；ROG发送侧独立核验待补 |
+| C05 | 交错回复无互等 | 单次有界回复、最多固定hop、无重复写入 | PASS：固定四hop，原始同活跃turn回信与ROG一次发送独立核验 |
 | C06 | 同机多端点 | 明确登记、只写目标、无历史/所有权串线 | PASS：真实native双线程逐项输入计数 |
-| C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | 三设备固定四hop完成；独立发送侧证据待补 |
-| U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 已请用户配合；时机另通知 |
+| C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | PASS：Ubuntu0.160/Mac0.159.3/ROG0.160；固定四hop闭环 |
+| U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 待用户按下方清单实操（自动阶段收尾后） |
 | R01 | 官方daemon未运行/线程未loaded/旧版本 | 明确错误、零静默拉起/错误writer、零重放 | 相关适用平台回归PASS；排除/skip单独记 |
 | R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | PASS：Linux/Darwin两版本及Windows 0.160.0原生；Windows目录残留另记 |
 | R03 | LAN中断与恢复 | 隔离节点/测试路径中断，预写失败与不确定写入分类、恢复后单次成功 | PASS：三平台真实native+CoAP预写失败、后写缺确认、恢复及不重放；物理跨设备发现恢复未覆盖 |
@@ -119,3 +119,10 @@ Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG
 - 唯一链Ubuntu→Mac→ROG→Mac→Ubuntu：Mac发送一次TRI_MAC_ROG_01，收件accepted耗时873ms；ROG业务回复在send返回50.726秒后进入Mac原活跃turn（90秒界限内）。发送方API没有等待该业务回复。
 - Mac原控制输入行2155与ROG reply行2188/2189同turn 01a102dc-e6dc-77b0-b028-fd5cdf58c1d0，task_started行2153；收回复时未完成。实际ROG from完整，message-id=f6be073fd40fdec72a348ad874e9f31a。证据 `/tmp/ra2a-tri.ilX7NU/` 含发现、完整入参、原始结果、源事件及保护快照；ROG发送侧和双方最终完成待下一阶段只读补核。Root send原始结果 `.cache/full-cli-acceptance/tri-stage-send.json`。
 - Windows目录清理结果被源码忽略已确定：测试现改为os.RemoveAll错误时报错并保留路径，未改变目录删除范围/资源归属gate。Linux0.160.0显式native race单次PASS（5.710秒），原始日志 `.cache/full-cli-acceptance/cleanup-gate-linux.log`；不将Linux结果代替Windows残留问题闭环。
+
+### 跨设备活跃输入与转发闭环
+
+- Mac→ROG BASE/FOLLOWUP只有各一次send，accepted2/error0/unknown0；BASE耗时1204ms，重新发现目标busy后立即FOLLOWUP耗时797ms，不等待业务完成。Mac证据 `/tmp/ra2a-mac-rog-active.U7EEoq/`，包含ready/busy发现、完整原始入参/结果和保护。
+- ROG独立原始输入：同turn 01a102e0-8cd9-7ed3-99b1-e6feae922a11，started行1967，BASE行1969/message-id=a34fa724a813ccbb75d38fad315f56fd/count1，FOLLOWUP行1980/message-id=bc044fba02a11fb60b25906371923271/count1。等待期限17:47:22–17:48:22 UTC；报告时完成pending，不把输入确认计作完成。证据 `C:/Users/77585/AppData/Local/Temp/ra2a-active-final-a485736358f54508bbafeacb96a8384e`。
+- 三设备链ROG侧已独立核验：TRI输入一次，reply send一次/原始accepted，完整from/to匹配；ROG turn 01a102dd-a101-73a0-83e5-806b64ecaaac，started行1935/input1939/final ACK1963/task_complete1966（17:44:37.714Z）。证据 `C:/Users/77585/AppData/Local/Temp/ra2a-tri-mac-rog-01-1791049470718`。Mac上一TRI turn完成也已补核，final保留两marker，见Mac active目录tri-completion.json。完整四hop且无自动重发，所有正式保护一致。
+- ROG正在对b4f159e运行一次cleanup显式错误gate复验，新临时目录与旧残留均不手工删除；结果用于解释清理边界，不追加跨机发送轮次。物理网络断开/发现恢复与人工TUI仍未覆盖，不能宣称全量无缺口。

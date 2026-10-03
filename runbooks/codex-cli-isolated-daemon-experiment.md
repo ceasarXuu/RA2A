@@ -257,3 +257,9 @@ Mac 的旧 shell fixture 冷探测实测需 406–449ms，将其包含在 300ms 
 - start归属或stop验证失败时保留temp home/PID/原始日志；不得为了cleanup绕gate按group/job杀进程。保留实例清理与消息投递是不同操作，unknown消息不重发。
 
 固定源码：[Windows junction选择](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/prepare_install_windows.rs)、[PID启动](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/backend/pid_start.rs)、[Windows进程身份检查](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/backend/windows.rs)。
+
+
+### Windows短TEMP与清理结果
+
+- 在启动go测试子进程前，为其TEMP/TMP/TMPDIR指定全新短且可写的目录；fixture调用os.MkdirTemp早于t.Setenv，不能把父TEMP放在长证据目录。先按随机home最坏名字核socket长度<=107，不放宽门禁。日志继续写外部证据目录。
+- native stop成功、PID记录/socket/package退出与整个home目录清理是独立事实；os.RemoveAll错误必须显式报告，不能忽略后宣称清理成功。Windows实测功能PASS后仍可能留下 `.tmp`/`app-server-daemon`，先保留错误、目录和只读资源清单，不自行删证据或修ACL。
