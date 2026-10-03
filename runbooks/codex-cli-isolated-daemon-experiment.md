@@ -248,3 +248,12 @@ Owner 已纠正旧的完成确认设计。CLI Deliver 的成功只依据有效 s
 Mac 的旧 shell fixture 冷探测实测需 406–449ms，将其包含在 300ms 收件限时内会在写入前失败。先用 ListEndpoints 建立 fake 连接并校验目标，再开始收件计时；保留原 300ms、禁止完成事件、一次写入和有效 ACK 断言。诊断四次收件均低于 2ms，不能把冷探测失败归为收件耦合，也不能通过放宽收件限时掩盖问题。
 
 跨平台 daemon probe fake 使用原生测试可执行文件和相邻 JSON，不使用 Windows .cmd；仅处理固定 version 参数，缺失 fixture 或异常参数必须拒绝。race 子进程退出等待通过测试局部 GORACE 设置隔离。Linux 通过与 Windows 交叉编译均不能替代 Windows 原生执行。
+
+## Windows native实验的路径与命令结果（2026-10-04）
+
+- 临时home要短，启动前检查control socket不超过107字节。HOME/USERPROFILE/LOCALAPPDATA/APPDATA/CODEX_HOME/TEMP/TMP全部隔离；测试凭据store明确file，不读取系统keyring。新state目录使用当前SID的protected OICI私有DACL，不能依赖Go的mkdir0700在Windows设置ACL。只创建fresh目录，不修已有生产ACL。
+- 官方0.160.0在Windows创建current junction；ROG现场Go1.27 EvalSymlinks对原/规范路径均失败，而Win32 GetFinalPathNameByHandle解析成功、current/release/实际exe hash一致。不能据Go解析失败判断junction不存在，也不能仅修斜杠后放宽归属。Win32只读handle解析真实路径，匹配native FILETIME与PID记录及实际exe，再initialize指定temp socket核home；全部通过后才允许停止该实验PID。Unix保留已有canonical gate。
+- PowerShell将native stderr warning提升为终止异常，会丢失真实ExitCode。临时home的PATH alias拒绝提示已实测出现，但不等于停止失败；使用.NET ProcessStartInfo、UseShellExecute=false、stdout/stderr独立异步读取，以真实ExitCode和PID/socket状态判断。ROG保留实例经过完整gate后这样停止，exit0、PID/记录/socket退出且正式保护未变。
+- start归属或stop验证失败时保留temp home/PID/原始日志；不得为了cleanup绕gate按group/job杀进程。保留实例清理与消息投递是不同操作，unknown消息不重发。
+
+固定源码：[Windows junction选择](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/prepare_install_windows.rs)、[PID启动](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/backend/pid_start.rs)、[Windows进程身份检查](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/app-server-daemon/src/backend/windows.rs)。

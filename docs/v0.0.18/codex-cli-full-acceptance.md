@@ -101,3 +101,7 @@ Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG
 - eed6dc7单次Windows native-race FAIL（pass0/skip0），4.89秒在资源归属gate失败，未进入投递/LAN/recovery，不重试。官方返回temp current路径，Go EvalSymlinks报找不到路径；临时PID23476/home r2-1741810079保留，正式所有保护不变。原始证据 `C:\Users\77585\AppData\Local\Temp\ra2a-native-rog-0cbf4f7795d041a187bbedb0564f5763`，archive SHA256=8020D2F7E82F07F5327F202F8B21E09F2C2119CF02C0AF2228A49A4EB15823EE。
 - 只读对照：current真实Junction指向temp release，原串及规范串的PowerShell/Win32 file handle解析成功，三个exe hash一致；Go1.27 Eval两串均失败。PID record与native FILETIME创建时间精确匹配，home version probe running。排除alias不存在与仅分隔符问题，Go内部失败原因未断定，不修改生产或升级工具。
 - Windows-only测试修正范围：使用Win32 canonical路径，匹配实际PID创建时间/进程exe，socket只initialize核home后才登记cleanup；Unix保留原canonical gate。保留原始失败，仅清理全部归属通过的指定temp实例，不按group/job停止。修正原生复验尚未执行，不计Windows native通过。
+
+- Windows失败实例已完成归属核验：native FILETIME/record/Win32 exe/temp socket initialize home全部相等，正式资源不同。第一次PowerShell因stderr warning终止未取得native exit，保留原始失败；观察40秒仍运行后，重新gate通过用.NET直接单次stop，exit0/459ms、PID23476/record/socket退出，home和原始证据保留，正式保护不变。不是重发RA2A消息。证据同失败目录 `process-cleanup-*.json`。
+- 546e6c0 Windows-only canonical改Win32 handle，start/stop核actualPID creationtime/exe，公共只initialize home gate；Linux两版本native-race及最终CLI包54pass/1opt-in skip通过，Win/Darwin编译通过。ROG原生复验及Mac公共gate回归已下达，未计通过。
+- Mac长工作现场：BASE/FOLLOWUP原始各1、同turn01a102c6-a316-7981-812f-a829afd338bb，FOLLOWUP到来时原任务仍未最终回复；原等待被输入唤醒后续等，首开始至结束20.932秒（非连续20秒阻塞）。证据 `/tmp/ra2a-mac-active.AHopL1/receipt-evidence.json`；工具两次accepted，原生完成在下一阶段补核，正式保护不变。
