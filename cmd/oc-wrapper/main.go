@@ -1,8 +1,8 @@
 // Command oc-wrapper is a transparent launcher for the opencode command.
 //
-// Interactive `opencode` (or `opencode --ra2a`) attaches the TUI to a known
-// session on the shared server, so
-// messages injected by RA2A are executed there. Every other invocation passes
+// Interactive `opencode` (or `opencode --ra2a`) tracks the TUI's current session
+// on the shared server, so messages injected by RA2A are executed there.
+// Every other invocation passes
 // straight through to the native opencode.
 //
 // Sharing one server is required, not cosmetic: OpenCode servers do not notify
@@ -119,23 +119,24 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 	if err != nil {
 		return fmt.Errorf("select OpenCode session: %w", err)
 	}
-	release, err := ocsession.Register(ocsession.Directory(), sessionID)
+	focusConfig, release, err := prepareFocus(ocsession.Directory())
 	if err != nil {
-		return fmt.Errorf("register OpenCode attachment: %w", err)
+		return fmt.Errorf("prepare OpenCode focus tracking: %w", err)
 	}
 	defer release()
-	fmt.Fprintf(stderr, "opencode_attachment_registered session=%s server=%s\n", sessionID, settings.serverURL)
+	fmt.Fprintf(stderr, "opencode_attachment_tracking startup_session=%s server=%s\n", sessionID, settings.serverURL)
 	if settings.autoApprove {
 		approveCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		ready := make(chan error, 1)
-		go approveRequests(approveCtx, settings.serverURL, sessionID, ready, stderr)
+		go approveCurrentRequests(approveCtx, settings.serverURL, func() string { return ocsession.Current(ocsession.Directory()) }, ready, stderr)
 		if err := <-ready; err != nil {
 			return fmt.Errorf("start OpenCode auto-approval: %w", err)
 		}
 	}
 
 	command := nativeCommand(settings.executable, append([]string{"attach", settings.serverURL}, attach...)...)
+	command.Env = append(os.Environ(), "OPENCODE_TUI_CONFIG="+focusConfig)
 	command.Stdin = os.Stdin
 	command.Stdout = stdout
 	command.Stderr = stderr

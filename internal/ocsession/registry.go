@@ -9,11 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Lease struct {
 	SessionID string `json:"sessionID"`
 	PID       int    `json:"pid"`
+	// Expires is set by the client-local TUI plugin, in Unix milliseconds.
+	// Legacy fixed-session wrappers omit it.
+	Expires int64 `json:"expires,omitempty"`
 }
 
 func Directory() string {
@@ -66,11 +70,36 @@ func Active(directory string) map[string]bool {
 			continue
 		}
 		var lease Lease
-		if json.Unmarshal(data, &lease) != nil || lease.PID <= 0 ||
-			fmt.Sprintf("%s.%d", lease.SessionID, lease.PID) != entry.Name() || !processAlive(lease.PID) {
+		if json.Unmarshal(data, &lease) != nil || !validLease(lease, entry.Name()) || !processAlive(lease.PID) {
 			continue
 		}
 		active[lease.SessionID] = true
 	}
 	return active
+}
+
+// FocusPath is private to one wrapper process; a TUI switch replaces this file
+// atomically instead of briefly publishing both the old and new sessions.
+func FocusPath(directory string) string {
+	return filepath.Join(directory, fmt.Sprintf("attachment.%d", os.Getpid()))
+}
+
+func Current(directory string) string {
+	path := FocusPath(directory)
+	data, err := os.ReadFile(path)
+	var lease Lease
+	if err != nil || json.Unmarshal(data, &lease) != nil || !validLease(lease, filepath.Base(path)) {
+		return ""
+	}
+	return lease.SessionID
+}
+
+func validLease(lease Lease, name string) bool {
+	if lease.PID <= 0 || !strings.HasPrefix(lease.SessionID, "ses") || strings.ContainsAny(lease.SessionID, `/\\`) {
+		return false
+	}
+	if name == fmt.Sprintf("attachment.%d", lease.PID) {
+		return lease.Expires > time.Now().UnixMilli()
+	}
+	return lease.Expires == 0 && name == fmt.Sprintf("%s.%d", lease.SessionID, lease.PID)
 }

@@ -1,6 +1,6 @@
 # Codex CLI↔OpenCode 验收（2026-10-04）
 
-- 状态：已测自动收发与工作中继续执行通过；人工TUI待验。控制回复格式偏差、平台skip与未覆盖恢复场景另记。Owner在CLI↔CLI人工验收通过后要求继续本方向测试。
+- 状态：固定会话自动收发与工作中继续执行通过；人工显示发现resume登记缺陷，修复中，不能宣称完整适配通过。控制回复格式偏差、平台skip与未覆盖恢复场景另记。
 - Codex CLI：`ra2a://ubuntu407/01a0f6ff-b902-7970-acba-ef8d3451c6f7`。
 - OpenCode：Owner指定 `ra2a://rog306/ses_efcdeaba1ffeWmQEng78CCAXRO`；首次发现node ready/stale=false、agent=opencode/session ready。
 - 收件、业务回信、任务完成分别记录；accepted不等于任务完成。不确定写入不重发。
@@ -17,7 +17,8 @@
 | O05 | 双向工作中收件 | PASS：OC busy时444ms收件，原两次等待完成、parent切换、双marker；反向CLI活跃22收件 |
 | O06 | 单次有界交错业务回复 | PASS：WORKING_BASE业务回信与忙态FOLLOWUP独立受理，固定次数、零重发 |
 | O07 | 多端点归属/故障恢复边界 | 适配器/租约/故障分类隔离fixture PASS；真实OC server退出恢复、物理断网未测 |
-| U01 | 人工显示与继续输入 | 待Owner按下方清单实操；不由后台日志替代 |
+| O08 | 重启后TUI内resume/会话切换归属 | 原实现FAIL；新实现Linux真实native route切换PASS，Windows与现场待验证 |
+| U01 | 人工显示与继续输入 | FAIL（旧实现resume后探针进入隐藏startup session）；修复部署后重新验证 |
 | P01 | CLI/App/OpenCode/认证/代理保护 | 正式PID/config/auth/launcher/proxy前后保护一致；PRECHECK误启动偏差单独披露 |
 
 ## 执行纪律
@@ -72,9 +73,17 @@ Ubuntu证据存忽略目录 `.cache/cli-opencode-acceptance/`；ROG目录由接�
 - BASE_02一次业务send原始accepted，Ubuntu原始收件一次；final finish=stop/completed1791056612650，文本精确为两行ACK_RA2A_CLI_OC_WORKING_STAGE_02及ACK_RA2A_CLI_OC_WORKING_FOLLOWUP_02。原始GET19:44:35.271Z SHA256=919215f2cb3a08fe9c65aa654864d31fb32fb367445ae403368f6fd46ea5f580，证据 `C:/Users/77585/AppData/Local/Temp/ra2a-oc-working-audit-faa14ce4cc604c4c9b40d44c95fb3dce`；Ubuntu `.cache/cli-opencode-acceptance/working-business-receipts.json` 两轮BASE各1、同当前活跃CLI任务。
 - 正式文件/PID/代理/owner/lease保护前后均一致，原失败及误操作空session/stale lease保留。当前任务生产代码新增0，仅Windows测试fixture文件名修正；源码与文档均已提交推送。
 
-## 人工操作与观察清单（现在可执行）
+## resume缺陷与修复（2026-10-04）
 
-使用当前Ubuntu Codex CLI与ROG指定OpenCode TUI，不关闭或重新启动。每项反馈通过/失败、设备、现象及时间；unknown不重复投递。
+- Owner恢复旧会话ses_efcdeaba1ffeWmQEng78CCAXRO后未看到MANUAL_DISPLAY_OC_05。ROG只读原生证据证明旧会话该标记0，新startup会话ses_efc87e293ffeI9CnpDHyBlLN33标记1、精确最终ACK1，无工具。wrapper65836仅--yolo；唯一live lease绑定新会话，attach65128启动参数同新会话。证据`C:/Users/77585/AppData/Local/Temp/ra2a-oc-resume-diag-2ff2a92a0ae04838b82c4e02dc075bce/`。当前屏幕由Owner反馈，不由启动参数/updated推断。
+- 根因：wrapper仅在startup Select/Register一次，TUI resume只改客户端route，租约未跟随；发送者把唯一在线端点当用户恢复会话，判断错误。accepted及后台最终ACK不能证明TUI可见。
+- 修复：每个attach加载临时原生插件，用共享Solid effect读取该实例route.current并原子替换PID独立租约；首页取消发布，1秒heartbeat/3秒TTL，异常退出不留虚假端点。权限自动批准也读取当前focus。原生配置及认证不改，保留已有override与相对路径。
+- Ubuntu真实OpenCode1.18.34两个隔离attach共享随机loopback serve --pure，生产插件A→B→home→A及另一客户端保持B通过；强制退出后owner仍活，TTL撤销通过，race PASS9.28秒。证据`.cache/oc-resume-solid-diagnostic/production-native-race.log`。此为原生route导航，不代替真人/resume picker；同目录不同PID租约由单元测试覆盖。
+- 四包最小race回归45pass/2opt-in skip，Windows amd64构建通过；Windows原生TUI与现场重开后的人工显示仍待验证。生产新增约260行，未修改Codex CLI/App代码、配置或登录。
+
+## 人工操作与观察清单（修复部署后执行）
+
+等新版RA2A与OpenCode wrapper部署完成后，由Owner最后重开ROG OpenCode并用TUI resume恢复旧测试会话。先确认旧完整地址重新发布、新startup地址撤销，再执行下表。每项反馈通过/失败、设备、现象及时间；unknown不重复投递。
 
 | 顺序 | 操作 | 观察 |
 | --- | --- | --- |

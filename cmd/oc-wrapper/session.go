@@ -15,9 +15,13 @@ import (
 // approveRequests answers only prompts issued for this attached session. An
 // explicit deny never produces a permission.asked event, preserving deny rules.
 func approveRequests(ctx context.Context, baseURL, sessionID string, ready chan<- error, stderr io.Writer) {
+	approveCurrentRequests(ctx, baseURL, func() string { return sessionID }, ready, stderr)
+}
+
+func approveCurrentRequests(ctx context.Context, baseURL string, current func() string, ready chan<- error, stderr io.Writer) {
 	for {
 		connected := false
-		err := streamApprovalRequests(ctx, baseURL, sessionID, ready, stderr, &connected)
+		err := streamApprovalRequests(ctx, baseURL, current, ready, stderr, &connected)
 		if ready != nil {
 			if !connected {
 				return // initial handshake failed; run() has the error
@@ -27,7 +31,7 @@ func approveRequests(ctx context.Context, baseURL, sessionID string, ready chan<
 		if ctx.Err() != nil {
 			return
 		}
-		fmt.Fprintf(stderr, "opencode_permission_stream_dropped session=%s error=%v\n", sessionID, err)
+		fmt.Fprintf(stderr, "opencode_permission_stream_dropped session=%s error=%v\n", current(), err)
 		select {
 		case <-ctx.Done():
 			return
@@ -36,7 +40,7 @@ func approveRequests(ctx context.Context, baseURL, sessionID string, ready chan<
 	}
 }
 
-func streamApprovalRequests(ctx context.Context, baseURL, sessionID string, ready chan<- error, stderr io.Writer, connected *bool) error {
+func streamApprovalRequests(ctx context.Context, baseURL string, current func() string, ready chan<- error, stderr io.Writer, connected *bool) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(baseURL, "/")+"/event", nil)
 	if err != nil {
 		if ready != nil {
@@ -78,7 +82,8 @@ func streamApprovalRequests(ctx context.Context, baseURL, sessionID string, read
 				SessionID string `json:"sessionID"`
 			} `json:"properties"`
 		}
-		if json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data:"))), &event) != nil ||
+		sessionID := current()
+		if sessionID == "" || json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data:"))), &event) != nil ||
 			event.Properties.SessionID != sessionID || event.Properties.ID == "" {
 			continue
 		}
