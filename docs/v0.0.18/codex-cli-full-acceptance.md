@@ -24,8 +24,8 @@
 | C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | 待ROG |
 | U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 已请用户配合；时机另通知 |
 | R01 | 官方daemon未运行/线程未loaded/旧版本 | 明确错误、零静默拉起/错误writer、零重放 | 相关适用平台回归PASS；排除/skip单独记 |
-| R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | Linux PASS；Linux/Darwin两版本PASS；Windows eed6dc7在测试路径gate FAIL，诊断修正中 |
-| R03 | LAN中断与恢复 | 隔离节点/测试路径中断，预写失败与不确定写入分类、恢复后单次成功 | PASS：Linux真实native+CoAP预写失败、后写缺确认、恢复及不重放；跨设备发现恢复仍待验 |
+| R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | PASS：Linux/Darwin两版本及Windows 0.160.0原生；Windows目录残留另记 |
+| R03 | LAN中断与恢复 | 隔离节点/测试路径中断，预写失败与不确定写入分类、恢复后单次成功 | PASS：三平台真实native+CoAP预写失败、后写缺确认、恢复及不重放；物理跨设备发现恢复未覆盖 |
 | N01 | 异常/缺失ACK、能力、UUID、归属、home | 无伪成功/回退/实际非目标写入，原始边界结果 | 相关适用平台回归PASS；排除/skip单独记 |
 | P01 | 正式CLI/App/配置保护 | PID/所属进程组、配置auth/代理/launcher元数据前后一致 | 各阶段记录 |
 
@@ -105,3 +105,11 @@ Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG
 - Windows失败实例已完成归属核验：native FILETIME/record/Win32 exe/temp socket initialize home全部相等，正式资源不同。第一次PowerShell因stderr warning终止未取得native exit，保留原始失败；观察40秒仍运行后，重新gate通过用.NET直接单次stop，exit0/459ms、PID23476/record/socket退出，home和原始证据保留，正式保护不变。不是重发RA2A消息。证据同失败目录 `process-cleanup-*.json`。
 - 546e6c0 Windows-only canonical改Win32 handle，start/stop核actualPID creationtime/exe，公共只initialize home gate；Linux两版本native-race及最终CLI包54pass/1opt-in skip通过，Win/Darwin编译通过。ROG原生复验及Mac公共gate回归已下达，未计通过。
 - Mac长工作现场：BASE/FOLLOWUP原始各1、同turn01a102c6-a316-7981-812f-a829afd338bb，FOLLOWUP到来时原任务仍未最终回复；原等待被输入唤醒后续等，首开始至结束20.932秒（非连续20秒阻塞）。证据 `/tmp/ra2a-mac-active.AHopL1/receipt-evidence.json`；工具两次accepted，原生完成在下一阶段补核，正式保护不变。
+
+### 546e6c0 最终原生结果
+
+- Mac两版本原生race均PASS，无fail/skip：0.159.3测试4.82秒/package6.604秒，0.160.0测试4.77秒/package6.209秒；公共temporary socket initialize home gate及全部native/CoAP覆盖均通过。证据 `/tmp/ra2a-mac-final-native.lOKv6O/`，archive SHA256=61ca2975fd6c4cf2508b3debe92de458ecd957f5867db63a9b997a81a455aa57。两版日志SHA256分别f094785583d0947ecb7617d6679964bc4456b7e92926416be14910e1d72fc7d9、8a452669c0d63155ff64b407a39acc667fb7aeb8b53d3d859ddae736ea41a9c5。四个临时PID已退出、home已清理，正式保护一致。
+- Mac此前BASE/FOLLOWUP同turn 01a102c6-a316-7981-812f-a829afd338bb 的task_complete已补核：2026-10-03T17:20:35.109Z，rollout行2042，final保留两个marker，原始事件见上述目录previous-active-evidence.json。
+- Windows第一次546e6c0复验在启动前socket长度gate失败：operator将TEMP设在长证据目录，得到156字节>107；没有启动daemon，不计Win32修复通过。原始失败保留，未放宽gate或修改源码。
+- Windows使用仅go子进程的短TEMP `C:/Users/77585/r3-61558e`（最坏socket81字节）重新执行独立阶段，native0.160.0 race exit0/PASS1/fail0/skip0，16.13秒。包含privateDACL、Win32 canonical junction、PID FILETIME/exe、initialize home、22收件/owner继续/活跃收件/daemon恢复、真实DTLS/CoAP两thread隔离、关闭节点恢复及后写ACK缺失cancel不重放。证据 `C:/Users/77585/AppData/Local/Temp/ra2a-win32-reverify-045bd78b991d4b4da8e7bd3d82d466fe/short-temp-stage`；archive SHA256=D9823266BA775D4AD8C7BD5AB924DDC898D72253A8EA1CCECDB46BA0B474D43D，官方binary SHA256=FDDA5FA3CF3FB3D000B876720742857676293E4315E4B045FAE6F8BD7E866D1D。正式配置、CLI/App/daemon和代理保护全部一致。
+- Windows清理边界：临时PID63924/26788均退出，PID record/socket/package不存在；fresh home仍剩 `.tmp`、`app-server-daemon`，源码忽略os.RemoveAll错误。因此功能测试PASS不等于目录清理完整，保留原始残留清单及目录，不手工删除。旧失败home及外层短TEMP也有意保留。
