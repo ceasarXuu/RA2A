@@ -182,6 +182,16 @@ M4 收件探针 `a358861a0b60a55fa9da99a0b4c04f54` 已到达，Ubuntu服务在 `
 
 已授权M4保留已有修改、备份后获取此提交，仅构建更新RA2A并重启其服务，不改CLI/App/launcher/登录设置。ROG节点仍ready，但当前不发布验收CLI端点，未向不存在的端点投递新版验收任务。本地修复与跨设备双方新版部署完成应分别记录。
 
+### M4 新版部署与反向收件探针（2026-10-03）
+
+M4完成报告 `65ed8fe7704315cb2ad98e17aef17609`：隔离 `git archive e5d97f28c73d69e3e21d76576d16a26641f75219` 构建，仅原子替换RA2A；artifact SHA256=`cb35af9ca0e7d173aba99272527ab34382f53226c2db7de636b831ce2b4ffcc3`、archive SHA256=`060e5e7c4122416a6a8bafdb6b8356871b171fea68f5eedb55a826c5f9050002`，manifest关联来源与产物（archive构建不嵌入VCS字段）。使用既有 `launchctl kickstart -k gui/501/com.ra2a.daemon`，新服务PID84692；未调用ra2a restart/setup/install，避免重新注册MCP和写配置。
+
+M4独立核验官方daemon/App/App server/code-mode-host PID/PGID、配置/auth/launcher/原生二进制/plist文件及系统代理元数据均保留；本地main仍ffb52fd、5个本地提交和.commandcode修改保留。来源/产物/保护证据与备份位于Mac `/tmp/ra2a-receipt-deploy.WjeFkK/`，本机未直接读取远端原始文件。
+
+Ubuntu随后向新版M4仅发送一条 `RA2A_V18_MAC_RECEIPT_LONG_WORK_001`，要求20秒等待后才回复；发送工具在 **660ms** 返回accepted/isError=false，随后M4端点仍显示busy。此处确认的是宿主收件ACK已立即返回；真实阻塞执行的分离证明另由0.159.3/0.160.0隔离native测试提供，不把660ms解释为任务已完成。与M4→Ubuntu探针accepted共同构成双方新版收件通路验证。原始本机返回保留 `.cache/cross-cli-acceptance/mac-receipt-long-work-probe.json`。
+
+ROG当前未发布验收CLI端点，尚未完成其新版部署验证；不扩展为全设备上线或v0.0.18正式发布结论。
+
 ## 本机 Codex App 地区登录错误调查（2026-10-01）
 
 - 环境：Ubuntu，App `26.924.22138`，bundled Codex `0.158.0-alpha.2.1`；正常 CLI / 官方 daemon 为 `0.159.3`。
