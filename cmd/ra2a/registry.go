@@ -70,16 +70,17 @@ func runOpencodeAttach(ctx context.Context, args []string, output io.Writer) err
 	}
 	defer func() { _ = host.Close() }()
 	fmt.Fprintf(output, "opencode-server=%s owned=%v\n", host.URL(), host.Owned())
-	sessionID, attach, err := ocsession.Select(ctx, host.URL(), args)
+	_, attach, err := ocsession.Select(ctx, host.URL(), args)
 	if err != nil {
 		return fmt.Errorf("select OpenCode session: %w", err)
 	}
-	release, err := ocsession.Register(ocsession.Directory(), sessionID)
+	focusConfig, release, err := ocsession.PrepareFocus(ocsession.Directory())
 	if err != nil {
-		return fmt.Errorf("register OpenCode attachment: %w", err)
+		return fmt.Errorf("prepare OpenCode focus tracking: %w", err)
 	}
 	defer release()
 	command := exec.CommandContext(ctx, opencodeExecutable(), append([]string{"attach", host.URL()}, attach...)...)
+	command.Env = append(os.Environ(), "OPENCODE_TUI_CONFIG="+focusConfig)
 	command.Stdin = os.Stdin
 	command.Stdout = output
 	command.Stderr = os.Stderr

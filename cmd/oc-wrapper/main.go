@@ -119,7 +119,7 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 	if err != nil {
 		return fmt.Errorf("select OpenCode session: %w", err)
 	}
-	focusConfig, release, err := prepareFocus(ocsession.Directory())
+	focusConfig, release, err := ocsession.PrepareFocus(ocsession.Directory())
 	if err != nil {
 		return fmt.Errorf("prepare OpenCode focus tracking: %w", err)
 	}

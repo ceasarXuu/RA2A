@@ -1,4 +1,4 @@
-package main
+package ocsession
 
 import (
 	_ "embed"
@@ -9,16 +9,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/ceasarXuu/RA2A/internal/ocsession"
 )
 
 //go:embed focus.mjs
 var focusPlugin string
 
-// prepareFocus adds a client-local plugin without changing the user's config.
+// PrepareFocus adds a client-local plugin without changing the user's config.
 // An explicit override is copied beside its source, preserving relative paths.
-func prepareFocus(directory string) (configPath string, release func(), err error) {
+func PrepareFocus(directory string) (configPath string, release func(), err error) {
 	directory, err = filepath.Abs(directory)
 	if err != nil {
 		return "", nil, err
@@ -30,7 +28,7 @@ func prepareFocus(directory string) (configPath string, release func(), err erro
 	if err != nil {
 		return "", nil, err
 	}
-	leasePath := ocsession.FocusPath(directory)
+	leasePath := FocusPath(directory)
 	cleanup := func() {
 		_ = os.Remove(leasePath)
 		_ = os.Remove(leasePath + ".next")

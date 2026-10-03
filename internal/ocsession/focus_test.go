@@ -1,4 +1,4 @@
-package main
+package ocsession
 
 import (
 	"encoding/json"
@@ -23,7 +23,7 @@ func TestFocusConfigPreservesExplicitJSONCOverride(t *testing.T) {
 	}
 	t.Setenv("OPENCODE_TUI_CONFIG", original)
 	leases := filepath.Join(dir, "leases with space")
-	configPath, release, err := prepareFocus(leases)
+	configPath, release, err := PrepareFocus(leases)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestFocusConfigFailureKeepsOriginalAndRemovesOnlyTemporaryFiles(t *testing.
 	}
 	t.Setenv("OPENCODE_TUI_CONFIG", original)
 	leases := filepath.Join(dir, "leases")
-	_, _, err := prepareFocus(leases)
+	_, _, err := PrepareFocus(leases)
 	if err == nil {
 		t.Fatal("invalid override silently replaced")
 	}

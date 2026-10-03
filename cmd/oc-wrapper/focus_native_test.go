@@ -86,7 +86,7 @@ api.lifecycle.onDispose(()=>clearInterval(timer));}};`, controlJSON)
 			t.Fatal(err)
 		}
 		t.Setenv("OPENCODE_TUI_CONFIG", override)
-		config, release, err := prepareFocus(dir)
+		config, release, err := ocsession.PrepareFocus(dir)
 		if err != nil {
 			t.Fatal(err)
 		}

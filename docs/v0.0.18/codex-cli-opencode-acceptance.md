@@ -17,7 +17,7 @@
 | O05 | 双向工作中收件 | PASS：OC busy时444ms收件，原两次等待完成、parent切换、双marker；反向CLI活跃22收件 |
 | O06 | 单次有界交错业务回复 | PASS：WORKING_BASE业务回信与忙态FOLLOWUP独立受理，固定次数、零重发 |
 | O07 | 多端点归属/故障恢复边界 | 适配器/租约/故障分类隔离fixture PASS；真实OC server退出恢复、物理断网未测 |
-| O08 | 重启后TUI内resume/会话切换归属 | 原实现FAIL；新实现Linux真实native route切换PASS，Windows与现场待验证 |
+| O08 | 重启后TUI内resume/会话切换归属 | 原实现FAIL；新实现Linux/Windows真实native route切换PASS，现场待部署验收 |
 | U01 | 人工显示与继续输入 | FAIL（旧实现resume后探针进入隐藏startup session）；修复部署后重新验证 |
 | P01 | CLI/App/OpenCode/认证/代理保护 | 正式PID/config/auth/launcher/proxy前后保护一致；PRECHECK误启动偏差单独披露 |
 
@@ -79,7 +79,9 @@ Ubuntu证据存忽略目录 `.cache/cli-opencode-acceptance/`；ROG目录由接�
 - 根因：wrapper仅在startup Select/Register一次，TUI resume只改客户端route，租约未跟随；发送者把唯一在线端点当用户恢复会话，判断错误。accepted及后台最终ACK不能证明TUI可见。
 - 修复：每个attach加载临时原生插件，用共享Solid effect读取该实例route.current并原子替换PID独立租约；首页取消发布，1秒heartbeat/3秒TTL，异常退出不留虚假端点。权限自动批准也读取当前focus。原生配置及认证不改，保留已有override与相对路径。
 - Ubuntu真实OpenCode1.18.34两个隔离attach共享随机loopback serve --pure，生产插件A→B→home→A及另一客户端保持B通过；强制退出后owner仍活，TTL撤销通过，race PASS9.28秒。证据`.cache/oc-resume-solid-diagnostic/production-native-race.log`。此为原生route导航，不代替真人/resume picker；同目录不同PID租约由单元测试覆盖。
-- 四包最小race回归45pass/2opt-in skip，Windows amd64构建通过；Windows原生TUI与现场重开后的人工显示仍待验证。生产新增约260行，未修改Codex CLI/App代码、配置或登录。
+- 四包最小race回归45pass/2opt-in skip，新增不同PID同目录归属用例及权限focus跟随用例通过，Windows amd64构建通过。共用实现移入internal/ocsession，`opencode` wrapper及`ra2a opencode`两个入口都注入同一插件；公共入口相关TestOpenCodeOnly三项race通过。共用后的Linux native race再次PASS9.35秒，日志`.cache/oc-resume-validation/native-shared-final.jsonl`。生产新增约265行，未修改Codex CLI/App代码、配置或登录。
+- ROG来源b5a5e7b62976b55f3b813df96674d2419506f001，archive SHA256=6FEC0108A873302DBC5B0847CB59594977685ADBF1E444C3965F09D833F3075F，原生OpenCode1.18.33 SHA256=52F60248A576B34C9A6DCAA27E0A7F08089AF35BCDC0DFB10C04D3E00A98314C。四包Windows race PASS44/fail0/skip5；独立native focus race PASS1/fail0/skip0、13.25秒，覆盖原生客户端route切换、另一客户端隔离和TTL撤销。五个skip包括两个Unix shell监督用例、Unix wrapper fixture及两项opt-in native（focus随后显式运行；原生权限用例仍未运行）。证据`C:/Users/77585/AppData/Local/Temp/ra2a-oc-focus-486735b3f9d74c85bf561e622431f300`，正式进程/文件/代理保护一致，无部署。现场重开后的人工显示仍待验证。
+- Ubuntu一次附加native命令误写`-timeout120s`导致Go把后续参数当测试参数，未执行fixture（no Go files），原始失败`native-final.jsonl`保留；修正为`-timeout=120s`后执行上述共用实现回归。ROG实际一次native运行PASS，未受此误写影响。
 
 ## 人工操作与观察清单（修复部署后执行）
 
