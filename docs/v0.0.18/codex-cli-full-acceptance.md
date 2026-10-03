@@ -15,8 +15,8 @@
 | M01 | macOS原生相关包 | race结果及所有skip原因 | PASS：5410aea七包race，182个pass事件 |
 | W01 | Windows原生相关包 | 原生执行结果；不以交叉编译代替 | PASS：5410aea八包Windows原生race |
 | W02 | Windows夹具与ACL边界 | 原生helper替换批处理；已有ACL测试5项 | PASS：原生exe fixture及五个ACL测试；16个runtime skip另记 |
-| C01 | 双向基本投递 | 双方新版、完整from/to、接收标记和ACK/turn匹配 | Ubuntu↔Mac及Mac→ROG PASS；ROG→Mac发送PASS、接收核验中 |
-| C02 | 双向各22轮 | 每轮收件ACK、无重复/缺失、完成仅为独立观察 | Mac→ROG 22独立turn PASS；ROG→Mac发送22/22、接收核验中 |
+| C01 | 双向基本投递 | 双方新版、完整from/to、接收标记和ACK/turn匹配 | PASS：Ubuntu↔Mac、Mac↔ROG新版收件匹配 |
+| C02 | 双向各22轮 | 每轮收件ACK、无重复/缺失、完成仅为独立观察 | PASS：Mac↔ROG新版双向各22独立turn，无缺失重复 |
 | C03 | 双向active follow-up | 单start+同turn steer、原生ACK、marker匹配 | Ubuntu→ROG BASE/FOLLOWUP同turn；Mac/ROG双向现场待补 |
 | C04 | 长工作收件解耦 | 工作未完成前ACK；随后执行独立核验 | PASS：Linux阻塞native模型；Mac/ROG→Ubuntu持续工作收件22条 |
 | C05 | 交错回复无互等 | 单次有界回复、最多固定hop、无重复写入 | 待执行 |
@@ -24,7 +24,7 @@
 | C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | 待ROG |
 | U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 已请用户配合；时机另通知 |
 | R01 | 官方daemon未运行/线程未loaded/旧版本 | 明确错误、零静默拉起/错误writer、零重放 | 相关适用平台回归PASS；排除/skip单独记 |
-| R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | Linux PASS；Darwin06b7ec3/Windows eed6dc7隔离原生执行中 |
+| R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | Linux PASS；Linux及Darwin两版本PASS；Windows eed6dc7原生执行中 |
 | R03 | LAN中断与恢复 | 隔离节点/测试路径中断，预写失败与不确定写入分类、恢复后单次成功 | PASS：Linux真实native+CoAP预写失败、后写缺确认、恢复及不重放；跨设备发现恢复仍待验 |
 | N01 | 异常/缺失ACK、能力、UUID、归属、home | 无伪成功/回退/实际非目标写入，原始边界结果 | 相关适用平台回归PASS；排除/skip单独记 |
 | P01 | 正式CLI/App/配置保护 | PID/所属进程组、配置auth/代理/launcher元数据前后一致 | 各阶段记录 |
@@ -92,3 +92,6 @@ Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG
 - ROG→Ubuntu活跃22：22/22工具accepted，无error/unknown/重试；Ubuntu原生收件22、缺失重复0、同一持续turn（与Mac活跃22同属本次Ubuntu长任务），`.cache/full-cli-acceptance/rog-ubuntu-active22-receipt.json`。Ubuntu→ROG BASE/FOLLOWUP在发送前确认ROG busy，均accepted，ROG原始两消息归属同turn01a102b4-0f35-75d1-9830-a3b4aecdcd43、task_started1；当次汇报时回合尚未结束，complete待下一只读阶段补核。ROG证据 `active22-sends.json`、`active22-same-turn-audit.json`，正式保护不变。
 - Windows前置16个runtime skip均为Unix服务/进程组/socket或portable process fixture不可用；原始名字/原因在ROG `runtime-skips.json`，不计PASS。两个Windows wrapper daemon/native fake fixture尚为Unix-only，不能以Linux用例代替。
 - eed6dc7只修改测试：Windows短temp路径/107字节gate、profile与temp隔离、fresh current-user SID私有state DACL、file凭据store、启动或停止归属失败保留temp home。Linux两版本native各PASS；Windows/Darwin crosscompile PASS；已下达Windows原生运行，编译不算执行。原始日志 `.cache/native-windows-port-final-linux-{0.159.3,0.160.0}.log`。
+
+- Mac06b7ec3隔离原生完成：0.159.3与0.160.0各race-count=1 PASS，均覆盖22轮/阻塞模型ACK/owner继续/daemon重启/双线程/LAN前写失败恢复/后写缺确认不重放。临时4个PID已退出、2个home及PID/socket/package清理，正式全部保护快照一致。archive SHA256=2c4ed026061baffa6f2aed1768cabd9f709e3535ddb849e832cea89dd1a23651，证据 `/tmp/ra2a-mac-native.4npKDK/`，native日志SHA256（0.160.0/0.159.3）68aa0729a0e0abae13ea093096f5edfa01cb895ea7aa981f23a10476cbefd17b / 4fb178c6d20392058ead8051ef86fb81ff4ae6c04c567339b1fddd3874078535。固定两个tag backend/lib/pid三文件hash相同。
+- ROG→Mac新版22轮接收原始消息/精确ACK/started/complete/独立turn均22，匹配22，缺失重复0、无工具调用，原始JSON/turn/行号在上述Mac `receipt-evidence.json`。至此Mac↔ROG新版双向各22独立完成回合闭环，不依赖旧验收或把accepted当执行完成。
