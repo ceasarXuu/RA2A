@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -65,6 +66,9 @@ func testNativeLANRecovery(t *testing.T, ctx context.Context, adapter *Adapter, 
 	sender := start(senderID, nil)
 	var deliveries atomic.Int32
 	receipts := make(chan agentbridge.DeliveryResult, 3)
+	withheld := make(chan agentbridge.DeliveryResult, 1)
+	resumeResponse := make(chan struct{})
+	const uncertainMarker = "native-lan-ack-withheld"
 	accept := func(requestCtx context.Context, message lannode.Message) error {
 		deliveries.Add(1)
 		result := adapter.Deliver(requestCtx, agentbridge.Address{EndpointID: message.TargetSessionID}, agentbridge.MessageEnvelope{
@@ -72,6 +76,11 @@ func testNativeLANRecovery(t *testing.T, ctx context.Context, adapter *Adapter, 
 		})
 		if !result.Delivered() {
 			return fmt.Errorf("native receipt: %+v", result)
+		}
+		if message.Text == uncertainMarker {
+			withheld <- result
+			<-resumeResponse
+			return nil
 		}
 		receipts <- result
 		return nil
@@ -135,7 +144,48 @@ func testNativeLANRecovery(t *testing.T, ctx context.Context, adapter *Adapter, 
 	if got := deliveries.Load(); got != 3 {
 		t.Fatalf("native adapter calls=%d, want three distinct accepted messages", got)
 	}
-	t.Log("real native CLI + DTLS/CoAP: two-thread target isolation, closed-node prewrite failure, explicit-peer recovery and single input passed")
+	var resumeOnce sync.Once
+	resume := func() { resumeOnce.Do(func() { close(resumeResponse) }) }
+	t.Cleanup(resume) // Unblock the test handler before closing any test node.
+	uncertainCtx, uncertainCancel := context.WithCancel(ctx)
+	defer uncertainCancel()
+	sendError := make(chan error, 1)
+	recoveredPeer := peer(receiver)
+	go func() {
+		sendError <- sender.SendMessage(uncertainCtx, recoveredPeer, message(first, second, uncertainMarker))
+	}()
+	var accepted agentbridge.DeliveryResult
+	select {
+	case accepted = <-withheld:
+	case <-time.After(5 * time.Second):
+		t.Fatal("native input was not acknowledged before withholding CoAP response")
+	}
+	// Cancel only after the native ACK, so cold probes/handshakes cannot make
+	// this look like a prewrite failure. control.Coordinator.Send maps this
+	// wrapped context.Canceled (not ErrPeerUnreachable) to ErrDeliveryUnknown.
+	uncertainCancel()
+	select {
+	case err := <-sendError:
+		if !errors.Is(err, context.Canceled) || errors.Is(err, lannode.ErrPeerUnreachable) {
+			t.Fatalf("missing CoAP ACK must preserve postwrite cancellation: %v", err)
+		}
+		t.Logf("withheld CoAP ACK raw send error (control maps to DELIVERY_UNKNOWN): %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("sender did not return after cancellation")
+	}
+	awaitTurn(accepted.TurnID)
+	assertInputs(uncertainMarker, 1, 0)
+	if got := deliveries.Load(); got != 4 {
+		t.Fatalf("uncertain send callbacks=%d, want one additional callback", got)
+	}
+	resume()
+	send(recoveredPeer, first, second, "native-lan-after-unknown")
+	assertInputs("native-lan-after-unknown", 1, 0)
+	assertInputs(uncertainMarker, 1, 0)
+	if got := deliveries.Load(); got != 5 {
+		t.Fatalf("recovery replayed uncertain input: callbacks=%d, want 5", got)
+	}
+	t.Log("real native CLI + DTLS/CoAP: two-thread target isolation, closed-node recovery, withheld ACK cancellation and no replay passed")
 }
 
 func nativeUserInputCount(t *testing.T, ctx context.Context, owner *appServer, threadID, marker string) int {
