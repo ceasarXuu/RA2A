@@ -69,7 +69,9 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 		t.Setenv(key, value)
 	}
 	mock := newNativeMock(t)
-	config := fmt.Sprintf("model = \"mock-model\"\nmodel_provider = \"ra2a-mock\"\nmodel_reasoning_effort = \"none\"\ncli_auth_credentials_store = \"file\"\n[model_providers.ra2a-mock]\nname = \"RA2A Mock\"\nbase_url = %q\nwire_api = \"responses\"\nenv_key = \"RA2A_MOCK_KEY\"\nrequires_openai_auth = false\n", mock.URL+"/v1")
+	// Keep curated-plugin background Git sync outside this delivery fixture.
+	// Only this fresh home is configured; the caller's plugins stay unchanged.
+	config := fmt.Sprintf("model = \"mock-model\"\nmodel_provider = \"ra2a-mock\"\nmodel_reasoning_effort = \"none\"\ncli_auth_credentials_store = \"file\"\n[features]\nplugins = false\n[model_providers.ra2a-mock]\nname = \"RA2A Mock\"\nbase_url = %q\nwire_api = \"responses\"\nenv_key = \"RA2A_MOCK_KEY\"\nrequires_openai_auth = false\n", mock.URL+"/v1")
 	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
