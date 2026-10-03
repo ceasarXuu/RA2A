@@ -1,8 +1,9 @@
-//go:build linux
+//go:build linux || darwin
 
 package codexcli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,7 +32,21 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	if !filepath.IsAbs(binary) {
 		t.Fatal("RA2A_TEST_CODEX_BIN must be absolute")
 	}
-	home := t.TempDir()
+	// macOS's default /var/folders temp path can exceed sun_path. Use a short
+	// private directory and canonicalize /tmp before validating daemon resources.
+	home, err := os.MkdirTemp("/tmp", "ra2a-native-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	canonicalHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home = canonicalHome
+	for _, key := range []string{"CODEX_HOME", "HOME", "TMPDIR"} {
+		t.Setenv(key, home)
+	}
 	mock := newNativeMock(t)
 	config := fmt.Sprintf("model = \"mock-model\"\nmodel_provider = \"ra2a-mock\"\nmodel_reasoning_effort = \"none\"\n[model_providers.ra2a-mock]\nname = \"RA2A Mock\"\nbase_url = %q\nwire_api = \"responses\"\nenv_key = \"RA2A_MOCK_KEY\"\nrequires_openai_auth = false\n", mock.URL+"/v1")
 	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(config), 0o600); err != nil {
@@ -51,24 +66,82 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 			env = append(env, key+"="+value)
 		}
 	}
+	socketPath := controlSocketPath(home)
+	pidPath := filepath.Join(home, "app-server-daemon", "daemon.pid")
+	ownedPID := 0
+	assertPID := func(pid int) {
+		t.Helper()
+		data, err := os.ReadFile(pidPath)
+		var record struct {
+			PID              int    `json:"pid"`
+			ProcessStartTime string `json:"processStartTime"`
+		}
+		if err != nil || json.Unmarshal(data, &record) != nil || pid <= 0 || record.PID != pid || record.ProcessStartTime == "" {
+			t.Fatalf("refuse lifecycle operation without matching temporary-home PID record: expected=%d record=%+v err=%v", pid, record, err)
+		}
+	}
+	// rust-v0.160.0 app-server-daemon/lib.rs:295-317 derives every resource
+	// from CODEX_HOME; backend/mod.rs has only Pid. pid.rs:147-225 validates
+	// process identity before stopping the PID from that home's record.
 	lifecycle := func(action string) {
 		t.Helper()
+		if action == "start" {
+			for _, path := range []string{socketPath, pidPath,
+				filepath.Join(home, "app-server-daemon", "daemon-updater.pid"),
+				filepath.Join(home, "app-server-daemon", "app-server.pid"),
+				filepath.Join(home, "app-server-daemon", "app-server-updater.pid")} {
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Fatalf("refuse native start with existing temporary resource %s: %v", path, err)
+				}
+			}
+		}
+		if action == "stop" {
+			assertPID(ownedPID)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, binary, "app-server", "daemon", action)
 		cmd.Env = env
-		output, err := cmd.CombinedOutput()
+		var diagnostics bytes.Buffer
+		cmd.Stderr = &diagnostics
+		output, err := cmd.Output()
 		if err != nil {
-			t.Fatalf("isolated daemon %s: %v: %s", action, err, output)
+			t.Fatalf("isolated daemon %s: %v: %s%s", action, err, diagnostics.String(), output)
 		}
-		t.Logf("isolated daemon %s: %s", action, strings.TrimSpace(string(output)))
+		if action == "start" {
+			var started struct {
+				Status           string `json:"status"`
+				Backend          string `json:"backend"`
+				PID              int    `json:"pid"`
+				SocketPath       string `json:"socketPath"`
+				ManagedCodexPath string `json:"managedCodexPath"`
+			}
+			if err := json.Unmarshal(output, &started); err != nil {
+				t.Fatalf("native start output: %v: %s", err, output)
+			}
+			managed, err := filepath.EvalSymlinks(started.ManagedCodexPath)
+			if err != nil || started.Status != "started" || started.Backend != "pid" || started.SocketPath != socketPath ||
+				!strings.HasPrefix(managed, filepath.Join(home, "packages")+string(os.PathSeparator)) {
+				t.Fatalf("native start resources escaped temporary home: %+v, managed=%s err=%v", started, managed, err)
+			}
+			assertPID(started.PID)
+			ownedPID = started.PID
+		} else if action == "stop" {
+			ownedPID = 0
+		}
+		t.Logf("isolated daemon %s: %s%s", action, diagnostics.String(), strings.TrimSpace(string(output)))
 	}
 	state, err := detectDaemon(context.Background(), binary, home)
-	if err != nil || state.Running {
+	if err != nil || state.Running || state.SocketPath != socketPath {
 		t.Fatalf("new home must have no running daemon: %+v, %v", state, err)
 	}
-	t.Cleanup(func() { lifecycle("stop") })
 	lifecycle("start")
+	// Register stop only after start proved socket, package, and PID ownership.
+	t.Cleanup(func() {
+		if ownedPID != 0 {
+			lifecycle("stop")
+		}
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	adapter := New("native-fixture", Config{CodexPath: binary, CodexHome: home, Stderr: io.Discard})
@@ -86,7 +159,7 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	openObserver := func(threadID string) *appServer {
 		t.Helper()
 		state, err := detectDaemon(ctx, binary, home)
-		if err != nil || !state.Running {
+		if err != nil || !state.Running || state.SocketPath != socketPath {
 			t.Fatalf("isolated daemon version: %+v, %v", state, err)
 		}
 		observer, err = dialRPC(ctx, state.SocketPath, 3*time.Second)
