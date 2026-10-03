@@ -167,15 +167,7 @@ func TestDeliverMapsResumeRejectionToNotFound(t *testing.T) {
 }
 
 func TestDeliverReportsStartRequiredWhenDaemonAbsent(t *testing.T) {
-	offline := filepath.Join(t.TempDir(), "codex-offline")
-	payload := []byte("#!/bin/sh\nexit 1\n")
-	if runtime.GOOS == "windows" {
-		offline += ".cmd"
-		payload = []byte("@echo off\r\nexit /b 1\r\n")
-	}
-	if err := os.WriteFile(offline, payload, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	offline := writeFakeCodexFixture(t, fakeCodexFixture{Default: fakeCodexResult{ExitCode: 1}})
 	adapter := New("node-a", Config{CodexPath: offline, Stderr: os.Stderr, CallTimeout: time.Second})
 	t.Cleanup(func() { _ = adapter.Close() })
 	if err := adapter.Register(testThreadID); err != nil {
@@ -311,18 +303,13 @@ func TestAdapterRejectsAppServerBelowMinimumVersion(t *testing.T) {
 	})
 	go func() { _ = (&http.Server{Handler: mux}).Serve(listener) }()
 
-	codexPath := filepath.Join(t.TempDir(), "codex")
-	payload := `#!/bin/sh
-echo '{"status":"running","socketPath":"` + socketPath + `","cliVersion":"0.157.0","appServerVersion":"0.157.0"}'
-`
-	if runtime.GOOS == "windows" {
-		codexPath += ".cmd"
-		encodedPath, _ := json.Marshal(socketPath)
-		payload = "@echo off\r\necho {\"status\":\"running\",\"socketPath\":" + string(encodedPath) + ",\"cliVersion\":\"0.157.0\",\"appServerVersion\":\"0.157.0\"}\r\n"
-	}
-	if err := os.WriteFile(codexPath, []byte(payload), 0o700); err != nil {
+	payload, err := json.Marshal(daemonVersionOutput{
+		Status: "running", SocketPath: socketPath, CLIVersion: "0.157.0", AppServerVersion: "0.157.0",
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	codexPath := writeFakeCodexFixture(t, fakeCodexFixture{Default: fakeCodexResult{Output: string(payload)}})
 	adapter := New("node-a", Config{CodexPath: codexPath, Stderr: os.Stderr, CallTimeout: 2 * time.Second})
 	t.Cleanup(func() { _ = adapter.Close() })
 	_, err = adapter.EnsureThread(context.Background(), t.TempDir(), "")

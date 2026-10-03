@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -103,25 +102,9 @@ func newFakeAppServer(t *testing.T) *fakeAppServer {
 
 func writeFakeCodex(t *testing.T, socketPath string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "codex")
-	if runtime.GOOS == "windows" {
-		path += ".cmd"
-		payload := fmt.Sprintf("@echo off\r\necho {\"status\":\"running\",\"socketPath\":%q,\"cliVersion\":\"0.158.0\",\"appServerVersion\":\"0.158.0\"}\r\n", socketPath)
-		if err := os.WriteFile(path, []byte(payload), 0o700); err != nil {
-			t.Fatalf("write fake codex: %v", err)
-		}
-		return path
-	}
-	payload := fmt.Sprintf(
-		`#!/bin/sh
-cat <<'JSON'
-{"status":"running","backend":"pid","pid":4242,"managedCodexPath":"/none","managedCodexVersion":"0.158.0","socketPath":%q,"cliVersion":"0.158.0","appServerVersion":"0.158.0"}
-JSON
-`, socketPath)
-	if err := os.WriteFile(path, []byte(payload), 0o700); err != nil {
-		t.Fatalf("write fake codex: %v", err)
-	}
-	return path
+	return writeFakeCodexFixture(t, fakeCodexFixture{Default: fakeCodexResult{Output: fmt.Sprintf(
+		`{"status":"running","backend":"pid","pid":4242,"managedCodexPath":"/none","managedCodexVersion":"0.158.0","socketPath":%q,"cliVersion":"0.158.0","appServerVersion":"0.158.0"}`,
+		socketPath)}})
 }
 
 func shortTestDir(t *testing.T) string {

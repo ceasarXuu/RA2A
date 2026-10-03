@@ -27,6 +27,11 @@ func TestDeliverAcknowledgesReceiptWithoutCompletion(t *testing.T) {
 			if err := adapter.Register(testThreadID); err != nil {
 				t.Fatal(err)
 			}
+			// Bound receipt latency independently of cold daemon discovery and connection setup.
+			endpoints, err := adapter.ListEndpoints(context.Background())
+			if err != nil || len(endpoints) != 1 || endpoints[0].Address.EndpointID != testThreadID {
+				t.Fatalf("prepare receipt target: endpoints=%+v err=%v", endpoints, err)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 			defer cancel()
 			result := adapter.Deliver(ctx, agentbridge.Address{EndpointID: testThreadID}, testEnvelope("received before reply"))

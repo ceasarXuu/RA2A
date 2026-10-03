@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
@@ -76,23 +73,11 @@ func writeHomeAwareCodex(t *testing.T, home, scopedSocket, defaultSocket string,
 		}
 		return string(payload)
 	}
-	path := filepath.Join(t.TempDir(), "codex")
-	scopedOutput := "exit 1"
+	scoped := fakeCodexResult{ExitCode: 1}
 	if running {
-		scopedOutput = "cat <<'JSON'\n" + version(scopedSocket) + "\nJSON"
+		scoped = fakeCodexResult{Output: version(scopedSocket)}
 	}
-	quotedHome := "'" + strings.ReplaceAll(home, "'", "'\"'\"'") + "'"
-	payload := "#!/bin/sh\nif [ \"$CODEX_HOME\" = " + quotedHome + " ]; then\n" + scopedOutput + "\nelse\ncat <<'JSON'\n" + version(defaultSocket) + "\nJSON\nfi\n"
-	if runtime.GOOS == "windows" {
-		path += ".cmd"
-		scopedOutput = "exit /b 1"
-		if running {
-			scopedOutput = "echo " + version(scopedSocket)
-		}
-		payload = "@echo off\r\nif \"%CODEX_HOME%\"==\"" + home + "\" (\r\n" + scopedOutput + "\r\n) else (\r\necho " + version(defaultSocket) + "\r\n)\r\n"
-	}
-	if err := os.WriteFile(path, []byte(payload), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writeFakeCodexFixture(t, fakeCodexFixture{
+		Default: fakeCodexResult{Output: version(defaultSocket)}, ScopedHome: home, Scoped: scoped,
+	})
 }
