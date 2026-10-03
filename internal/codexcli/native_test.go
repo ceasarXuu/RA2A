@@ -208,6 +208,7 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	if !mock.contains("native-after-restart", "ra2a://fixture-sender/source") {
 		t.Fatal("delivery after restart did not reach the native provider")
 	}
+	testNativeLANRecovery(t, ctx, adapter, &appServer{conn: observer}, home, threadID, awaitOwnerTurn)
 	if _, err := os.Stat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
 		t.Fatalf("fixture must remain unauthenticated: %v", err)
 	}

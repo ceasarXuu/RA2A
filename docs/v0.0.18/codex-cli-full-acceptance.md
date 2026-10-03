@@ -4,7 +4,7 @@
 - 来源：Owner要求“开始执行codex-cli to codex-cli的全部测试验证”。
 - 产品权威：[PD33](../v0.0.15/prd.md#confirmed-product-decisions)：收件ACK与回复/执行完成分开；未知写入不重放。
 - 矩阵依据：[Phase 5](../v0.0.15/engineering-plan.md#phase-5交叉矩阵与退化验证)。本轮覆盖CLI↔CLI，不将结果扩展为App/CLI全交叉发布准入。
-- 当前部署：Ubuntu/Mac为e5d97f2收件修复；ROG节点ready但未发布验收CLI，需要登记与新版部署。Mac本地分叉源码保留，使用隔离archive构建。
+- 当前部署：Ubuntu/Mac为e5d97f2收件修复；ROG验收CLI已发布，部署source与Windows原生前置结果待确认。Mac本地分叉源码保留，使用隔离archive构建。
 
 ## 验证矩阵
 
@@ -13,7 +13,7 @@
 | L01 | Linux相关包全部race回归 | 原始包结果、source提交 | PASS：8包race及CLI 54个测试事件 |
 | L02 | 原生0.159.3/0.160.0隔离daemon | ACK先于阻塞模型完成、22轮、owner继续、重启恢复、home/auth保护 | PASS：0.159.3/0.160.0分别原生复验 |
 | M01 | macOS原生相关包 | race结果及所有skip原因 | PASS：5410aea七包race，182个pass事件 |
-| W01 | Windows原生相关包 | 原生执行结果；不以交叉编译代替 | 待ROG上线 |
+| W01 | Windows原生相关包 | 原生执行结果；不以交叉编译代替 | 已下达ROG原生前置任务 |
 | W02 | Windows夹具与ACL边界 | 原生helper替换批处理；已有ACL测试5项 | 5410aea测试修补已push；Linux通过、Windows原生待验 |
 | C01 | 双向基本投递 | 双方新版、完整from/to、接收标记和ACK/turn匹配 | 待ROG |
 | C02 | 双向各22轮 | 每轮收件ACK、无重复/缺失、完成仅为独立观察 | 待双方新版重跑 |
@@ -51,4 +51,11 @@
 - Linux：8个相关包 race PASS；CLI包54个pass事件，默认跳过1项opt-in native；显式指定0.159.3/0.160.0后native各PASS。5410aea测试修补另以-count=2复验，108个pass事件，2次默认native skip已由显式运行补证。原始日志在 `.cache/full-cli-acceptance/linux-*.jsonl`、`linux-core-race.log`。
 - Mac e5：6包PASS，CLI receipt start/steer因冷探测超过300ms失败；原始失败保留。临时诊断预连接406–449ms、其后Deliver四次均<2ms且PASS。原始证据 `/tmp/ra2a-full-mac-precheck.0K0RZ0/` 与 `/tmp/ra2a-mac-timing.7NwiXF/`。正式5410aea七包race全部PASS，182个pass事件，FAIL0/runtime SKIP0；receipt两测试-count=2共20个pass事件。证据 `/tmp/ra2a-mac-fixture.lvU2uI/`，source archive SHA256=df0bbc2e637f91713aacf917c008230c21400b756fd6bbb42b9babdb59dc5cbc，race日志SHA256=dceb23754ae67080a8fabf78a527e1e311bd914436ab2aa4977acfa56825bac8。Linux-only native排除不计Mac恢复通过，隔离daemon恢复安全未证实，保持待验。
 - Linux保护：官方daemon PID/PGID15822未变；config/auth/App desktop/proxy配置和官方socket inode、mtime、长度与部署后基线相同。本轮测试未改生产代码、正式配置或重启正式daemon。
-- ROG发现ready但仍无codex-cli端点；跨设备完整矩阵仍待其上线，旧22轮不充当新版结果。
+- ROG验收codex-cli已上线；前置任务发送返回DELIVERY_UNKNOWN，不重发，等待接收侧部署/执行报告；跨设备完整矩阵仍待其新版核验，旧22轮不充当新版结果。
+
+### 新版现场与网络恢复阶段
+
+- Mac→Ubuntu ACTIVE_01–22：22/22工具accepted，error/unknown0、无重试，耗时528–1036ms。Ubuntu原生rollout独立核验22条、缺失0/重复0、同一持续工作turn；不是22个独立完成回合。Mac证据 `/tmp/ra2a-mac-ubuntu-active22.YnMuEq/evidence.json`，Ubuntu `.cache/full-cli-acceptance/mac-ubuntu-active22-receipt.json`。
+- Ubuntu→Mac IDLE_01–22：逐条发送前确认codex-cli/ready，每轮至少间隔8秒并重新检查ready；22/22工具accepted，原始入参/结果/耗时 `.cache/full-cli-acceptance/ubuntu-mac-idle22.json`。接收端正在独立核验ACK/turn/完成/重复，尚不计22个独立完成回合。
+- 新增Linux测试仅172行helper与1行调用，复用隔离native daemon/mock。0.159.3 race-count=1与count=2通过，0.160.0 count=2通过：两个登记线程仅目标收到一次输入；测试LAN receiver关闭后ErrPeerUnreachable、adapter调用不增加、线程无输入；恢复后新marker一次、离线marker零次。真实DTLS/CoAP，但使用显式loopback peer，不覆盖跨设备发现恢复或native ACK丢失；测试随机身份/PIN/端口，短暂mDNS广告和全接口监听，未操作正式节点/网络。
+- 人工TUI操作按Owner要求最后执行，自动阶段完成后提供操作与观察清单；U01仍待验。
