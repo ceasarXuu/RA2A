@@ -13,7 +13,7 @@
 | O01 | 适配器、租约、共享server、wrapper相关race回归 | 待执行；skip不计PASS |
 | O02 | 双向基本收件与业务回信 | 前置投递accepted；原始接收、回复、执行待核 |
 | O03 | CLI→OpenCode 22条串行空闲输入 | 每次发现ready、工具原始收件、宿主消息/精确ACK、缺失重复独立核验 |
-| O04 | OpenCode→CLI 22条串行空闲输入 | 同上，CLI各独立完成任务单独记录 |
+| O04 | OpenCode→CLI 22条串行活跃收件 | Ubuntu持续测试工作中接收；同一活跃任务收件不冒充22个完成任务 |
 | O05 | 双向工作中收件 | OpenCode宿主受理/排队与CLI活跃追加分开；不等待模型完成才收件 |
 | O06 | 单次有界交错业务回复 | 固定次数send，无无限回投或自动重试 |
 | O07 | 多端点归属/故障恢复边界 | 现有隔离夹具，未附着不发布、post未知不重放；不关闭正式server |
@@ -31,3 +31,8 @@
 ## 原始证据
 
 Ubuntu证据存忽略目录 `.cache/cli-opencode-acceptance/`；ROG目录由接收端报告。前置任务RA2A_CLI_OC_PRECHECK_001已accepted，未重发。
+
+### Ubuntu前置结果
+
+- 来源853c967（测试期间仅文档变化，四包测试源码未改），四个相关包race exit0，41个pass测试事件、fail0、1个opt-in native skip；随后显式native OpenCode1.18.34权限session隔离测试race PASS1/fail0/skip0。日志 `.cache/cli-opencode-acceptance/linux-race.jsonl`、`linux-native.jsonl`，隔离profile与包清单见local-test-manifest.json。不将native权限回复测试视为真实模型消息完成；现场投递另核。
+- 前置控制send仅等收件，原始入参/结果/耗时在precheck-send.json；ROG的原生记录与独立回信待到达，不因短暂无回信重投。
