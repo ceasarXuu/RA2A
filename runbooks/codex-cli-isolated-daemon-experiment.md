@@ -263,3 +263,5 @@ Mac 的旧 shell fixture 冷探测实测需 406–449ms，将其包含在 300ms 
 
 - 在启动go测试子进程前，为其TEMP/TMP/TMPDIR指定全新短且可写的目录；fixture调用os.MkdirTemp早于t.Setenv，不能把父TEMP放在长证据目录。先按随机home最坏名字核socket长度<=107，不放宽门禁。日志继续写外部证据目录。
 - native stop成功、PID记录/socket/package退出与整个home目录清理是独立事实；os.RemoveAll错误必须显式报告，不能忽略后宣称清理成功。Windows实测功能PASS后仍可能留下 `.tmp`/`app-server-daemon`，先保留错误、目录和只读资源清单，不自行删证据或修ACL。
+
+- 隔离投递fixture应在全新home配置 `[features] plugins = false`，避免默认插件启动同步引入外部Git下载和Windowsindex.lock共享句柄，不能修改正式用户插件设置。d13d656实测Linux0.159.3/0.160.0与Windows0.160.0保持全部投递/恢复覆盖，新Windowshome完整清理通过；插件同步自身不计入此fixture覆盖。旧失败目录继续保存。

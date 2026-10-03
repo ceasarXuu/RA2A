@@ -1,6 +1,6 @@
 # Codex CLI↔CLI 全量验证（2026-10-04）
 
-- 状态：执行中，尚未完整通过。
+- 状态：自动功能与隔离资源清理阶段通过；人工TUI/App操作仍待验，尚未完整验收通过。
 - 来源：Owner要求“开始执行codex-cli to codex-cli的全部测试验证”。
 - 产品权威：[PD33](../v0.0.15/prd.md#confirmed-product-decisions)：收件ACK与回复/执行完成分开；未知写入不重放。
 - 矩阵依据：[Phase 5](../v0.0.15/engineering-plan.md#phase-5交叉矩阵与退化验证)。本轮覆盖CLI↔CLI，不将结果扩展为App/CLI全交叉发布准入。
@@ -22,12 +22,12 @@
 | C05 | 交错回复无互等 | 单次有界回复、最多固定hop、无重复写入 | PASS：固定四hop，原始同活跃turn回信与ROG一次发送独立核验 |
 | C06 | 同机多端点 | 明确登记、只写目标、无历史/所有权串线 | PASS：真实native双线程逐项输入计数 |
 | C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | PASS：Ubuntu0.160/Mac0.159.3/ROG0.160；固定四hop闭环 |
-| U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 待用户按下方清单实操（自动阶段收尾后） |
+| U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 待用户按下方清单实操（现在可开始） |
 | R01 | 官方daemon未运行/线程未loaded/旧版本 | 明确错误、零静默拉起/错误writer、零重放 | 相关适用平台回归PASS；排除/skip单独记 |
 | R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | PASS：Linux/Darwin两版本及Windows 0.160.0原生；Windows目录残留另记 |
 | R03 | LAN中断与恢复 | 隔离节点/测试路径中断，预写失败与不确定写入分类、恢复后单次成功 | PASS：三平台真实native+CoAP预写失败、后写缺确认、恢复及不重放；物理跨设备发现恢复未覆盖 |
 | N01 | 异常/缺失ACK、能力、UUID、归属、home | 无伪成功/回退/实际非目标写入，原始边界结果 | 相关适用平台回归PASS；排除/skip单独记 |
-| P01 | 正式CLI/App/配置保护 | PID/所属进程组、配置auth/代理/launcher元数据前后一致 | 各阶段记录 |
+| P01 | 正式CLI/App/配置保护 | PID/所属进程组、配置auth/代理/launcher元数据前后一致 | PASS：三端前后保护快照一致，未作持续监控 |
 
 ## 执行纪律
 
@@ -132,3 +132,10 @@ Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG
 - b4f159e Windows原生单次整体FAIL（exit1/pass0/fail1/skip0）；22投递、活跃收件、owner继续、daemon重启、CoAP及owned stop已完成，失败发生在cleanup：`plugins-clone-2mwstS/.git/index.lock`被其他进程占用。test PID55160/6520已退出，两个home均无PID record/socket；仅按exe路径查询的processCount0不能排除系统Git正在访问目录，不据此杀进程或删目录。新旧残留清单分别5515/5579项；旧证据完整保留。证据 `C:/Users/77585/AppData/Local/Temp/ra2a-cleanup-gate-602e37c93aec423ab28dda3aca4271cc`，archive SHA256=57D7AC69313BF009175462D6FDC096D339FB5DCAC89093903454B92F2CDD008F。
 - ROG active已补核完成：turn01a102e0-8cd9-7ed3-99b1-e6feae922a11，final两ACK行2026，task_complete行2029（17:49:47.490Z），见上述目录active-complete.json。
 - 官方固定0.160.0 [插件manager](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/core-plugins/src/manager.rs)按plugins_enabled启动后台同步；[startup_sync](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/core-plugins/src/startup_sync.rs)创建plugins-clone临时目录；[features](https://raw.githubusercontent.com/openai/codex/rust-v0.160.0/codex-rs/features/src/lib.rs)默认开启插件。本fixture只验证RA2A投递与隔离daemon，故仅在新home配置features.plugins=false，消除非目标后台插件下载，保留cleanup严格失败门禁；不改正式配置或放宽归属。Linux0.159.3/0.160.0 native-race分别PASS4.510/4.501秒，日志 `.cache/full-cli-acceptance/no-plugin-native-{version}.log`；Windows完整清理仍需原生复验。此测试不覆盖插件启用时的同步生命周期。
+
+### 自动阶段收尾（d13d656）
+
+- Windows新隔离实例native0.160.0 race单次PASS：exit0/pass1/fail0/skip0，13.09秒，cleanupError=null；严格归属、107字节/privateDACL/8env/file凭据、22收件与独立执行、owner继续、活跃收件、daemon重启、DTLS/CoAP故障恢复与不重放均通过。PID9328/35252退出，新home `C:/Users/77585/r5-fa54a7/r2-1617430854` 完全不存在，socket/PID/package消失；外层shortroot空且保留。
+- 证据 `C:/Users/77585/AppData/Local/Temp/ra2a-no-plugin-160dfe4d0e0445219978a32b2a7e65b6`，source=d13d656120036d93ac97f1e7354547fd52fc9efa，archive SHA256=9F4EE276E116DC70AA05981FBF3E68D2CBF2F57EC1F01F1FBD11B644B5A83285，native SHA256仍FDDA5FA3CF3FB3D000B876720742857676293E4315E4B045FAE6F8BD7E866D1D。仅有清理后文件观察，不能推断生命周期内从未创建plugins-clone；测试配置plugins=false和完整清理PASS为已证实事实。
+- 旧r3/r4失败目录及全部原始失败日志保留，不把新home清理成功说成旧残留已删除；本轮没有手工删除、ACL修补或按进程组杀任务。正式保护全部一致。Ubuntu收尾再次核config/auth/App启动项/代理/socket元数据及官方daemon15822存活无变化；工作区任务修改均原子提交推送。
+- 自动阶段已结束，现在按上方六项清单执行人工TUI/App观察。平台skip仍是skip；物理跨设备网络中断/发现恢复、插件启用的同步生命周期不在本轮实测覆盖范围，不扩大已通过结论。U01未回报前不得标记全量验收或发布准入通过。
