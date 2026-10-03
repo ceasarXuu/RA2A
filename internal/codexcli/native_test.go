@@ -50,7 +50,7 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 			t.Logf("preserving isolated native home because stop/ownership was not verified: %s", home)
 		}
 	})
-	canonicalHome, err := filepath.EvalSymlinks(home)
+	canonicalHome, err := canonicalNativePath(home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,8 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	socketPath := controlSocketPath(home)
 	pidPath := filepath.Join(home, "app-server-daemon", "daemon.pid")
 	ownedPID := 0
-	assertPID := func(pid int) {
+	ownedExecutable := ""
+	assertPID := func(pid int, executable string) {
 		t.Helper()
 		data, err := os.ReadFile(pidPath)
 		var record struct {
@@ -104,6 +105,9 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 		}
 		if err != nil || json.Unmarshal(data, &record) != nil || pid <= 0 || record.PID != pid || record.ProcessStartTime == "" {
 			t.Fatalf("refuse lifecycle operation without matching temporary-home PID record: expected=%d record=%+v err=%v", pid, record, err)
+		}
+		if err := verifyNativeProcess(pid, record.ProcessStartTime, executable); err != nil {
+			t.Fatalf("refuse lifecycle operation without native process identity: %v", err)
 		}
 	}
 	// rust-v0.160.0 app-server-daemon/lib.rs:295-317 derives every resource
@@ -122,7 +126,7 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 			}
 		}
 		if action == "stop" {
-			assertPID(ownedPID)
+			assertPID(ownedPID, ownedExecutable)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 		defer cancel()
@@ -148,13 +152,28 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 			if err := json.Unmarshal(output, &started); err != nil {
 				t.Fatalf("native start output: %v: %s", err, output)
 			}
-			managed, err := filepath.EvalSymlinks(started.ManagedCodexPath)
-			if err != nil || started.Status != "started" || started.Backend != "pid" || started.SocketPath != socketPath ||
-				!strings.HasPrefix(managed, filepath.Join(home, "packages")+string(os.PathSeparator)) {
+			managed, err := canonicalNativePath(started.ManagedCodexPath)
+			packagePrefix := filepath.Join(home, "packages") + string(os.PathSeparator)
+			withinPackage := strings.HasPrefix(managed, packagePrefix)
+			if runtime.GOOS == "windows" {
+				withinPackage = strings.HasPrefix(strings.ToLower(managed), strings.ToLower(packagePrefix))
+			}
+			if err != nil || started.Status != "started" || started.Backend != "pid" || !nativePathEqual(started.SocketPath, socketPath) || !withinPackage {
 				t.Fatalf("native start resources escaped temporary home: %+v, managed=%s err=%v", started, managed, err)
 			}
-			assertPID(started.PID)
+			assertPID(started.PID, managed)
+			probe, err := dialRPC(ctx, socketPath, 3*time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			init, initErr := probe.initialize(ctx, "ra2a_native_fixture", "0.0.0", true)
+			_ = probe.Close()
+			returnedHome, homeErr := canonicalNativePath(init.CodexHome)
+			if initErr != nil || homeErr != nil || !nativePathEqual(returnedHome, home) {
+				t.Fatalf("native start socket returned foreign home: %+v, initialize=%v home=%v", init, initErr, homeErr)
+			}
 			ownedPID = started.PID
+			ownedExecutable = managed
 		} else if action == "stop" {
 			if _, err := os.Lstat(pidPath); !os.IsNotExist(err) {
 				t.Fatalf("native stop did not remove the owned PID record: %v", err)
@@ -165,7 +184,7 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 		t.Logf("isolated daemon %s: %s%s", action, diagnostics.String(), strings.TrimSpace(string(output)))
 	}
 	state, err := detectDaemon(context.Background(), binary, home)
-	if err != nil || state.Running || state.SocketPath != socketPath {
+	if err != nil || state.Running || !nativePathEqual(state.SocketPath, socketPath) {
 		t.Fatalf("new home must have no running daemon: %+v, %v", state, err)
 	}
 	lifecycle("start")
@@ -192,7 +211,7 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	openObserver := func(threadID string) *appServer {
 		t.Helper()
 		state, err := detectDaemon(ctx, binary, home)
-		if err != nil || !state.Running || state.SocketPath != socketPath {
+		if err != nil || !state.Running || !nativePathEqual(state.SocketPath, socketPath) {
 			t.Fatalf("isolated daemon version: %+v, %v", state, err)
 		}
 		observer, err = dialRPC(ctx, state.SocketPath, 3*time.Second)
@@ -200,8 +219,9 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 			t.Fatal(err)
 		}
 		init, err := observer.initialize(ctx, "ra2a_native_fixture", "0.0.0", true)
-		if err != nil || normalizeCodexHome(init.CodexHome) != normalizeCodexHome(home) {
-			t.Fatalf("observer attached to wrong home: %+v, %v", init, err)
+		returnedHome, homeErr := canonicalNativePath(init.CodexHome)
+		if err != nil || homeErr != nil || !nativePathEqual(returnedHome, home) {
+			t.Fatalf("observer attached to wrong home: %+v, initialize=%v home=%v", init, err, homeErr)
 		}
 		observer.setNotificationHandler(notify)
 		server := &appServer{conn: observer}
@@ -319,6 +339,13 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 		t.Fatalf("fixture must remain unauthenticated: %v", err)
 	}
 	t.Logf("native app-server %s: 22 receipt rounds, independent execution/owner continue, receipt while active model held and daemon restart passed; home=%s", adapter.serverVersion, home)
+}
+
+func nativePathEqual(first, second string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(filepath.Clean(first), filepath.Clean(second))
+	}
+	return first == second
 }
 
 type nativeMock struct {
