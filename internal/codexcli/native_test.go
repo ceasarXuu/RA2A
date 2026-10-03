@@ -45,7 +45,9 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	safeToRemove := true
 	t.Cleanup(func() {
 		if safeToRemove {
-			_ = os.RemoveAll(home)
+			if err := os.RemoveAll(home); err != nil {
+				t.Errorf("isolated native home cleanup incomplete at %s: %v", home, err)
+			}
 		} else {
 			t.Logf("preserving isolated native home because stop/ownership was not verified: %s", home)
 		}

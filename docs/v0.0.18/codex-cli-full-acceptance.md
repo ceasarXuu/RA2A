@@ -19,9 +19,9 @@
 | C02 | 双向各22轮 | 每轮收件ACK、无重复/缺失、完成仅为独立观察 | PASS：Mac↔ROG新版双向各22独立turn，无缺失重复 |
 | C03 | 双向active follow-up | 单start+同turn steer、原生ACK、marker匹配 | Ubuntu→ROG BASE/FOLLOWUP同turn；Mac/ROG双向现场待补 |
 | C04 | 长工作收件解耦 | 工作未完成前ACK；随后执行独立核验 | PASS：Linux阻塞native模型；Mac/ROG→Ubuntu持续工作收件22条 |
-| C05 | 交错回复无互等 | 单次有界回复、最多固定hop、无重复写入 | 待执行 |
+| C05 | 交错回复无互等 | 单次有界回复、最多固定hop、无重复写入 | Mac收件与同活跃turn回信通过；ROG发送侧独立核验待补 |
 | C06 | 同机多端点 | 明确登记、只写目标、无历史/所有权串线 | PASS：真实native双线程逐项输入计数 |
-| C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | 待ROG |
+| C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | 三设备固定四hop完成；独立发送侧证据待补 |
 | U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 已请用户配合；时机另通知 |
 | R01 | 官方daemon未运行/线程未loaded/旧版本 | 明确错误、零静默拉起/错误writer、零重放 | 相关适用平台回归PASS；排除/skip单独记 |
 | R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | PASS：Linux/Darwin两版本及Windows 0.160.0原生；Windows目录残留另记 |
@@ -113,3 +113,9 @@ Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG
 - Windows第一次546e6c0复验在启动前socket长度gate失败：operator将TEMP设在长证据目录，得到156字节>107；没有启动daemon，不计Win32修复通过。原始失败保留，未放宽gate或修改源码。
 - Windows使用仅go子进程的短TEMP `C:/Users/77585/r3-61558e`（最坏socket81字节）重新执行独立阶段，native0.160.0 race exit0/PASS1/fail0/skip0，16.13秒。包含privateDACL、Win32 canonical junction、PID FILETIME/exe、initialize home、22收件/owner继续/活跃收件/daemon恢复、真实DTLS/CoAP两thread隔离、关闭节点恢复及后写ACK缺失cancel不重放。证据 `C:/Users/77585/AppData/Local/Temp/ra2a-win32-reverify-045bd78b991d4b4da8e7bd3d82d466fe/short-temp-stage`；archive SHA256=D9823266BA775D4AD8C7BD5AB924DDC898D72253A8EA1CCECDB46BA0B474D43D，官方binary SHA256=FDDA5FA3CF3FB3D000B876720742857676293E4315E4B045FAE6F8BD7E866D1D。正式配置、CLI/App/daemon和代理保护全部一致。
 - Windows清理边界：临时PID63924/26788均退出，PID record/socket/package不存在；fresh home仍剩 `.tmp`、`app-server-daemon`，源码忽略os.RemoveAll错误。因此功能测试PASS不等于目录清理完整，保留原始残留清单及目录，不手工删除。旧失败home及外层短TEMP也有意保留。
+
+### 有界交错回复与三设备链
+
+- 唯一链Ubuntu→Mac→ROG→Mac→Ubuntu：Mac发送一次TRI_MAC_ROG_01，收件accepted耗时873ms；ROG业务回复在send返回50.726秒后进入Mac原活跃turn（90秒界限内）。发送方API没有等待该业务回复。
+- Mac原控制输入行2155与ROG reply行2188/2189同turn 01a102dc-e6dc-77b0-b028-fd5cdf58c1d0，task_started行2153；收回复时未完成。实际ROG from完整，message-id=f6be073fd40fdec72a348ad874e9f31a。证据 `/tmp/ra2a-tri.ilX7NU/` 含发现、完整入参、原始结果、源事件及保护快照；ROG发送侧和双方最终完成待下一阶段只读补核。Root send原始结果 `.cache/full-cli-acceptance/tri-stage-send.json`。
+- Windows目录清理结果被源码忽略已确定：测试现改为os.RemoveAll错误时报错并保留路径，未改变目录删除范围/资源归属gate。Linux0.160.0显式native race单次PASS（5.710秒），原始日志 `.cache/full-cli-acceptance/cleanup-gate-linux.log`；不将Linux结果代替Windows残留问题闭环。
