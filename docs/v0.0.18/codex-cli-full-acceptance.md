@@ -24,7 +24,7 @@
 | C07 | 三设备与不同版本 | Ubuntu/Mac/ROG一条有界跨机链及原生/daemon各自版本 | 待ROG |
 | U01 | TUI实时显示及人工继续 | 用户在Mac/ROG物理TUI输入、画面与回复确认 | 已请用户配合；时机另通知 |
 | R01 | 官方daemon未运行/线程未loaded/旧版本 | 明确错误、零静默拉起/错误writer、零重放 | 相关适用平台回归PASS；排除/skip单独记 |
-| R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | Linux PASS；Linux及Darwin两版本PASS；Windows eed6dc7原生执行中 |
+| R02 | RPC/daemon中途退出与重启 | 仅隔离实验资源；unknown不重放、重新加载后可用 | Linux PASS；Linux/Darwin两版本PASS；Windows eed6dc7在测试路径gate FAIL，诊断修正中 |
 | R03 | LAN中断与恢复 | 隔离节点/测试路径中断，预写失败与不确定写入分类、恢复后单次成功 | PASS：Linux真实native+CoAP预写失败、后写缺确认、恢复及不重放；跨设备发现恢复仍待验 |
 | N01 | 异常/缺失ACK、能力、UUID、归属、home | 无伪成功/回退/实际非目标写入，原始边界结果 | 相关适用平台回归PASS；排除/skip单独记 |
 | P01 | 正式CLI/App/配置保护 | PID/所属进程组、配置auth/代理/launcher元数据前后一致 | 各阶段记录 |
@@ -95,3 +95,9 @@ Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG
 
 - Mac06b7ec3隔离原生完成：0.159.3与0.160.0各race-count=1 PASS，均覆盖22轮/阻塞模型ACK/owner继续/daemon重启/双线程/LAN前写失败恢复/后写缺确认不重放。临时4个PID已退出、2个home及PID/socket/package清理，正式全部保护快照一致。archive SHA256=2c4ed026061baffa6f2aed1768cabd9f709e3535ddb849e832cea89dd1a23651，证据 `/tmp/ra2a-mac-native.4npKDK/`，native日志SHA256（0.160.0/0.159.3）68aa0729a0e0abae13ea093096f5edfa01cb895ea7aa981f23a10476cbefd17b / 4fb178c6d20392058ead8051ef86fb81ff4ae6c04c567339b1fddd3874078535。固定两个tag backend/lib/pid三文件hash相同。
 - ROG→Mac新版22轮接收原始消息/精确ACK/started/complete/独立turn均22，匹配22，缺失重复0、无工具调用，原始JSON/turn/行号在上述Mac `receipt-evidence.json`。至此Mac↔ROG新版双向各22独立完成回合闭环，不依赖旧验收或把accepted当执行完成。
+
+### Windows native 原始失败与资源保护
+
+- eed6dc7单次Windows native-race FAIL（pass0/skip0），4.89秒在资源归属gate失败，未进入投递/LAN/recovery，不重试。官方返回temp current路径，Go EvalSymlinks报找不到路径；临时PID23476/home r2-1741810079保留，正式所有保护不变。原始证据 `C:\Users\77585\AppData\Local\Temp\ra2a-native-rog-0cbf4f7795d041a187bbedb0564f5763`，archive SHA256=8020D2F7E82F07F5327F202F8B21E09F2C2119CF02C0AF2228A49A4EB15823EE。
+- 只读对照：current真实Junction指向temp release，原串及规范串的PowerShell/Win32 file handle解析成功，三个exe hash一致；Go1.27 Eval两串均失败。PID record与native FILETIME创建时间精确匹配，home version probe running。排除alias不存在与仅分隔符问题，Go内部失败原因未断定，不修改生产或升级工具。
+- Windows-only测试修正范围：使用Win32 canonical路径，匹配实际PID创建时间/进程exe，socket只initialize核home后才登记cleanup；Unix保留原canonical gate。保留原始失败，仅清理全部归属通过的指定temp实例，不按group/job停止。修正原生复验尚未执行，不计Windows native通过。
