@@ -119,7 +119,7 @@ PTY 注意事项：不设窗口大小时 TUI 可能只输出 splash；用 `fcntl
 - 多订阅者 fan-out：`turn/start` 的 `thread/status/changed` 会广播给所有 `thread/resume` 订阅者
 - 最后一个订阅者离开后 thread 卸载并广播 `notLoaded` + `thread/closed`
 
-**投递确认必须等 `turn/completed`**：`turn/start` 先返回 turn ID（`status: inProgress`、`error: null`），未认证时随后出现 5 次 `Reconnecting... N/5`，最终 `turn/completed` 为 `status: failed`。这与 Desktop 空 model 竞态同类，适配器不得把请求响应当成功。
+**收件与执行分别确认（PD33）**：`turn/start` 返回有效 turn ID 且无嵌入错误即确认收件；`turn/steer` 必须返回预期活动 turn ID。未认证时后续执行仍可能失败，应单独记录 `turn/completed`，不能将执行结果耦合到收件 ACK。缺失或不明确的输入 ACK 保持 unknown，不重放。
 
 ## 7. 免登录验证：本地 mock 模型端点
 
@@ -229,7 +229,7 @@ pgrep -af "ra2a daemon"; ls -la ~/.codex/app-server-control/
 
 确认属于 CLI 后，备份 RA2A 二进制与配置，部署含 `e7aa4ae` 排除修复的已验证版本，再执行 `ra2a adopt-cli <完整 thread ID>`。该命令仅保存配置，现有 registry 不热加载，需仅重启 RA2A 服务，再检查端点为 `codex-cli`。重启前核对正式 CLI/App 是否在服务 cgroup 外；重启后核对关键 PID 和配置/认证/代理文件元数据。不要通过重启 App 或开启 Desktop 失败后的 managed fallback 来绕过错误归属。
 
-只有对端真实投递收到并完成后才记录通过。若协调会话正在执行长任务，发送方等待 `turn/completed` 可能超时；不要自动重发。两端需要互发时分开回合，避免收到请求的回合又同步等待向原发送方回投，形成互相等待。
+按阶段分别记录收件 ACK、接收标记和执行完成。协调会话正在执行长任务时，收件仍应及时返回；后续回复属于独立消息。unknown 不自动重发。互发测试限定消息数量和 hop，避免无限回信。
 
 ## Windows 测试写配置的隔离要求（2026-10-02）
 
@@ -242,3 +242,9 @@ Windows 的 `os.UserHomeDir()` 读取 `USERPROFILE`，仅设置 `HOME` 无法隔
 Owner 已纠正旧的完成确认设计。CLI Deliver 的成功只依据有效 start/steer 输入 ACK，不等待 turn/completed；RPC返回不明确时仍unknown且不重放。不要延长超时来掩盖收件与工作量的耦合。
 
 真实fixture中由独立owner observer另行等待完成，确保每轮模型输入和后续人工客户端调用有序；这属于执行验证，不是Deliver的等待条件。活跃测试保持mock模型阻塞，先断言Deliver已返回成功且turn ID不变，再释放模型、观察完成。observer重连后必须重新绑定完成处理器。RA2A及时退订自己的订阅，独立owner持续观察；不得关闭或退订真实TUI。
+
+## 短收件限时测试的准备阶段（2026-10-04）
+
+Mac 的旧 shell fixture 冷探测实测需 406–449ms，将其包含在 300ms 收件限时内会在写入前失败。先用 ListEndpoints 建立 fake 连接并校验目标，再开始收件计时；保留原 300ms、禁止完成事件、一次写入和有效 ACK 断言。诊断四次收件均低于 2ms，不能把冷探测失败归为收件耦合，也不能通过放宽收件限时掩盖问题。
+
+跨平台 daemon probe fake 使用原生测试可执行文件和相邻 JSON，不使用 Windows .cmd；仅处理固定 version 参数，缺失 fixture 或异常参数必须拒绝。race 子进程退出等待通过测试局部 GORACE 设置隔离。Linux 通过与 Windows 交叉编译均不能替代 Windows 原生执行。

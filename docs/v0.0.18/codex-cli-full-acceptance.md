@@ -10,11 +10,11 @@
 
 | ID | 项目 | 必需证据 | 状态 |
 | --- | --- | --- | --- |
-| L01 | Linux相关包全部race回归 | 原始包结果、source提交 | 执行中 |
-| L02 | 原生0.159.3/0.160.0隔离daemon | ACK先于阻塞模型完成、22轮、owner继续、重启恢复、home/auth保护 | 待本轮复验 |
-| M01 | macOS原生相关包 | race结果及所有skip原因 | 已下达Mac |
+| L01 | Linux相关包全部race回归 | 原始包结果、source提交 | PASS：8包race及CLI 54个测试事件 |
+| L02 | 原生0.159.3/0.160.0隔离daemon | ACK先于阻塞模型完成、22轮、owner继续、重启恢复、home/auth保护 | PASS：0.159.3/0.160.0分别原生复验 |
+| M01 | macOS原生相关包 | race结果及所有skip原因 | 旧e5：6包PASS、CLI短限时失败；5410aea复验中 |
 | W01 | Windows原生相关包 | 原生执行结果；不以交叉编译代替 | 待ROG上线 |
-| W02 | Windows夹具与ACL边界 | 原生helper替换批处理；已有ACL测试5项 | 夹具修补中；ACL原生待验 |
+| W02 | Windows夹具与ACL边界 | 原生helper替换批处理；已有ACL测试5项 | 5410aea测试修补已push；Linux通过、Windows原生待验 |
 | C01 | 双向基本投递 | 双方新版、完整from/to、接收标记和ACK/turn匹配 | 待ROG |
 | C02 | 双向各22轮 | 每轮收件ACK、无重复/缺失、完成仅为独立观察 | 待双方新版重跑 |
 | C03 | 双向active follow-up | 单start+同turn steer、原生ACK、marker匹配 | 待执行 |
@@ -45,3 +45,10 @@
 - 本机原始日志：忽略目录 `.cache/full-cli-acceptance/`。
 - Mac前置任务：`RA2A_FULL_CLI_PRECHECK_20261003`，等待单次结果报告。
 - ROG当前缺少已发布CLI端点，已通过用户转达上线及e5d97f2隔离部署要求。
+
+### 2026-10-04 前置结果
+
+- Linux：8个相关包 race PASS；CLI包54个pass事件，默认跳过1项opt-in native；显式指定0.159.3/0.160.0后native各PASS。5410aea测试修补另以-count=2复验，108个pass事件，2次默认native skip已由显式运行补证。原始日志在 `.cache/full-cli-acceptance/linux-*.jsonl`、`linux-core-race.log`。
+- Mac e5：6包PASS，CLI receipt start/steer因冷探测超过300ms失败；原始失败保留。临时诊断预连接406–449ms、其后Deliver四次均<2ms且PASS。原始证据 `/tmp/ra2a-full-mac-precheck.0K0RZ0/` 与 `/tmp/ra2a-mac-timing.7NwiXF/`。正式5410aea原生复验尚待结果；Linux-only native排除不计Mac通过，隔离daemon恢复安全未证实，保持待验。
+- Linux保护：官方daemon PID/PGID15822未变；config/auth/App desktop/proxy配置和官方socket inode、mtime、长度与部署后基线相同。本轮测试未改生产代码、正式配置或重启正式daemon。
+- ROG发现ready但仍无codex-cli端点；跨设备完整矩阵仍待其上线，旧22轮不充当新版结果。
