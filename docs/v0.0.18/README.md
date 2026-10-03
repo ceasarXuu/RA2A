@@ -188,7 +188,7 @@ M4完成报告 `65ed8fe7704315cb2ad98e17aef17609`：隔离 `git archive e5d97f28
 
 M4独立核验官方daemon/App/App server/code-mode-host PID/PGID、配置/auth/launcher/原生二进制/plist文件及系统代理元数据均保留；本地main仍ffb52fd、5个本地提交和.commandcode修改保留。来源/产物/保护证据与备份位于Mac `/tmp/ra2a-receipt-deploy.WjeFkK/`，本机未直接读取远端原始文件。
 
-Ubuntu随后向新版M4仅发送一条 `RA2A_V18_MAC_RECEIPT_LONG_WORK_001`，要求20秒等待后才回复；发送工具在 **660ms** 返回accepted/isError=false，随后M4端点仍显示busy。此处确认的是宿主收件ACK已立即返回；真实阻塞执行的分离证明另由0.159.3/0.160.0隔离native测试提供，不把660ms解释为任务已完成。与M4→Ubuntu探针accepted共同构成双方新版收件通路验证。原始本机返回保留 `.cache/cross-cli-acceptance/mac-receipt-long-work-probe.json`。
+Ubuntu随后向新版M4仅发送一条 `RA2A_V18_MAC_RECEIPT_LONG_WORK_001`，要求20秒等待后才回复；发送工具在 **660ms** 返回accepted/isError=false；后续发现快照中M4已恢复ready，未采集ACK瞬间的端点状态。此处确认的是宿主收件ACK已立即返回；真实阻塞执行的分离证明另由0.159.3/0.160.0隔离native测试提供，不把660ms解释为任务已完成。与M4→Ubuntu探针accepted共同构成双方新版收件通路验证。原始本机返回保留 `.cache/cross-cli-acceptance/mac-receipt-long-work-probe.json`。
 
 ROG当前未发布验收CLI端点，尚未完成其新版部署验证；不扩展为全设备上线或v0.0.18正式发布结论。
 
