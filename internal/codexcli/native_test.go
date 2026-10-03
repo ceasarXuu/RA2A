@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build linux || darwin || windows
 
 package codexcli
 
@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,27 +33,45 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 	if !filepath.IsAbs(binary) {
 		t.Fatal("RA2A_TEST_CODEX_BIN must be absolute")
 	}
-	// macOS's default /var/folders temp path can exceed sun_path. Use a short
-	// private directory and canonicalize /tmp before validating daemon resources.
-	home, err := os.MkdirTemp("/tmp", "ra2a-native-")
+	// Use short temporary paths; Windows must use its writable user temp root.
+	tempRoot, prefix := "/tmp", "ra2a-native-"
+	if runtime.GOOS == "windows" {
+		tempRoot, prefix = os.TempDir(), "r2-"
+	}
+	home, err := os.MkdirTemp(tempRoot, prefix)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	safeToRemove := true
+	t.Cleanup(func() {
+		if safeToRemove {
+			_ = os.RemoveAll(home)
+		} else {
+			t.Logf("preserving isolated native home because stop/ownership was not verified: %s", home)
+		}
+	})
 	canonicalHome, err := filepath.EvalSymlinks(home)
 	if err != nil {
 		t.Fatal(err)
 	}
 	home = canonicalHome
-	for _, key := range []string{"CODEX_HOME", "HOME", "TMPDIR"} {
-		t.Setenv(key, home)
+	if problem := socketPathProblem(controlSocketPath(home)); problem != "" {
+		t.Fatal(problem) // Never probe/start a daemon or relocate an overlong path.
+	}
+	isolatedEnv := map[string]string{
+		"CODEX_HOME": home, "HOME": home, "USERPROFILE": home,
+		"LOCALAPPDATA": filepath.Join(home, "local"), "APPDATA": filepath.Join(home, "roaming"),
+		"TMPDIR": home, "TEMP": home, "TMP": home,
+	}
+	for key, value := range isolatedEnv {
+		t.Setenv(key, value)
 	}
 	mock := newNativeMock(t)
-	config := fmt.Sprintf("model = \"mock-model\"\nmodel_provider = \"ra2a-mock\"\nmodel_reasoning_effort = \"none\"\n[model_providers.ra2a-mock]\nname = \"RA2A Mock\"\nbase_url = %q\nwire_api = \"responses\"\nenv_key = \"RA2A_MOCK_KEY\"\nrequires_openai_auth = false\n", mock.URL+"/v1")
+	config := fmt.Sprintf("model = \"mock-model\"\nmodel_provider = \"ra2a-mock\"\nmodel_reasoning_effort = \"none\"\ncli_auth_credentials_store = \"file\"\n[model_providers.ra2a-mock]\nname = \"RA2A Mock\"\nbase_url = %q\nwire_api = \"responses\"\nenv_key = \"RA2A_MOCK_KEY\"\nrequires_openai_auth = false\n", mock.URL+"/v1")
 	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(home, "app-server-daemon"), 0o700); err != nil {
+	if err := createNativeStateDirectory(filepath.Join(home, "app-server-daemon")); err != nil {
 		t.Fatal(err)
 	}
 	settings := `{"remoteControlEnabled":false,"shutdownGraceSeconds":10,"updater":{"autoUpdateEnabled":false,"updateIntervalMinutes":1440}}`
@@ -60,8 +79,15 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Do not inherit agent routing, proxy injection, or account secrets.
-	env := []string{"CODEX_HOME=" + home, "CODEX_NO_UPDATE=1", "RA2A_MOCK_KEY=fixture-only", "NO_PROXY=127.0.0.1,localhost,::1"}
-	for _, key := range []string{"PATH", "HOME", "USER", "LOGNAME", "LANG", "TMPDIR"} {
+	env := []string{"CODEX_NO_UPDATE=1", "RA2A_MOCK_KEY=fixture-only", "NO_PROXY=127.0.0.1,localhost,::1"}
+	for key, value := range isolatedEnv {
+		env = append(env, key+"="+value)
+	}
+	systemKeys := []string{"PATH", "USER", "LOGNAME", "LANG"}
+	if runtime.GOOS == "windows" {
+		systemKeys = []string{"PATH", "SystemRoot", "ComSpec"}
+	}
+	for _, key := range systemKeys {
 		if value, ok := os.LookupEnv(key); ok {
 			env = append(env, key+"="+value)
 		}
@@ -104,6 +130,9 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 		cmd.Env = env
 		var diagnostics bytes.Buffer
 		cmd.Stderr = &diagnostics
+		if action == "start" {
+			safeToRemove = false // Keep failed starts too; they may have launched a child.
+		}
 		output, err := cmd.Output()
 		if err != nil {
 			t.Fatalf("isolated daemon %s: %v: %s%s", action, err, diagnostics.String(), output)
@@ -127,7 +156,11 @@ func TestNativeCLIIsolatedDelivery(t *testing.T) {
 			assertPID(started.PID)
 			ownedPID = started.PID
 		} else if action == "stop" {
+			if _, err := os.Lstat(pidPath); !os.IsNotExist(err) {
+				t.Fatalf("native stop did not remove the owned PID record: %v", err)
+			}
 			ownedPID = 0
+			safeToRemove = true
 		}
 		t.Logf("isolated daemon %s: %s%s", action, diagnostics.String(), strings.TrimSpace(string(output)))
 	}
