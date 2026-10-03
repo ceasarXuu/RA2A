@@ -61,3 +61,18 @@
 - 人工TUI操作按Owner要求最后执行，自动阶段完成后提供操作与观察清单；U01仍待验。
 
 - ROG前置：收到d4147f4831f851e5c06636791cf1ce26证明先前UNKNOWN控制任务实际已到达，未重试。独立5410aea源码构建部署仅RA2A，已有任务daemon16908→28444；CLI/officialdaemon均0.160.0，正式CLI/App/daemon进程与配置/auth/launcher/代理及正式repo保留。8包Windows原生race全部PASS，ACL5项分别PASS，runtime skip16及平台排除另记、不计通过。证据 `C:\Users\77585\AppData\Local\Temp\ra2a-full-rog-precheck-cf8ae21c8a2748b38abe997d02f4e672`。未展开Windows隔离daemon恢复，group/job隔离证据尚缺。
+
+## 人工操作与观察清单（自动阶段完成后再执行）
+
+使用两台设备已经打开的“v0.0.18联调验收”CLI，先等待自动阶段结束。每项反馈“通过/失败”、设备、实际观察及时间；失败保留屏幕与完整错误，不重复投递unknown消息。
+
+| 顺序 | 操作 | 应观察到的结果 |
+| --- | --- | --- |
+| 1 | Mac输入 `RA2A_MANUAL_MAC_01 请仅回复ACK_RA2A_MANUAL_MAC_01`；ROG输入对应 `RA2A_MANUAL_ROG_01 请仅回复ACK_RA2A_MANUAL_ROG_01` | 能输入、提交、显示原文与精确回复，结束后输入框可继续使用 |
+| 2 | 在ROG CLI要求：刷新list_targets，向Mac验收codex-cli地址只投递一次 `RA2A_MANUAL_ROG_MAC_02 请仅最终回复ACK_RA2A_MANUAL_ROG_MAC_02，不回投`，使用ROG完整from地址；记录工具收件结果 | Mac物理TUI实时显示远端标记和回复；ROG收件结果与Mac后续回复分别观察 |
+| 3 | 在Mac CLI要求反向投递一次 `RA2A_MANUAL_MAC_ROG_03 请仅最终回复ACK_RA2A_MANUAL_MAC_ROG_03，不回投`，使用Mac完整from地址 | ROG物理TUI实时显示标记和回复，无重复；不需要关闭或重新打开TUI |
+| 4 | 各自在收到远端消息后，再手工输入 `RA2A_MANUAL_CONTINUE_MAC_04 请仅回复ACK` / `RA2A_MANUAL_CONTINUE_ROG_04 请仅回复ACK` | 原验收会话仍可人工继续，无输入被吞、无错误线程跳转、无界面卡死 |
+| 5 | Mac先在验收CLI要求“等待20秒后仅回复RA2A_MANUAL_ACTIVE_MAC_DONE”；等待期间由ROG只发一次 `RA2A_MANUAL_ACTIVE_MAC_FOLLOWUP 请同时保留此标记，不回投`。之后交换设备进行一次 | 发送方及时获得收件ACK；接收TUI显示活跃追加标记，后续任务继续；记录是否同一会话，不能用屏幕代替后台turn匹配 |
+| 6 | 在两台设备各自正常Codex App中发送一条普通短消息，再在现有CLI发一条普通短消息 | App与CLI均正常启动执行并回复，原登录状态保留；发生故障记录完整提示及时间 |
+
+Mac完整地址：`ra2a://macmini-m4/01a0f8c1-b41a-79b1-85f2-5e0380b1d361`。ROG完整地址：`ra2a://rog306/01a0f8c0-3578-70f3-8ba4-7f35dcd2d6b8`。执行前仍应刷新发现，若原地址消失或agent不为codex-cli，应停止该项并反馈。任何发给历史App端点的结果不能充当CLI验收。
