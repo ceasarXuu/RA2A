@@ -2,7 +2,7 @@
 
 ## 当前状态（2026-10-04）
 
-- v0.0.18发布准备：版本号与发布说明已补齐；隔离全量测试、go vet、六组目标共18个可执行文件构建与真实Linux资产下载器安装验证通过。正式发布以tag触发的GitHub流水线及资产复核为准。
+- v0.0.18已正式发布：[GitHub Release](https://github.com/ceasarXuu/RA2A/releases/tag/v0.0.18)，tag=8db1a94，CI成功。隔离全量测试、go vet、18个可执行文件构建通过；全部40个正式下载资产校验通过，下载的Linux资产隔离安装通过，latest安装器链接HTTP200。完整[发布核验](../../runbooks/release-v0.0.18-evidence.md)。
 - 最新验收：[CLI↔CLI](codex-cli-full-acceptance.md)本轮自动与人工通过；[CLI↔OpenCode](codex-cli-opencode-acceptance.md)固定会话与工作中收发通过，resume缺陷已部署并由Owner确认显示及继续输入正常。
 - CLI/OpenCode仍为预览，平台skip、未测App全交叉方向、物理断网及真实OpenCode shared-server崩溃恢复等边界保留，不能将局部实测扩大为全部宿主正式支持。
 - 以下章节是按时间追加的历史调查与阶段进展；其中“待验”不取代以上最新矩阵结论。发布说明见[releases/v0.0.18.md](../../releases/v0.0.18.md)。
