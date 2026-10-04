@@ -3,7 +3,8 @@
 - 状态：Draft；支持范围待 Owner 确认。
 - 版本：下一版本，版本号暂未确认；当前已发布 v0.0.18。
 - 请求：Owner「开始下一个版本，做对 pi agent 的支持」。
-- 既有产品约束：[统一互通 PRD](../v0.0.15/prd.md) 的 PD30–PD33 继续有效；本文不替代这些决策。
+- 既有产品约束：[统一互通 PRD](../v0.0.15/prd.md) 的 PD26–PD33 继续有效；本文不替代这些决策。
+- 工程方案：[plan.md](./plan.md)（Draft，收件路线待确认）。
 
 ## 目标与用户
 
@@ -40,7 +41,7 @@
 
 ## Confirmed Product Decisions
 
-只记录直接确认的新决策；继承的 PD30–PD33 以原文为准。
+只记录直接确认的新决策；继承的 PD26–PD33 以原文为准。新增、修改或取代有效决策必须取得 Owner 针对该变更的明确确认；Agent 推断、实现、测试和未反对均不是批准。
 
 | ID | Confirmed Decision | Must Do | Must Not Do | Rationale | Violation Signal | Confirmation | Status |
 |---|---|---|---|---|---|---|---|
@@ -48,7 +49,7 @@
 
 ## Open Questions And Risks
 
-- 完整范围或先限 Pi ↔ Codex CLI：已向 Owner 发起范围确认，尚无答复；不将建议范围记为已确认决策。
+- 全交叉准入沿用既有 PD26 / PD31，包括 Pi ↔ Codex App、Codex CLI、OpenCode 及 Pi ↔ Pi；此前范围提问未获答复，不将其升级为新确认，也不缩减既有准入门槛。
 - 版本号和用于跨设备验收的 Pi 会话尚未指定。
 - 本机安装包已按 Owner 要求从 `@earendil-works/pi-coding-agent` 0.87.1 升级到 1.0.0；后续调研以 1.0.0 为基线，最低兼容版本待技术验证。
 - 扩展 `sendUserMessage()` 返回 void，并在宿主中异步捕获失败；调用返回本身不足以证明收件。需要先实验确认可靠收件边界，不能重复上一版本的确认耦合问题。
@@ -77,4 +78,10 @@
 
 Owner 要求先升级 Pi，避免基于旧接口继续适配。已沿用本机既有 npm prefix，执行固定版本、禁用安装脚本的全局升级；`pi --version` 和安装包元数据均为 1.0.0。旧安装包与 Pi 配置已在私有忽略目录 `.cache/pi-upgrade-1.0.0/` 备份。217 个已记录的 Pi、Codex、OpenCode 和 RA2A 配置/资源文件内容哈希及 mtime 前后相同；没有执行登录、交互任务或正式服务重启。
 
-官方 1.0.0 默认全屏 TUI，见 [发行说明](https://github.com/earendil-works/pi/releases/tag/v1.0.0)。上述 0.87.1 收件实验仅保留为历史证据，尚未证明 1.0.0 仍有相同接口行为；进入实现前需重新核验。
+官方 1.0.0 默认全屏 TUI，见 [发行说明](https://github.com/earendil-works/pi/releases/tag/v1.0.0)。上述 0.87.1 收件实验仅保留为历史证据。
+
+### 1.0.0 收件接口重验与方案
+
+在同样隔离 SDK 条件下重新执行无凭据反例，1.0.0 仍出现调用返回 undefined、input 已触发、后续 send_user_message 认证错误、user message 数为 0；保护文件哈希与 mtime 未变化。原始结果在 `.cache/pi-discovery/`。独立只读源码核对进一步确认：RPC 暴露的 preflight queued/started/handled 回调未通过普通扩展 sendUserMessage 暴露，user message_start 要等排队消息消费，不能代表即时入队。
+
+因此工程方案先验证原生扩展内明确收件的路线；“扩展收到即成功、模型输入另行处理”属于新的具体收件语义，待 Owner 确认，不自行等同 Pi 原生入队。忙时 followUp、初期 ra2a pi 入口、后续自动安装与版本号也在方案中明确列为待确认或后置事项。
