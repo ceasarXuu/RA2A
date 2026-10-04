@@ -17,6 +17,7 @@ import (
 
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
 	"github.com/ceasarXuu/RA2A/internal/ochost"
+	"github.com/ceasarXuu/RA2A/internal/pi"
 )
 
 const Version = "v0.0.18"
@@ -27,6 +28,7 @@ type Config struct {
 	PIN      string `json:"pin"`
 	Codex    string `json:"codex,omitempty"`
 	OpenCode string `json:"opencode,omitempty"`
+	Pi       string `json:"pi,omitempty"`
 	// CLISessions lists the Codex CLI thread IDs this node publishes. Ownership
 	// of a CLI thread cannot be read back from the host, so adoption is an
 	// explicit operator decision recorded here rather than a guess.
@@ -163,7 +165,7 @@ func Save(config Config) error {
 }
 
 func Validate(config Config) error {
-	if config.NodeID == "" || strings.TrimSpace(config.Name) == "" || (config.Codex == "" && config.OpenCode == "") {
+	if config.NodeID == "" || strings.TrimSpace(config.Name) == "" || (config.Codex == "" && config.OpenCode == "" && config.Pi == "") {
 		return errors.New("node ID, name, and at least one supported harness are required")
 	}
 	if len(config.PIN) != 6 || strings.IndexFunc(config.PIN, func(r rune) bool {
@@ -189,8 +191,8 @@ func SetupInteractive(input io.Reader, output io.Writer) error {
 		return err
 	}
 	config = DetectHarnesses(Config{})
-	if config.Codex == "" && config.OpenCode == "" {
-		return errors.New("no supported harness found: install Codex or OpenCode, then run ra2a again")
+	if config.Codex == "" && config.OpenCode == "" && config.Pi == "" {
+		return errors.New("no supported harness found: install Codex, OpenCode or Pi, then run ra2a again")
 	}
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -294,7 +296,10 @@ func Exit() (Config, error) {
 	if config.Codex != "" {
 		_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
 	}
-	return config, UnregisterOpenCodeMCP()
+	if err := UnregisterOpenCodeMCP(); err != nil {
+		return config, err
+	}
+	return config, pi.Uninstall()
 }
 
 func serviceRunning() error {

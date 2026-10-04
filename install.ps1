@@ -42,6 +42,11 @@ $RecordedCodexNative = if (Test-Path -LiteralPath $WrapperNativePath) { (Get-Con
 
 if ($Uninstall) {
     if (Test-Path -LiteralPath $BinaryPath) {
+        $PiAgentDir = if ($env:PI_CODING_AGENT_DIR) { $env:PI_CODING_AGENT_DIR } else { Join-Path $HOME '.pi/agent' }
+        if (Test-Path -LiteralPath (Join-Path $PiAgentDir 'extensions/ra2a.mjs')) {
+            & $BinaryPath pi-unregister
+            if ($LASTEXITCODE -ne 0) { throw 'Could not unregister Pi extension' }
+        }
         & $BinaryPath opencode-mcp-unregister
         if ($LASTEXITCODE -ne 0) { throw 'could not unregister OpenCode MCP' }
         & $BinaryPath opencode-server-cleanup
@@ -301,8 +306,8 @@ if (-not $Name) { $Name = $NodeId }
 if (-not $Codex) {
     $Codex = $CodexNative
 }
-if (-not $Codex -and -not $OpenCodeNative) {
-    throw 'No supported harness found; install Codex or OpenCode before setup'
+if (-not $Codex -and -not $OpenCodeNative -and -not (Get-Command pi -ErrorAction SilentlyContinue)) {
+    throw 'No supported harness found; install Codex, OpenCode or Pi before setup'
 }
 $SetupArgs = @('setup', '--pin', $Pin, '--node-id', $NodeId, '--name', $Name)
 if ($Codex) { $SetupArgs += @('--codex', $Codex) }

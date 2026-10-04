@@ -1,16 +1,16 @@
 # PRD：下一版本 Pi Agent 支持
 
-- 状态：Draft；支持范围待 Owner 确认。
+- 状态：Ready for implementation；发布准入仍以验收证据为准。
 - 版本：下一版本，版本号暂未确认；当前已发布 v0.0.18。
 - 请求：Owner「开始下一个版本，做对 pi agent 的支持」。
 - 既有产品约束：[统一互通 PRD](../v0.0.15/prd.md) 的 PD26–PD33 继续有效；本文不替代这些决策。
-- 工程方案：[plan.md](./plan.md)（Draft，收件路线待确认）。
+- 工程方案：[plan.md](./plan.md)（P1 本地验证通过，P2 验收待完成）。
 
 ## 目标与用户
 
 让使用原生 Pi Coding Agent 的用户通过 RA2A 发现其他设备上的 Agent 会话，并双向发送文本。接入仍遵循统一端点与消息模型。
 
-## 建议范围（待确认）
+## 实施范围
 
 - 原生 Pi TUI 中提供与其他 Agent 一致的发现与发送入口。
 - 仅发布当前被运行中 Pi 实例持有的会话；历史记录不代表执行权。
@@ -46,6 +46,8 @@
 | ID | Confirmed Decision | Must Do | Must Not Do | Rationale | Violation Signal | Confirmation | Status |
 |---|---|---|---|---|---|---|---|
 | PI1 | 下一版本开展 Pi Agent 支持 | 核验 Pi 原生接口并推进接入 | 将调研完成当作支持完成 | 扩展 RA2A Agent 集合 | 未开展 Pi 接入工作 | Owner：开始下一个版本，做对 pi agent 的支持 | active |
+| PI2 | 采用原生 Pi 插件接入，插件明确收件后与模型执行分离；工作中消息使用 followUp | 保留原生 TUI、当前会话绑定和明确来源；按方案 A 验证收件 | 将插件 ACK 宣称为 Pi 原生队列成功或任务完成；自动 abort / 重放 | 延续明确收件和人工交互需求 | 收件等待模型完成，或工作中输入终止原任务 | 用户在原生插件与收件分离解释后要求「开始实施ba」（2026-10-05）；接受此前推荐方案 A | active |
+| PI3 | RA2A 安装/升级流程安装专属 Pi 插件，后台服务负责发现投递，插件运行在 Pi 内 | 保留其他插件、配置、登录及模型；正常 pi 启动加载专属扩展 | 后台服务静默改登录或覆盖用户插件 | 用户询问插件安装责任后要求实施 | 安装覆盖已有非 RA2A 文件，或替换原生 Pi | 用户询问「插件的安装是由ra2a服务进行对吧」，收到安装/升级流程负责的说明后要求「开始实施ba」（2026-10-05） | active |
 
 ## Open Questions And Risks
 
@@ -59,7 +61,7 @@
 以下仅是调研事实，不是产品决策或完成声明。
 
 - 本机安装包的 `package.json`、`docs/extensions.md`、`docs/configuration.md` 与 `dist/core/extensions/types.d.ts` 已只读检查。
-- `session_start` 原生事件区分 startup/reload/new/resume/fork；`ctx.sessionManager.getSessionId()` 提供原生身份。仍需真实切换实验确认绑定时序。
+- `session_start` 原生事件区分 startup/reload/new/resume/fork；`ctx.sessionManager.getSessionId()` 提供原生身份。本地真实 TUI 已验证切换与 resume，其他平台和双实例仍待验证。
 - Pi 原生扩展支持注册模型工具和注入用户消息，可优先验证扩展接入，不另建替代 TUI。
 - 官方入口：[Pi 仓库](https://github.com/earendil-works/pi)、[扩展文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)。
 
@@ -84,4 +86,4 @@ Owner 要求先升级 Pi，避免基于旧接口继续适配。已沿用本机�
 
 在同样隔离 SDK 条件下重新执行无凭据反例，1.0.0 仍出现调用返回 undefined、input 已触发、后续 send_user_message 认证错误、user message 数为 0；保护文件哈希与 mtime 未变化。原始结果在 `.cache/pi-discovery/`。独立只读源码核对进一步确认：RPC 暴露的 preflight queued/started/handled 回调未通过普通扩展 sendUserMessage 暴露，user message_start 要等排队消息消费，不能代表即时入队。
 
-因此工程方案先验证原生扩展内明确收件的路线；“扩展收到即成功、模型输入另行处理”属于新的具体收件语义，待 Owner 确认，不自行等同 Pi 原生入队。忙时 followUp、初期 ra2a pi 入口、后续自动安装与版本号也在方案中明确列为待确认或后置事项。
+Owner 已授权原生扩展明确收件、模型输入另行处理的路线（PI2）及安装/升级流程接入（PI3）。本地验证通过；插件 ACK 不等同 Pi 原生入队。版本号仍后置，未创建发布标签。

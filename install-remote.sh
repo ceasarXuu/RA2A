@@ -6,6 +6,7 @@ if [ "${1:-}" = --uninstall ]; then
   BIN_DIR=$HOME/.local/bin
   BIN_PATH=$BIN_DIR/ra2a
   if [ -x "$BIN_PATH" ]; then
+    if [ -f "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/ra2a.mjs" ]; then "$BIN_PATH" pi-unregister || fail 'could not unregister Pi extension'; fi
     "$BIN_PATH" opencode-mcp-unregister || fail 'could not unregister OpenCode MCP'
     "$BIN_PATH" opencode-server-cleanup || fail 'could not stop the shared OpenCode server'
   fi

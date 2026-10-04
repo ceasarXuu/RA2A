@@ -3,6 +3,7 @@ package operator
 import (
 	"errors"
 	"fmt"
+	"github.com/ceasarXuu/RA2A/internal/pi"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +41,14 @@ func DetectHarnesses(config Config) Config {
 			config.OpenCode, _ = filepath.Abs(path)
 		}
 	}
+	if config.Pi != "" && !runnableHarness(config.Pi) {
+		config.Pi = ""
+	}
+	if config.Pi == "" {
+		if path, err := exec.LookPath("pi"); err == nil {
+			config.Pi, _ = filepath.Abs(path)
+		}
+	}
 	return config
 }
 
@@ -71,6 +80,11 @@ func InstallAndStart(config Config) error {
 	if config.OpenCode != "" {
 		if err := RegisterOpenCodeMCP(executable); err != nil {
 			return fmt.Errorf("register OpenCode MCP: %w", err)
+		}
+	}
+	if config.Pi != "" {
+		if _, err := pi.Install(); err != nil {
+			return fmt.Errorf("install Pi extension: %w", err)
 		}
 	}
 	switch runtime.GOOS {

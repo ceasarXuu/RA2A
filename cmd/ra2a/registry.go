@@ -22,6 +22,7 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/ocsession"
 	"github.com/ceasarXuu/RA2A/internal/opencode"
 	"github.com/ceasarXuu/RA2A/internal/operator"
+	"github.com/ceasarXuu/RA2A/internal/pi"
 )
 
 var errOpenCodeDisabled = errors.New("opencode integration is disabled")
@@ -104,6 +105,9 @@ func opencodeOwnerPath() string {
 
 func buildRegistry(ctx context.Context, nodeID, codexPath, appServerSocket string, stderr io.Writer, startSource sessionSourceFactory, cliSessions []string) (*agentbridge.Registry, error) {
 	registry := agentbridge.NewRegistry(nodeID)
+	if err := registry.Register(pi.New(nodeID, pi.Directory())); err != nil {
+		return nil, err
+	}
 	if codexPath != "" {
 		source, err := startSource(ctx, codexPath, appServerSocket, stderr)
 		if err != nil {

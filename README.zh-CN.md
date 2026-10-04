@@ -41,7 +41,7 @@ flowchart LR
 | Claude Code | 🧭 计划支持 | 接入对应会话接口 |
 | Claude Desktop App | 🧭 计划支持 | 支持桌面会话定向投递 |
 | OpenCode | 🧪 预览支持 | 普通 TUI 自动附着、OpenCode-only 可用；全交叉互通矩阵仍待验收 |
-| Pi | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
+| Pi | 🚧 开发中 | [原生扩展接入](docs/pi-support/plan.md)；Linux 隔离验证通过，多平台验收待完成 |
 | DeepSeek Harness | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
 
 ### 平台

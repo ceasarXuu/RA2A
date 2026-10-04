@@ -13,6 +13,11 @@ if ($Uninstall) {
     $BinDir = Join-Path $HOME '.local\bin'
     $BinaryPath = Join-Path $BinDir 'ra2a.exe'
     if (Test-Path -LiteralPath $BinaryPath) {
+        $PiAgentDir = if ($env:PI_CODING_AGENT_DIR) { $env:PI_CODING_AGENT_DIR } else { Join-Path $HOME '.pi/agent' }
+        if (Test-Path -LiteralPath (Join-Path $PiAgentDir 'extensions/ra2a.mjs')) {
+            & $BinaryPath pi-unregister
+            if ($LASTEXITCODE -ne 0) { throw 'Could not unregister Pi extension' }
+        }
         & $BinaryPath opencode-mcp-unregister
         if ($LASTEXITCODE -ne 0) { throw 'could not unregister OpenCode MCP' }
         & $BinaryPath opencode-server-cleanup
@@ -233,7 +238,7 @@ try {
     Write-Output "binary: $BinaryPath"
     if ($Pin) {
         if (-not $Name) { $Name = $NodeId }
-        if (-not $CodexSource -and -not $OcSource) { throw 'No supported harness found; install Codex or OpenCode before setup' }
+        if (-not $CodexSource -and -not $OcSource -and -not (Get-Command pi -ErrorAction SilentlyContinue)) { throw 'No supported harness found; install Codex, OpenCode or Pi before setup' }
         $SetupArgs = @('setup', '--pin', $Pin, '--node-id', $NodeId, '--name', $Name)
         if ($CodexSource) { $SetupArgs += @('--codex', $CodexSource) }
         if ($OcSource) { $SetupArgs += @('--opencode', $OcSource) }

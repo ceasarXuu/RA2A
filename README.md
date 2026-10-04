@@ -41,7 +41,7 @@ flowchart LR
 | Claude Code | 🧭 Planned | Connect through its session interface |
 | Claude Desktop App | 🧭 Planned | Deliver messages to specific desktop sessions |
 | OpenCode | 🧪 Preview | Plain TUI attaches automatically; OpenCode-only nodes supported; cross-harness matrix still under validation |
-| Pi | 🧭 Planned | Integrate with RA2A discovery and messaging |
+| Pi | 🚧 In development | [Native extension](docs/pi-support/plan.md); Linux isolated validation passed, cross-platform acceptance pending |
 | DeepSeek Harness | 🧭 Planned | Integrate with RA2A discovery and messaging |
 
 ### Platforms

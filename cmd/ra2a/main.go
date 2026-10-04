@@ -144,6 +144,10 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		}
 		fmt.Fprintf(output, "cli-session=%s published=%d\n", args[1], len(config.CLISessions))
 		return nil
+	case "pi-unregister":
+		return unregisterPi()
+	case "pi":
+		return runPi(ctx, args[1:])
 	case "opencode":
 		return runOpencodeAttach(ctx, args[1:], output)
 	case "setup":
@@ -154,10 +158,11 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		name := flags.String("name", "", "display name")
 		codex := flags.String("codex", "", "Codex executable")
 		opencodePath := flags.String("opencode", "", "OpenCode executable")
+		piPath := flags.String("pi", "", "Pi executable")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		config := operator.Config{NodeID: *id, Name: *name, PIN: *pin, Codex: *codex, OpenCode: *opencodePath}
+		config := operator.Config{NodeID: *id, Name: *name, PIN: *pin, Codex: *codex, OpenCode: *opencodePath, Pi: *piPath}
 		if err := operator.Setup(config); err != nil {
 			return err
 		}
@@ -191,7 +196,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return run(ctx, []string{"serve", "--pin", config.PIN, "--id", config.NodeID, "--name", config.Name, "--codex", config.Codex, "--control-address", controlAddress}, output, startSource)
 	}
 	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
-		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|mailbox|opencode|selftest|serve|send> [options]")
+		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|mailbox|opencode|pi|selftest|serve|send> [options]")
 	}
 
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)

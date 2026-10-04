@@ -17,11 +17,12 @@ const (
 	AgentCodexApp AgentKind = "codex-app"
 	AgentCodexCLI AgentKind = "codex-cli"
 	AgentOpenCode AgentKind = "opencode"
+	AgentPi       AgentKind = "pi"
 )
 
 func (kind AgentKind) Valid() bool {
 	switch kind {
-	case AgentCodexApp, AgentCodexCLI, AgentOpenCode:
+	case AgentCodexApp, AgentCodexCLI, AgentOpenCode, AgentPi:
 		return true
 	}
 	return false
