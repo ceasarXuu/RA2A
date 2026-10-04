@@ -46,6 +46,10 @@ async function send(record, id, token = record.token, sessionID = record.session
     body: JSON.stringify({ sessionID, id, text: `[RA2A message]\nmessage-id: ${id}\n\nfixture` }) });
   return { status: response.status, value: await response.json(), elapsed: Date.now() - started };
 }
+async function listingProbe(session) {
+  const listing=session.extensionRunner.getAllRegisteredTools().find(t=>t.definition.name==='ra2a_list_targets').definition;
+  await listing.execute('lock-probe',{},undefined,undefined,session.extensionRunner.createContext());
+}
 let release;
 try {
   const manager = sdk.SessionManager.create(process.cwd(), path.join(process.env.HOME, 'sessions'));
@@ -81,6 +85,20 @@ try {
       stream.push({ type: 'done', reason: 'stop', message });stream.end(message); })();
     return stream;
   };
+  // Windows file locks must only expire routing rights, never kill the host.
+  const leaseFile=path.join(process.env.RA2A_PI_SESSION_DIR,`attachment.${process.pid}.json`);
+  const rename=fs.renameSync, unlink=fs.unlinkSync;
+  let lock=true, cleanupCalls=0;
+  fs.renameSync=(source,target)=>{if(lock && target===leaseFile)throw Object.assign(new Error('fixture locked'),{code:'EBUSY'});return rename(source,target);};
+  fs.unlinkSync=file=>{if(lock && file===leaseFile){cleanupCalls++;throw Object.assign(new Error('fixture locked'),{code:'EBUSY'});}return unlink(file);};
+  try {
+    await pause(3300);
+    assert(lease().expires<Date.now(),'failed renewal must expire the lease');
+    assert.equal(cleanupCalls,0,'renewal failure must not tear down the host');
+    await listingProbe(a); // host native tools remain usable while discovery expires.
+    lock=false;await pause(1100);
+    assert(lease().expires>Date.now(),'released lock must allow normal heartbeat renewal');
+  } finally {fs.renameSync=rename;fs.unlinkSync=unlink;}
   for (let round = 1; round <= 22; round++) {
     const id = `round-${round}`;
     assert.equal((await send(lease(), id)).value.id, id);
@@ -116,8 +134,14 @@ try {
   await b.extensionRunner.emit({type:'session_shutdown',reason:'resume'});
   const resumed=await open(sdk.SessionManager.open(manager.getSessionFile()));
   assert.equal(lease().sessionID,initial.sessionID);
+  fs.unlinkSync=file=>{if(file===leaseFile)throw Object.assign(new Error('fixture locked cleanup'),{code:'EBUSY'});return unlink(file);};
+  try {
+    await resumed.extensionRunner.emit({type:'session_shutdown',reason:'exit'});
+    assert(fs.existsSync(leaseFile),'locked cleanup record must be left to expire');
+    await assert.rejects(()=>fetch(lease().url+'/receive'),'stopped bridge must no longer accept requests');
+  } finally {fs.unlinkSync=unlink;}
   console.log(JSON.stringify({pass:true,nativeVersion:sdk.VERSION,receipt22:22,heldReceiptMS:active.elapsed,
-    resumeID:resumed.sessionId,rawUserMessages:a.messages.filter(e=>e.role==='user').length,authFailureReported:true,sourceExact:true}));
+    resumeID:resumed.sessionId,rawUserMessages:a.messages.filter(e=>e.role==='user').length,authFailureReported:true,sourceExact:true,leaseLockSurvived:true,cleanupLockSurvived:true}));
 } finally {
   for(const session of sessions){await session.extensionRunner.emit({type:'session_shutdown',reason:'exit'});session.dispose();}
   control.closeAllConnections();await new Promise(resolve=>control.close(resolve));

@@ -28,7 +28,7 @@ export default function (pi) {
     clearInterval(heartbeat);
     server?.close(); server = undefined;
     for (const file of [leasePath, leasePath + '.next']) {
-      try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') console.error(`RA2A lease cleanup failed (${e.code}); record expires by TTL`); }
     }
   };
   pi.registerEntryRenderer('ra2a-received', entry => new Text(`[RA2A received: ${entry.data.id}]\n${entry.data.text}`, 0, 0));
@@ -62,8 +62,16 @@ export default function (pi) {
       });
     });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-    writeLease();
-    heartbeat = setInterval(() => { try { writeLease(); } catch (e) { stop(); ctx.ui.notify(`RA2A: ${e.message}`, 'error'); } }, 1000);
+    let renewalFailed = false;
+    const renew = () => {
+      try { writeLease(); renewalFailed = false; } catch (e) {
+        // Discovery expires naturally; a lease lock must never terminate Pi.
+        if (!renewalFailed) console.error(`RA2A lease renewal failed (${e.code}); discovery expires until renewal succeeds`);
+        renewalFailed = true;
+      }
+    };
+    renew();
+    heartbeat = setInterval(renew, 1000);
   });
   pi.on('session_shutdown', stop);
   const call = async (route, body, signal) => {

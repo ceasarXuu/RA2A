@@ -158,3 +158,7 @@ P0 基线：真实 Pi 1.0 PTY A→new→resume A，两个接收记录均属于 A
 - ROG 已以独立 archive 部署 d21045c；仅 RA2A binary 与专属插件变化、既有任务 Stop/Start，Pi 原进程保留。其 `.codex/models_cache.json` 在活动 App 期间变化，来源未归属，不宣称整个保护基线不变。
 - Owner reload 后，发现唯一 `ra2a://rog306/pi.01a10851-9e1e-7165-84c7-73b896718a09`，agent=pi/ready，能力仅 receiveText/replyAddress。首条 CLI→Pi accepted，独立 Pi→CLI 回信来源匹配；连续/活跃接收及只读原生审计仍进行中。
 - ROG 证据：`C:/Users/77585/AppData/Local/RA2A-evidence/pi-autoload-001`；本地 `.cache/pi-cross-device/`。人工、resume/多实例、App/OpenCode/Pi全交叉与其余平台门禁保持未完成。
+
+## D3：Windows 租约锁异常修复
+
+忙时现场 Pi 退出：原任务仅4次 list_targets，FOLLOWUP有receipt但尚无原生user/final；IDLE22就绪超时，实际投递0，不能算通过或22项失败。Owner提供的原终端 `EBUSY unlink → stop → heartbeat` 堆栈确认本产品异常链；初始锁来源未知。修复仅将租约维护错误降级为到期/后续恢复，清理不抛异常，不改变收件语义或重放消息。新增手写生产净8行，累计首期约379行，仍低于500行。隔离真实SDK旧实现复现退出；修复后锁故障、自动加载、22收件、TUI以及四包race通过。ROG1.0.2复验和现场忙时完整结束保持pending。
