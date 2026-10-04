@@ -1,0 +1,63 @@
+# PRD：下一版本 Pi Agent 支持
+
+- 状态：Draft；支持范围待 Owner 确认。
+- 版本：下一版本，版本号暂未确认；当前已发布 v0.0.18。
+- 请求：Owner「开始下一个版本，做对 pi agent 的支持」。
+- 既有产品约束：[统一互通 PRD](../v0.0.15/prd.md) 的 PD30–PD33 继续有效；本文不替代这些决策。
+
+## 目标与用户
+
+让使用原生 Pi Coding Agent 的用户通过 RA2A 发现其他设备上的 Agent 会话，并双向发送文本。接入仍遵循统一端点与消息模型。
+
+## 建议范围（待确认）
+
+- 原生 Pi TUI 中提供与其他 Agent 一致的发现与发送入口。
+- 仅发布当前被运行中 Pi 实例持有的会话；历史记录不代表执行权。
+- 关闭、重启并 resume 同一原生会话后，公开地址保持稳定；TUI 内切换会话后跟随当前会话。
+- 收件确认与模型回复、执行完成分离；工作中的消息能被宿主接收。是否可声明 `steerActiveTurn`，需由原生证据决定。
+- 保留现有 Pi 和 Codex/OpenCode 的配置、认证、模型、代理与人工交互。
+- 正式支持准入按既有 PD31 完成与已支持 Agent 的全交叉验证；未完成时明确标为预览。
+
+不包含自动安装模型服务、变更用户权限策略、文件传输、工作流编排或公网中继。
+
+## 用户流程与失败行为
+
+1. 用户正常启动已接入 RA2A 的 Pi 原生交互会话。
+2. 其他 Agent 通过 `list_targets` 获取其完整地址和经验证的能力。
+3. 向该地址发送消息，目标宿主明确接收后返回收件成功。
+4. Pi 后续处理并可独立回信；用户仍可继续输入。
+5. 会话关闭或所有权失效后撤回可投递端点；切换会话不能误投到启动时的旧会话。
+6. 未取得明确收件确认时返回未知结果，不自动重发。
+
+## 验收条件
+
+- 发送方身份精确绑定 Pi 当前原生会话，接收消息在对应 TUI 可见。
+- 空闲多轮、工作中收件、独立业务回信分别核验，不能以 accepted 冒充执行完成。
+- resume 地址稳定，切换、多个实例和异常退出不串会话、不保留错误执行权。
+- 正式进程、配置、凭据及代理保护快照前后符合预期；测试使用隔离配置和假凭据。
+- Linux/macOS/Windows 的支持声明分别基于真实原生验证，跳过项单独记录。
+- 人工操作留到自动验证之后，提供操作与观察清单。
+
+## Confirmed Product Decisions
+
+只记录直接确认的新决策；继承的 PD30–PD33 以原文为准。
+
+| ID | Confirmed Decision | Must Do | Must Not Do | Rationale | Violation Signal | Confirmation | Status |
+|---|---|---|---|---|---|---|---|
+| PI1 | 下一版本开展 Pi Agent 支持 | 核验 Pi 原生接口并推进接入 | 将调研完成当作支持完成 | 扩展 RA2A Agent 集合 | 未开展 Pi 接入工作 | Owner：开始下一个版本，做对 pi agent 的支持 | active |
+
+## Open Questions And Risks
+
+- 完整范围或先限 Pi ↔ Codex CLI：已向 Owner 发起范围确认，尚无答复；不将建议范围记为已确认决策。
+- 版本号和用于跨设备验收的 Pi 会话尚未指定。
+- 本机安装包为 `@earendil-works/pi-coding-agent` 0.87.1；最低兼容版本待技术验证。
+- 扩展 `sendUserMessage()` 返回 void，并在宿主中异步捕获失败；调用返回本身不足以证明收件。需要先实验确认可靠收件边界，不能重复上一版本的确认耦合问题。
+
+## 技术证据入口
+
+以下仅是调研事实，不是产品决策或完成声明。
+
+- 本机安装包的 `package.json`、`docs/extensions.md`、`docs/configuration.md` 与 `dist/core/extensions/types.d.ts` 已只读检查。
+- `session_start` 原生事件区分 startup/reload/new/resume/fork；`ctx.sessionManager.getSessionId()` 提供原生身份。仍需真实切换实验确认绑定时序。
+- Pi 原生扩展支持注册模型工具和注入用户消息，可优先验证扩展接入，不另建替代 TUI。
+- 官方入口：[Pi 仓库](https://github.com/earendil-works/pi)、[扩展文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)。
