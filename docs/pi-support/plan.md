@@ -174,3 +174,9 @@ P0 基线：真实 Pi 1.0 PTY A→new→resume A，两个接收记录均属于 A
 ## ROG App ↔ Pi 单条探针
 
 原生 App→Pi send 一次accepted（237ms），Pi唯一receipt/user来源为协助App完整地址；Pi唯一ra2a_send_message回信调用无caller-selected from，工具返回confirmed/accepted，精确finalACK及stop。App本地rollout行876匹配唯一回信、来源及message-id，并进入尚未complete的活跃App turn。三个阶段均有独立原始证据，未用accepted代替完成。证据 `C:/Users/77585/AppData/Local/RA2A-evidence/pi-app-probe-001`。接下来仅3条双向连续阶段验证App收件/顺序，不机械重复CLI22规模；OpenCode/Pi其他端点仍未发现，等待Owner提供。
+
+## ROG App ↔ Pi 连续阶段验收
+
+`RA2A_APP_PI_SERIAL_RESULT` 独立完成两方向：Pi→App 3个原生send唯一串行、工具结果全部confirmed/accepted，App3个原始输入来自指定Pi并进入同一未complete活跃task；Pi控制stage唯一精确ACK/stop。App→Pi 3条每次发送前重新发现ready，间隔25621/30792ms，收件、user及精确finalACK/stop各唯一，tools0/回投0。error/unknown/retry/缺失/重复/pending均0，未把3条收件算作3个Pi发送stage。证据 `C:/Users/77585/AppData/Local/RA2A-evidence/pi-app-serial-001` 保存原始入参、结果、关联与源行号。
+
+当前已验组合：CLI↔Pi 的基本回信、反向活跃22条、正向空闲22条及Pi忙时followUp；App↔Pi 的基本回信和双向连续3条（反向为活跃App任务）。当前发现三个节点均ready/stale=false，唯一Pi仍在ROG；没有OpenCode或第二个Pi端点。剩余OpenCode↔Pi、Pi↔Pi及Mac/人工/同会话resume/真实多实例/升级链路门禁未完成，不发布正式支持声明。保护快照仅活动App的models_cache变化且来源未知，其他基线一致，不能升级为全文件零差异。
