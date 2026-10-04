@@ -1,6 +1,6 @@
 # Codex CLI↔OpenCode 验收（2026-10-04）
 
-- 状态：固定会话自动收发与工作中继续执行通过；resume登记缺陷已实现、隔离原生验证并部署到ROG，等待Owner最后重开TUI验收。当前旧TUI仍是旧镜像，不能宣称完整适配通过。
+- 状态：固定会话自动收发与工作中继续执行通过；resume修复已部署，Owner已重开并resume原会话，现场动态登记及消息/精确ACK落点通过。当前窗口显示和继续输入仍待Owner确认，不能宣称完整人工验收通过。
 - Codex CLI：`ra2a://ubuntu407/01a0f6ff-b902-7970-acba-ef8d3451c6f7`。
 - OpenCode：Owner指定 `ra2a://rog306/ses_efcdeaba1ffeWmQEng78CCAXRO`；首次发现node ready/stale=false、agent=opencode/session ready。
 - 收件、业务回信、任务完成分别记录；accepted不等于任务完成。不确定写入不重发。
@@ -17,8 +17,8 @@
 | O05 | 双向工作中收件 | PASS：OC busy时444ms收件，原两次等待完成、parent切换、双marker；反向CLI活跃22收件 |
 | O06 | 单次有界交错业务回复 | PASS：WORKING_BASE业务回信与忙态FOLLOWUP独立受理，固定次数、零重发 |
 | O07 | 多端点归属/故障恢复边界 | 适配器/租约/故障分类隔离fixture PASS；真实OC server退出恢复、物理断网未测 |
-| O08 | 重启后TUI内resume/会话切换归属 | 原实现FAIL；新实现Linux/Windows真实native route切换PASS，ROG已部署，现场待Owner验收 |
-| U01 | 人工显示与继续输入 | FAIL（旧实现resume后探针进入隐藏startup session）；修复部署后重新验证 |
+| O08 | 重启后TUI内resume/会话切换归属 | 修复后PASS：隔离原生及ROG现场动态登记恢复原ID，验证消息/精确ACK落在原会话 |
+| U01 | 人工显示与继续输入 | 旧实现FAIL保留；修复后Owner已重开/resume，窗口显示和继续输入待确认 |
 | P01 | CLI/App/OpenCode/认证/代理保护 | 正式PID/config/auth/launcher/proxy前后保护一致；PRECHECK误启动偏差单独披露 |
 
 ## 执行纪律
@@ -89,7 +89,14 @@ Ubuntu证据存忽略目录 `.cache/cli-opencode-acceptance/`；ROG目录由接�
 - 仅替换两个正式路径：RA2A SHA256=DCE0B8B597350C7867DACF15CB1A18CDE2F0A2077879947A97EE62629B2CB80E；wrapper SHA256=FA40141EED8203CDE7ED1C333CF9DB14CFD5F907C670DBC73D2ACD32BD5843D9，均与构建manifest一致。旧镜像保留retired备份；仅Stop/Start既有任务，RA2A28444→15452，task XML不变；没有installer/setup/ra2a restart/stop/exit。
 - 官方CLI/App/daemon、OpenCode owner59884/server64824/TUI65836/attach65128/MCP49100及其他保护PID/创建时间/路径保留；config/auth/launcher/nativeOpenCode/markers/proxy/owner/lease不变。只读证明shared server不属于被停task子树；正式repo未checkout/合并，.commandcode/保留。
 - 证据`C:/Users/77585/AppData/Local/Temp/ra2a-focus-deploy-131142a3730f4d76bd93410e3281abfa/`：source.tar、manifest、测试原始输出、build exit、safety-gate、before/after及protection-comparison、task XML与旧binary备份。
-- 旧TUI65836继续使用旧wrapper及legacy lease，当前仍发布新startup地址ses_efc87e293ffeI9CnpDHyBlLN33；未投递新OC探针。须Owner最后主动关闭重开，再TUI resume原会话；不能从部署成功推断当前旧进程已经获得修复。
+- 部署当时旧TUI65836继续使用旧wrapper及legacy lease，仍发布新startup地址ses_efc87e293ffeI9CnpDHyBlLN33；当时未投递新OC探针。后来Owner主动重开/resume，结果见下节；不能从部署成功推断旧进程已经获得修复。
+
+### 现场重开/resume后只读验证
+
+- Owner确认已重开并resume。新wrapper64368的正式artifact hash匹配部署manifest；attach35376启动session为ses_ef9723c5affeJv65VnPj5e4bg8，但动态`attachment.64368`记录原测试session ses_efcdeaba1ffeWmQEng78CCAXRO，PID存活，expires1791111513923大于观察时刻1791111511056。这直接证明TUI恢复后登记不再固定在startup参数。旧startup legacy lease已不在，误操作留下的dead57012证据仍保留。
+- Root发现原完整地址/Greeting/ready后，只投递一次VISIBLE_06，工具accepted；原始发送证据`.cache/oc-resume-validation/manual-visible-06.json`。ROG原生输入msg_1068ee4b5001KrBUYTpIGMMpyg、envelope message-id a24e94d5e32e00b4c1de8c6250626aa2各1；assistant msg_1068ee4fa001igjUvZpjTaLjHK的parent精确匹配，finish stop/completed1791111398371，精确ACK_RA2A_OC_RESUME_VISIBLE_06恰1、tools0。GET2026-10-04T10:57:57.792Z原始SHA256=b8431035746d12819e66d6f8d79ff0cfbe511433c0e5089bbf8a80d8556740e4。
+- 证据`C:/Users/77585/AppData/Local/Temp/ra2a-oc-resume-final-ee53fb9454604fe09c85331acf57427b`：dynamic-lease、原始messages与matching、plugin-config hashes及protection。官方CLI/App/daemon/auth/config/launcher/proxy、OpenCode server64824/MCP49100保持部署快照；Owner重开引起wrapper/TUI PID变化单独记录。
+- 原生后台ACK不证明屏幕已呈现；窗口可见性及继续输入仍需Owner确认。实际wrapper继承的OPENCODE_TUI_CONFIG值未捕获，不声称该override不存在或其文件已现场比对；已核对标准opencode.json与临时插件文件，原override复制语义另由测试覆盖。
 
 ## 人工操作与观察清单（ROG已部署，现在可执行）
 
