@@ -118,10 +118,10 @@ Pi 原生工具 → 既有 control → 统一 Registry/LAN → 其他 Agent
 #### Pre-Phase Plan Rebase Gate
 
 - Rebase scope：P1 实现、全部剩余安装/平台/验收工作与保护证据。
-- Material plan delta：pending。
-- Plan delta record：pending。
-- User approval：pending-if-material。
-- Gate status：pending。
+- Material plan delta：engineering-only；先以 ROG 已安装的 Pi 1.0.2 做 Windows 隔离验证及 Codex CLI ↔ Pi 联调，保留其版本；其他组合仍待验。
+- Plan delta record：D2；安装入口后缀修正，默认加载验证补齐。
+- User approval：Owner 提供唯一 Pi 会话及 ROG Codex App 协助地址，授权继续准备和联调；无新增产品语义。
+- Gate status：ready for bounded ROG testing；发布门禁仍 pending。
 
 ## Product Decision Delta 与 Plan Delta
 
@@ -150,3 +150,11 @@ P0 基线：真实 Pi 1.0 PTY A→new→resume A，两个接收记录均属于 A
 - `.cache/pi-implementation/` 保留首次 fixture 失败日志：最初假凭据没有注册到所选模型 provider，后更正为专用内存 provider；另核对 1.0 公共 `streamFunction/getAllRegisteredTools/emit` 签名后修正测试夹具。没有通过修改生产收件语义绕过失败。
 - P2 仍 pending：真实 Mac/Windows、跨设备目标和全交叉、双真实实例、人工继续、自更新新插件生效链路。安装脚本升级路径与 `ra2a update` 旧进程路径不能混为一谈；见 [runbook](../../runbooks/pi-native-extension.md)。
 - 建议发布版本仍未确认，不更新 Version、不创建 tag、不改正式支持声明。
+
+## D2：ROG 原生接入与自动加载修正
+
+- ROG 保留已安装 Pi 1.0.2 / Node 24.12.0；不降级为 Linux 基线的 1.0.0。固定接口核验及 Windows 隔离 SDK/Adapter race 测试通过，不代表 Windows TUI 或全部平台通过。
+- 6448412 修正 Windows 夹具的 file URL 与失败诊断 stderr race；d21045c 将专属安装入口改为 `ra2a.js`，SDK/PTY 改为默认发现。原 `.mjs` 显式测试绕过自动扫描的缺口与原失败证据保留。
+- ROG 已以独立 archive 部署 d21045c；仅 RA2A binary 与专属插件变化、既有任务 Stop/Start，Pi 原进程保留。其 `.codex/models_cache.json` 在活动 App 期间变化，来源未归属，不宣称整个保护基线不变。
+- Owner reload 后，发现唯一 `ra2a://rog306/pi.01a10851-9e1e-7165-84c7-73b896718a09`，agent=pi/ready，能力仅 receiveText/replyAddress。首条 CLI→Pi accepted，独立 Pi→CLI 回信来源匹配；连续/活跃接收及只读原生审计仍进行中。
+- ROG 证据：`C:/Users/77585/AppData/Local/RA2A-evidence/pi-autoload-001`；本地 `.cache/pi-cross-device/`。人工、resume/多实例、App/OpenCode/Pi全交叉与其余平台门禁保持未完成。
