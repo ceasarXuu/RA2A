@@ -61,3 +61,14 @@
 - `session_start` 原生事件区分 startup/reload/new/resume/fork；`ctx.sessionManager.getSessionId()` 提供原生身份。仍需真实切换实验确认绑定时序。
 - Pi 原生扩展支持注册模型工具和注入用户消息，可优先验证扩展接入，不另建替代 TUI。
 - 官方入口：[Pi 仓库](https://github.com/earendil-works/pi)、[扩展文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)。
+
+### 首次隔离收件实验
+
+2026-10-04，使用本机 0.87.1 的真实 SDK 和内联扩展；新临时 HOME、Pi agent 目录、无真实凭据、禁止 fetch、空资源加载器、无工具和生产配置发现。
+
+- `pi.sendUserMessage()` 立即返回 undefined。
+- `input` 事件已经触发，但后续认证校验失败。
+- 宿主报告 `send_user_message` 错误，原生 user message 数为 0。
+- 因此，调用返回和 `input` 事件都不能独立作为收件成功的证明；正式接入前必须验证更晚且不依赖模型完成的确认边界。
+- Codex、RA2A 及 Pi 顶层 JSON 配置文件的内容哈希与 mtime 前后相同。
+- 原始脚本、结果、错误和保护快照在本机忽略目录 `.cache/pi-discovery/`；这只是 SDK 调研，不是 TUI、多平台或正式接入验收。
