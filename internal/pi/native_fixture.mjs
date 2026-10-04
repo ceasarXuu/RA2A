@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import { pathToFileURL } from 'node:url';
 const [pkg, extension] = process.argv.slice(2);
-const sdk = await import(path.join(pkg, 'dist/index.js'));
-const { loadExtensions } = await import(path.join(pkg, 'dist/core/extensions/loader.js'));
-const { createAssistantMessageEventStream } = await import(path.join(pkg, 'node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js'));
+const sdk = await import(pathToFileURL(path.join(pkg, 'dist/index.js')).href);
+const { loadExtensions } = await import(pathToFileURL(path.join(pkg, 'dist/core/extensions/loader.js')).href);
+const { createAssistantMessageEventStream } = await import(pathToFileURL(path.join(pkg, 'node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js')).href);
 const requests = [];
 const control = http.createServer(async (req, res) => {
   let body = ''; for await (const chunk of req) body += chunk;

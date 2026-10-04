@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,9 @@ func TestNativePiExtension(t *testing.T) {
 	reader := bufio.NewReader(stdout)
 	ready, err := reader.ReadString('\n')
 	if err != nil {
+		// Wait joins the stderr copier before reading its buffer.
+		_ = command.Process.Kill()
+		_ = command.Wait()
 		t.Fatalf("native start %v: %s", err, stderr.String())
 	}
 	t.Log(ready)
@@ -108,4 +112,21 @@ func TestNativePiExtension(t *testing.T) {
 		t.Fatalf("native Pi PTY: %v\n%s", err, output)
 	}
 	t.Log(string(output))
+}
+
+// A failed SDK import must retain diagnostics without racing exec's stderr copier.
+func TestNativePiStartupFailureDiagnostics(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node is required for the failed-import fixture")
+	}
+	t.Setenv("RA2A_PI_TEST_PACKAGE", t.TempDir())
+	t.Setenv("RA2A_PI_TEST_BINARY", "")
+	command := exec.Command(os.Args[0], "-test.run=^TestNativePiExtension$", "-test.timeout=30s")
+	output, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "native start") || !strings.Contains(string(output), "ERR_MODULE_NOT_FOUND") {
+		t.Fatalf("expected isolated startup diagnostics, got %v: %s", err, output)
+	}
+	if strings.Contains(string(output), "DATA RACE") {
+		t.Fatalf("stderr diagnostics raced: %s", output)
+	}
 }

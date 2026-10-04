@@ -43,3 +43,9 @@ GOPROXY=off go test -race -count=1 -run TestNativePiExtension -v ./internal/pi
 ## 发布前剩余验收
 
 Pi ↔ Codex App / Codex CLI / OpenCode / Pi 全交叉、真实 Mac/Windows 原生行为及私有权限、双真实 Pi 实例同会话竞争、升级全链路，以及 Owner 的可见/人工继续操作尚未完成。收件 ACK、模型回复和执行结束分别保存证据。未完成这些门槛不得列为正式支持。
+
+## Windows SDK 夹具启动诊断
+
+Windows 的动态 `import()` 不能直接使用 `C:\...` 文件路径；夹具统一以 Node `pathToFileURL()` 转换所有绝对模块路径。子进程启动失败后，应先终止本测试拥有的子进程并 `Wait()`，待 stderr copier 完成后再读取诊断缓冲区，避免错误报告自身产生 race。
+
+ROG 的 Pi 1.0.2 首轮四包 race 通过，但显式原生 SDK 测试在上述夹具启动路径失败，尚未进入收件验证，不能作为 1.0.2 兼容证据。正式 App 活动期间 `.codex/models_cache.json` 发生变化，来源未归属；保留原差异，不宣称整个保护基线完全不变。修正夹具后使用新绑定提交独立复验，不部署失败产物。
