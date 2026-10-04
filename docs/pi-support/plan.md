@@ -170,3 +170,7 @@ P0 基线：真实 Pi 1.0 PTY A→new→resume A，两个接收记录均属于 A
 - Pi→CLI ACTIVE_01–22 的22个原生tool结果全部accepted且严格串行，唯一最终ACK/stop完成；Ubuntu独立读取22个唯一原始输入，无重复，均在同一持续CLI turn。ROG证据 `pi-active22-audit-001`；本地 `.cache/pi-cross-device/ubuntu-active22-receipt.json`。
 - CLI→Pi IDLE_V2_01–22发送22/22 accepted，无error/unknown/重试，21个间隔最短8772ms，调用耗时215–3367ms；每次发送前重新发现Pi/ready及节点ready/stale=false。接收侧独立审计确认22个不同message-id，每项receipt/user/final各1、精确ACK及stop、原生parent链匹配；tools/额外输出/重复/缺失/unfinished均0。证据 `C:/Users/77585/AppData/Local/RA2A-evidence/pi-idle-v2-audit-001`。完成由原生记录证明，未以accepted预判。发送证据 `.cache/pi-cross-device/cli-pi-idle22-v2-sends.json`。
 - 旧WORK001保持未完成，旧IDLE批次投递0，没有重放。App/OpenCode/Pi全交叉、Mac、人工及真实多实例/resume仍是剩余门禁。
+
+## ROG App ↔ Pi 单条探针
+
+原生 App→Pi send 一次accepted（237ms），Pi唯一receipt/user来源为协助App完整地址；Pi唯一ra2a_send_message回信调用无caller-selected from，工具返回confirmed/accepted，精确finalACK及stop。App本地rollout行876匹配唯一回信、来源及message-id，并进入尚未complete的活跃App turn。三个阶段均有独立原始证据，未用accepted代替完成。证据 `C:/Users/77585/AppData/Local/RA2A-evidence/pi-app-probe-001`。接下来仅3条双向连续阶段验证App收件/顺序，不机械重复CLI22规模；OpenCode/Pi其他端点仍未发现，等待Owner提供。
