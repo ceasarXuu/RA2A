@@ -162,3 +162,11 @@ P0 基线：真实 Pi 1.0 PTY A→new→resume A，两个接收记录均属于 A
 ## D3：Windows 租约锁异常修复
 
 忙时现场 Pi 退出：原任务仅4次 list_targets，FOLLOWUP有receipt但尚无原生user/final；IDLE22就绪超时，实际投递0，不能算通过或22项失败。Owner提供的原终端 `EBUSY unlink → stop → heartbeat` 堆栈确认本产品异常链；初始锁来源未知。修复仅将租约维护错误降级为到期/后续恢复，清理不抛异常，不改变收件语义或重放消息。新增手写生产净8行，累计首期约379行，仍低于500行。隔离真实SDK旧实现复现退出；修复后锁故障、自动加载、22收件、TUI以及四包race通过。ROG1.0.2复验和现场忙时完整结束保持pending。
+
+## 修复后 ROG CLI ↔ Pi 阶段证据
+
+- 0f589c4 在 ROG Pi 1.0.2 显式隔离 SDK race 两项通过，leaseLockSurvived/cleanupLockSurvived=true；RA2A 与专属插件已部署。Owner reload 后原生新会话 `pi.01a10897-6200-716e-9cda-e6b0d87ed09c` 在线。它是新原生 ID，不能计作旧会话 resume 地址稳定性通过。
+- WORKING_BASE_002 的四个原生 list_targets 调用全部完成，无重复/取消/error。FOLLOWUP_002 在 BASE 工作中收到，约435ms返回accepted；原生user在BASE精确最终ACK后进入（等待41606ms），随后独立精确ACK/stop完成。进程22560持续存活。ROG证据 `C:/Users/77585/AppData/Local/RA2A-evidence/pi-work002-audit-001`。
+- Pi→CLI ACTIVE_01–22 的22个原生tool结果全部accepted且严格串行，唯一最终ACK/stop完成；Ubuntu独立读取22个唯一原始输入，无重复，均在同一持续CLI turn。ROG证据 `pi-active22-audit-001`；本地 `.cache/pi-cross-device/ubuntu-active22-receipt.json`。
+- CLI→Pi IDLE_V2_01–22发送22/22 accepted，无error/unknown/重试，21个间隔最短8772ms，调用耗时215–3367ms；每次发送前重新发现Pi/ready及节点ready/stale=false。接收侧原生逐项完成审计pending，不能以accepted预判完成。发送证据 `.cache/pi-cross-device/cli-pi-idle22-v2-sends.json`。
+- 旧WORK001保持未完成，旧IDLE批次投递0，没有重放。App/OpenCode/Pi全交叉、Mac、人工及真实多实例/resume仍是剩余门禁。
