@@ -1,4 +1,11 @@
-# RA2A v0.0.18 修复目标
+# RA2A v0.0.18 修复与发布记录
+
+## 当前状态（2026-10-04）
+
+- v0.0.18发布准备：版本号与发布说明已补齐；隔离全量测试、go vet、六组目标共18个可执行文件构建与真实Linux资产下载器安装验证通过。正式发布以tag触发的GitHub流水线及资产复核为准。
+- 最新验收：[CLI↔CLI](codex-cli-full-acceptance.md)本轮自动与人工通过；[CLI↔OpenCode](codex-cli-opencode-acceptance.md)固定会话与工作中收发通过，resume缺陷已部署并由Owner确认显示及继续输入正常。
+- CLI/OpenCode仍为预览，平台skip、未测App全交叉方向、物理断网及真实OpenCode shared-server崩溃恢复等边界保留，不能将局部实测扩大为全部宿主正式支持。
+- 以下章节是按时间追加的历史调查与阶段进展；其中“待验”不取代以上最新矩阵结论。发布说明见[releases/v0.0.18.md](../../releases/v0.0.18.md)。
 
 ## FIX-001：Windows Codex 控制目录权限兼容性
 

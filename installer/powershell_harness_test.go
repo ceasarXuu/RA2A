@@ -105,6 +105,9 @@ func TestPowerShellSourceInstallerRepointsRotatingAppPinToStandaloneCodex(t *tes
 		t.Skip("PowerShell is not installed")
 	}
 	home, fakeBin := installerEnvironment(t, "Linux")
+	// Discovery must use this fixture's standalone install even when the caller
+	// runs tests with an explicitly isolated CODEX_HOME.
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	for _, name := range []string{"codex.exe", "opencode.exe"} {
 		writeExecutable(t, filepath.Join(fakeBin, name), "#!/bin/sh\nexit 0\n")
 	}

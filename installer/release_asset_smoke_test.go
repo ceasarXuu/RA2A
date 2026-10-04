@@ -30,10 +30,10 @@ func TestActualReleaseAssetsInstallBothDetectedHarnesses(t *testing.T) {
 		writeExecutable(t, filepath.Join(fakeBin, name), "#!/bin/sh\nprintf 'native "+name+"\\n'\n")
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		asset := strings.TrimPrefix(request.URL.Path, "/download/v0.0.17/")
+		asset := strings.TrimPrefix(request.URL.Path, "/download/v0.0.18/")
 		checksum := strings.HasSuffix(asset, ".sha256")
 		asset = strings.TrimSuffix(asset, ".sha256")
-		if strings.Contains(asset, "/") || !strings.Contains(asset, "-v0.0.17-") {
+		if strings.Contains(asset, "/") || !strings.Contains(asset, "-v0.0.18-") {
 			http.NotFound(writer, request)
 			return
 		}
@@ -51,12 +51,12 @@ func TestActualReleaseAssetsInstallBothDetectedHarnesses(t *testing.T) {
 	defer server.Close()
 	command := exec.Command("sh", "../install-remote.sh")
 	command.Env = append(os.Environ(), "HOME="+home, "PATH="+fakeBin+":/usr/bin:/bin",
-		"RA2A_RELEASE_ROOT="+server.URL, "RA2A_VERSION=v0.0.17", "NO_PROXY=127.0.0.1")
+		"RA2A_RELEASE_ROOT="+server.URL, "RA2A_VERSION=v0.0.18", "NO_PROXY=127.0.0.1")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("install real Release assets: %v\n%s", err, output)
 	}
 	bin := filepath.Join(home, ".local", "bin")
-	for name, want := range map[string]string{"ra2a": "v0.0.17", "codex": "native codex", "opencode": "native opencode"} {
+	for name, want := range map[string]string{"ra2a": "v0.0.18", "codex": "native codex", "opencode": "native opencode"} {
 		run := exec.Command(filepath.Join(bin, name), "--version")
 		if name == "ra2a" {
 			run = exec.Command(filepath.Join(bin, name), "version")
