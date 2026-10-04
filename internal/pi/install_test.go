@@ -39,7 +39,7 @@ func TestInstallIsIdempotentAndPreservesPiConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(root, "extensions", "ra2a.mjs"); target != want {
+	if want := filepath.Join(root, "extensions", "ra2a.js"); target != want {
 		t.Fatalf("target = %q, want %q", target, want)
 	}
 	if !bytes.Equal(readTestFile(t, target), Extension) {
@@ -73,7 +73,7 @@ func TestInstallIsIdempotentAndPreservesPiConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if entry.Name() != "custom.mjs" && entry.Name() != "nested" && entry.Name() != "ra2a.mjs" {
+		if entry.Name() != "custom.mjs" && entry.Name() != "nested" && entry.Name() != "ra2a.js" {
 			t.Fatalf("unexpected installation residue: %s", entry.Name())
 		}
 	}
@@ -85,7 +85,7 @@ func TestInstallUpdatesOnlyOwnedExtension(t *testing.T) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(directory, "ra2a.mjs")
+	target := filepath.Join(directory, "ra2a.js")
 	if err := os.WriteFile(target, []byte("// RA2A Pi bridge: old version\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestInstallRefusesUnownedExtension(t *testing.T) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(directory, "ra2a.mjs")
+	target := filepath.Join(directory, "ra2a.js")
 	original := []byte("// another author's extension\nexport default () => {};\n")
 	if err := os.WriteFile(target, original, 0o600); err != nil {
 		t.Fatal(err)
@@ -127,7 +127,7 @@ func TestInstallDefaultsToIsolatedHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(os.Getenv("HOME"), ".pi", "agent", "extensions", "ra2a.mjs"); target != want {
+	if want := filepath.Join(os.Getenv("HOME"), ".pi", "agent", "extensions", "ra2a.js"); target != want {
 		t.Fatalf("target = %q, want %q", target, want)
 	}
 	if !bytes.Equal(readTestFile(t, target), Extension) {

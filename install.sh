@@ -44,7 +44,7 @@ OC_WRAPPER_MARKER=$BIN_DIR/.ra2a-opencode-wrapper
 
 if [ "$UNINSTALL" -eq 1 ]; then
   if [ -x "$BIN_PATH" ]; then
-    if [ -f "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/ra2a.mjs" ]; then "$BIN_PATH" pi-unregister || fail 'could not unregister Pi extension'; fi
+    if [ -f "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/ra2a.js" ]; then "$BIN_PATH" pi-unregister || fail 'could not unregister Pi extension'; fi
     "$BIN_PATH" opencode-mcp-unregister || fail 'could not unregister OpenCode MCP'
     "$BIN_PATH" opencode-server-cleanup || fail 'could not stop the shared OpenCode server'
   fi

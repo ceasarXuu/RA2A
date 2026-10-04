@@ -16,7 +16,7 @@ func ExtensionPath() (string, error) {
 		}
 		directory = filepath.Join(home, ".pi", "agent")
 	}
-	return filepath.Join(directory, "extensions", "ra2a.mjs"), nil
+	return filepath.Join(directory, "extensions", "ra2a.js"), nil
 }
 
 func Install() (string, error) {

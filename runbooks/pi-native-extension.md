@@ -8,7 +8,7 @@ Pi 1.0 的公开扩展 `sendUserMessage()` 是异步提交入口，不返回原�
 
 ## 安装与关闭
 
-- RA2A setup/restart 的安装流程检测 Pi，写入 `~/.pi/agent/extensions/ra2a.mjs`；`PI_CODING_AGENT_DIR` 可覆盖 agent 目录。
+- RA2A setup/restart 的安装流程检测 Pi，写入 `~/.pi/agent/extensions/ra2a.js`；`PI_CODING_AGENT_DIR` 可覆盖 agent 目录。
 - 正常 `pi` 启动加载该文件；`ra2a pi` 是显式安装并启动入口。没有替换官方 pi，也不修改 settings/auth/models/MCP 配置。
 - 同名非 RA2A 文件拒绝覆盖；重复安装同一内容保持文件不动。更新只替换本产品拥有的专属文件。
 - `ra2a pi-unregister` 只移除产品拥有的扩展；安装脚本卸载及 `ra2a exit` 调用归属保护的移除路径。已运行的 Pi 不被强制关闭，扩展随该进程退出释放。
@@ -49,3 +49,7 @@ Pi ↔ Codex App / Codex CLI / OpenCode / Pi 全交叉、真实 Mac/Windows 原�
 Windows 的动态 `import()` 不能直接使用 `C:\...` 文件路径；夹具统一以 Node `pathToFileURL()` 转换所有绝对模块路径。子进程启动失败后，应先终止本测试拥有的子进程并 `Wait()`，待 stderr copier 完成后再读取诊断缓冲区，避免错误报告自身产生 race。
 
 ROG 的 Pi 1.0.2 首轮四包 race 通过，但显式原生 SDK 测试在上述夹具启动路径失败，尚未进入收件验证，不能作为 1.0.2 兼容证据。正式 App 活动期间 `.codex/models_cache.json` 发生变化，来源未归属；保留原差异，不宣称整个保护基线完全不变。修正夹具后使用新绑定提交独立复验，不部署失败产物。
+
+## 自动加载入口
+
+Pi 1.0 原生全局扩展目录自动扫描 `.js` / `.ts`，不扫描 `.mjs`。专属安装文件为 `ra2a.js`；仓库中的嵌入源文件 `extension.mjs` 不需要改名。原生 SDK 及 PTY 夹具使用真实 Install 产物的默认发现路径，避免用显式 `--extension` 掩盖安装缺陷。早期部署的 `ra2a.mjs` 可保留为证据，它不会自动加载；不得仅因后缀相同删除用户其他文件。

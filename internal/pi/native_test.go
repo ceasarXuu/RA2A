@@ -26,15 +26,16 @@ func TestNativePiExtension(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	extension, err := filepath.Abs("extension.mjs")
-	if err != nil {
-		t.Fatal(err)
-	}
 	fixture, err := filepath.Abs("native_fixture.mjs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	home := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", filepath.Join(home, "pi"))
+	extension, err := Install()
+	if err != nil {
+		t.Fatal(err)
+	}
 	env := append(os.Environ(), "HOME="+home, "USERPROFILE="+home, "APPDATA="+filepath.Join(home, "app"), "LOCALAPPDATA="+filepath.Join(home, "local"), "CODEX_HOME="+filepath.Join(home, "codex"), "PI_CODING_AGENT_DIR="+filepath.Join(home, "pi"), "RA2A_PI_SESSION_DIR="+filepath.Join(home, "leases"), "XDG_CONFIG_HOME="+filepath.Join(home, "config"), "XDG_CACHE_HOME="+filepath.Join(home, "cache"), "XDG_DATA_HOME="+filepath.Join(home, "data"), "PI_OFFLINE=1")
 	command := exec.Command(node, fixture, packagePath, extension, "external")
 	command.Dir = home

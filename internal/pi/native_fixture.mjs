@@ -6,7 +6,7 @@ import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 const [pkg, extension] = process.argv.slice(2);
 const sdk = await import(pathToFileURL(path.join(pkg, 'dist/index.js')).href);
-const { loadExtensions } = await import(pathToFileURL(path.join(pkg, 'dist/core/extensions/loader.js')).href);
+const { discoverAndLoadExtensions } = await import(pathToFileURL(path.join(pkg, 'dist/core/extensions/loader.js')).href);
 const { createAssistantMessageEventStream } = await import(pathToFileURL(path.join(pkg, 'node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js')).href);
 const requests = [];
 const control = http.createServer(async (req, res) => {
@@ -23,8 +23,9 @@ const sessions = [];
 const modelRuntime = await sdk.ModelRuntime.create({ authPath: path.join(process.env.HOME, 'auth.json'), modelsPath: null,
   modelsStorePath: path.join(process.env.HOME, 'models-cache.json'), allowModelNetwork: false, refreshOnCreate: false });
 async function open(manager) {
-  const result = await loadExtensions([extension], process.cwd(), sdk.createEventBus());
+  const result = await discoverAndLoadExtensions([], process.cwd(), process.env.PI_CODING_AGENT_DIR, sdk.createEventBus());
   assert.equal(result.errors.length, 0, JSON.stringify(result.errors));
+  assert.equal(result.extensions.length, 1, 'installed bridge must be auto-discovered');
   const loader = { getExtensions: () => result, getSkills: () => ({ skills: [], diagnostics: [] }),
     getPrompts: () => ({ prompts: [], diagnostics: [] }), getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }), getSystemPrompt: () => '', getSystemPromptSource: () => undefined,

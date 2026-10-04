@@ -54,7 +54,7 @@ Pi 原生工具 → 既有 control → 统一 Registry/LAN → 其他 Agent
 |---|---|---|---|
 | Q1 | 收件成功由谁确认 | 已确认 PI2：路线 A | 不把插件收件冒充原生队列接受 |
 | Q2 | 工作中消息策略 | 已确认 PI2：followUp | 不声明 steerActiveTurn；不自动 abort |
-| Q3 | 安装与启动入口 | 已确认 PI3：安装/升级管理专属扩展，原生 pi 自动加载 | 仅写 ra2a.mjs；不改 settings/auth，不覆盖非本产品文件 |
+| Q3 | 安装与启动入口 | 已确认 PI3：安装/升级管理专属扩展，原生 pi 自动加载 | 仅写 ra2a.js；不改 settings/auth，不覆盖非本产品文件 |
 | Q4 | 发布版本 / 兼容范围 | 建议 v0.0.19；先以 Pi 1.0.0 为验证基线 | 不自行宣称兼容旧 Pi，不因为本机升级就保证三平台支持 |
 
 跨 Agent 验收范围按既有 PD26 / PD31 覆盖 Pi ↔ Codex App、Codex CLI、OpenCode 及 Pi ↔ Pi，不缩减为仅 Codex CLI。跨设备会话地址在自动本地验证完成后收集，人工操作留在最后。

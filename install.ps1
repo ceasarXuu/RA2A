@@ -43,7 +43,7 @@ $RecordedCodexNative = if (Test-Path -LiteralPath $WrapperNativePath) { (Get-Con
 if ($Uninstall) {
     if (Test-Path -LiteralPath $BinaryPath) {
         $PiAgentDir = if ($env:PI_CODING_AGENT_DIR) { $env:PI_CODING_AGENT_DIR } else { Join-Path $HOME '.pi/agent' }
-        if (Test-Path -LiteralPath (Join-Path $PiAgentDir 'extensions/ra2a.mjs')) {
+        if (Test-Path -LiteralPath (Join-Path $PiAgentDir 'extensions/ra2a.js')) {
             & $BinaryPath pi-unregister
             if ($LASTEXITCODE -ne 0) { throw 'Could not unregister Pi extension' }
         }

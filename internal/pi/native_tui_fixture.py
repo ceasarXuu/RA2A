@@ -6,7 +6,7 @@ session.write_text(json.dumps({'type':'session','version':3,'id':aid,'timestamp'
 helper=tmp/'helper.mjs';helper.write_text("import fs from 'node:fs';export default function(pi){pi.on('session_start',(e,c)=>fs.appendFileSync(process.env.PROBE_LOG,JSON.stringify({reason:e.reason,id:c.sessionManager.getSessionId()})+'\\n'));pi.registerCommand('probe-new',{handler:async(_,c)=>{await c.newSession();}});pi.registerCommand('probe-resume',{handler:async(_,c)=>{await c.switchSession(process.env.PROBE_SESSION);}});}")
 env=dict(os.environ);env.update({'PI_OFFLINE':'1','RA2A_PI_NODE_ID':'fixture-node','PROBE_LOG':str(log),'PROBE_SESSION':str(session),'TERM':'xterm-256color'})
 m,s=pty.openpty();fcntl.ioctl(s,termios.TIOCSWINSZ,struct.pack('HHHH',30,120,0,0))
-p=subprocess.Popen([str(binary),'--offline','--no-extensions','--no-skills','--no-prompt-templates','--no-context-files','--no-approve','--extension',str(extension),'--extension',str(helper),'--session',str(session)],cwd=tmp,env=env,stdin=s,stdout=s,stderr=s,start_new_session=True);os.close(s);buf=b''
+p=subprocess.Popen([str(binary),'--offline','--no-skills','--no-prompt-templates','--no-context-files','--no-approve','--extension',str(helper),'--session',str(session)],cwd=tmp,env=env,stdin=s,stdout=s,stderr=s,start_new_session=True);os.close(s);buf=b''
 leasefile=pathlib.Path(env['RA2A_PI_SESSION_DIR'])/f'attachment.{p.pid}.json'
 def drain(seconds):
  global buf
