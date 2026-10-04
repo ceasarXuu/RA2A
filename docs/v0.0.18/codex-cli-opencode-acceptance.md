@@ -1,6 +1,6 @@
 # Codex CLI↔OpenCode 验收（2026-10-04）
 
-- 状态：固定会话自动收发与工作中继续执行通过；resume修复已部署，Owner已重开并resume原会话，现场动态登记及消息/精确ACK落点通过。当前窗口显示和继续输入仍待Owner确认，不能宣称完整人工验收通过。
+- 状态：固定会话自动收发与工作中继续执行通过；resume修复已部署，现场动态登记及消息/精确ACK落点通过，Owner确认当前窗口显示和继续输入正常。resume缺陷验收闭环；未覆盖场景和平台skip保留，不扩大为全部兼容性通过。
 - Codex CLI：`ra2a://ubuntu407/01a0f6ff-b902-7970-acba-ef8d3451c6f7`。
 - OpenCode：Owner指定 `ra2a://rog306/ses_efcdeaba1ffeWmQEng78CCAXRO`；首次发现node ready/stale=false、agent=opencode/session ready。
 - 收件、业务回信、任务完成分别记录；accepted不等于任务完成。不确定写入不重发。
@@ -18,7 +18,7 @@
 | O06 | 单次有界交错业务回复 | PASS：WORKING_BASE业务回信与忙态FOLLOWUP独立受理，固定次数、零重发 |
 | O07 | 多端点归属/故障恢复边界 | 适配器/租约/故障分类隔离fixture PASS；真实OC server退出恢复、物理断网未测 |
 | O08 | 重启后TUI内resume/会话切换归属 | 修复后PASS：隔离原生及ROG现场动态登记恢复原ID，验证消息/精确ACK落在原会话 |
-| U01 | 人工显示与继续输入 | 旧实现FAIL保留；修复后Owner已重开/resume，窗口显示和继续输入待确认 |
+| U01 | 人工显示与继续输入 | 本缺陷PASS：Owner确认ROG重开/resume后消息与回复可见、可继续输入；旧FAIL保留，其他方向清单不据此推断 |
 | P01 | CLI/App/OpenCode/认证/代理保护 | 正式PID/config/auth/launcher/proxy前后保护一致；PRECHECK误启动偏差单独披露 |
 
 ## 执行纪律
@@ -96,11 +96,11 @@ Ubuntu证据存忽略目录 `.cache/cli-opencode-acceptance/`；ROG目录由接�
 - Owner确认已重开并resume。新wrapper64368的正式artifact hash匹配部署manifest；attach35376启动session为ses_ef9723c5affeJv65VnPj5e4bg8，但动态`attachment.64368`记录原测试session ses_efcdeaba1ffeWmQEng78CCAXRO，PID存活，expires1791111513923大于观察时刻1791111511056。这直接证明TUI恢复后登记不再固定在startup参数。旧startup legacy lease已不在，误操作留下的dead57012证据仍保留。
 - Root发现原完整地址/Greeting/ready后，只投递一次VISIBLE_06，工具accepted；原始发送证据`.cache/oc-resume-validation/manual-visible-06.json`。ROG原生输入msg_1068ee4b5001KrBUYTpIGMMpyg、envelope message-id a24e94d5e32e00b4c1de8c6250626aa2各1；assistant msg_1068ee4fa001igjUvZpjTaLjHK的parent精确匹配，finish stop/completed1791111398371，精确ACK_RA2A_OC_RESUME_VISIBLE_06恰1、tools0。GET2026-10-04T10:57:57.792Z原始SHA256=b8431035746d12819e66d6f8d79ff0cfbe511433c0e5089bbf8a80d8556740e4。
 - 证据`C:/Users/77585/AppData/Local/Temp/ra2a-oc-resume-final-ee53fb9454604fe09c85331acf57427b`：dynamic-lease、原始messages与matching、plugin-config hashes及protection。官方CLI/App/daemon/auth/config/launcher/proxy、OpenCode server64824/MCP49100保持部署快照；Owner重开引起wrapper/TUI PID变化单独记录。
-- 原生后台ACK不证明屏幕已呈现；窗口可见性及继续输入仍需Owner确认。实际wrapper继承的OPENCODE_TUI_CONFIG值未捕获，不声称该override不存在或其文件已现场比对；已核对标准opencode.json与临时插件文件，原override复制语义另由测试覆盖。
+- 原生后台ACK不证明屏幕已呈现；随后Owner对“当前窗口能看到消息和回复，并且可以继续输入”明确反馈“确认可以”，补齐本缺陷的独立人工证据，缺陷关闭。实际wrapper继承的OPENCODE_TUI_CONFIG值未捕获，不声称该override不存在或其文件已现场比对；已核对标准opencode.json与临时插件文件，原override复制语义另由测试覆盖。
 
-## 人工操作与观察清单（ROG已部署，现在可执行）
+## 人工操作与观察清单
 
-由Owner最后关闭并按平常方式重开ROG OpenCode，用TUI resume恢复想继续的原会话，然后通知Ubuntu已恢复。Ubuntu刷新发现并核验动态focus租约对应当前TUI，再向该完整地址只投递一条显示探针，Owner观察原窗口是否实时显示消息/回复并可继续输入。若恢复原旧测试会话ses_efcdeaba1ffeWmQEng78CCAXRO，该地址应重新发布，新startup地址应撤销。每项反馈通过/失败、设备、现象及时间；unknown不重复投递。
+本次resume验收已完成：Owner按平常方式重开并恢复原测试会话，Ubuntu核验动态focus与原地址，VISIBLE_06只发一次，Owner确认当前窗口消息/回复显示及继续输入正常。下表保留原双向清单供其他方向验收使用，不要求为了本缺陷重复已经完成的操作，也不将本次反馈扩展为其他方向的人工确认。
 
 | 顺序 | 操作 | 观察 |
 | --- | --- | --- |
