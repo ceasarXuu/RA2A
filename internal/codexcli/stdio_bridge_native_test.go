@@ -81,7 +81,12 @@ func TestNativeStdioBridgeReceiptAndOwnerContinuation(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Error("stdio bridge pumps did not stop")
 		}
-		_ = cmd.Wait() // Direct child only; CommandContext stops this owned process.
+		waitErr := cmd.Wait() // Direct child only; cancellation may produce nonzero exit.
+		if cmd.ProcessState == nil || !cmd.ProcessState.Exited() && waitErr == nil {
+			t.Errorf("owned native child exit unconfirmed: %v", waitErr)
+		} else if cmd.ProcessState != nil {
+			t.Logf("owned native child reaped: pid=%d exitCode=%d state=%s waitErr=%v", cmd.Process.Pid, cmd.ProcessState.ExitCode(), cmd.ProcessState, waitErr)
+		}
 		<-client.done
 	})
 	init := client.call(t, ctx, "initialize", map[string]any{
@@ -91,7 +96,7 @@ func TestNativeStdioBridgeReceiptAndOwnerContinuation(t *testing.T) {
 	var initialized struct {
 		CodexHome string `json:"codexHome"`
 	}
-	if json.Unmarshal(init, &initialized) != nil || filepath.Clean(initialized.CodexHome) != filepath.Clean(home) {
+	if json.Unmarshal(init, &initialized) != nil || !sameStdioFixtureDirectory(initialized.CodexHome, home) {
 		t.Fatalf("native home escaped fixture: %s; stderr=%s", init, stderr.String())
 	}
 	client.write(t, map[string]any{"method": "initialized", "params": map[string]any{}})
@@ -175,6 +180,31 @@ func TestNativeStdioBridgeReceiptAndOwnerContinuation(t *testing.T) {
 		t.Fatal("rejected input reached mock provider")
 	}
 	t.Logf("native stdio receipt, owner continuation, missing/sleeping rejection verified; pid=%d", cmd.Process.Pid)
+}
+
+// Native may canonicalize /tmp to /private/tmp; identity must still be exact.
+func sameStdioFixtureDirectory(actual, expected string) bool {
+	if !filepath.IsAbs(actual) || !filepath.IsAbs(expected) {
+		return false
+	}
+	a, aErr := os.Stat(actual)
+	b, bErr := os.Stat(expected)
+	return aErr == nil && bErr == nil && a.IsDir() && b.IsDir() && os.SameFile(a, b)
+}
+
+func TestStdioFixtureDirectoryIdentity(t *testing.T) {
+	home, other := t.TempDir(), t.TempDir()
+	if !sameStdioFixtureDirectory(home, home) || sameStdioFixtureDirectory(other, home) || sameStdioFixtureDirectory(filepath.Join(home, "missing"), home) || sameStdioFixtureDirectory(".", home) {
+		t.Fatal("directory identity gate accepted a different/missing/relative home")
+	}
+	alias := filepath.Join(other, "alias")
+	if err := os.Symlink(home, alias); err != nil {
+		t.Logf("directory alias unavailable on this host: %v", err)
+		return
+	}
+	if !sameStdioFixtureDirectory(alias, home) {
+		t.Fatal("same-directory alias rejected")
+	}
 }
 
 type stdioFixtureDiagnostics struct {

@@ -285,3 +285,10 @@
 - 模拟协议go test -race ./internal/codexstdio -count=1通过（1.073s），覆盖ID碰撞、server request同ID、禁止第二初始化、丢ACK/迟到响应、error/空/null收件拒绝、断链与阻塞写取消。未写取消不关闭原客户端，真实写错误关闭桥接并返回错误。
 - 实际Linux官方0.161.0直接app-server + fresh home/8env/file mock凭据/plugins=false：TestNativeStdioBridgeReceiptAndOwnerContinuation -race通过；原客户端创建thread，桥输入同步返回原生ACK，原客户端收到turn/userMessage/completed，mock收到输入；原客户端再独立输入成功。missing拒绝，原客户端退订后loaded撤回且writer文件不存在，桥向卸载thread输入拒绝，不新建writer/不向mock投递。没有正式IPC、服务或用户配置操作。
 - Windows amd64与Mac arm64新模块交叉构建exit0，仅编译证明；未执行跨平台原生或真实Desktop UI。原型不证明actual writer仲裁或原App可无损接管，整体issue2尚未根治。
+
+## Evidence E-027
+
+- ROG报告01e89a48cdb60c5782dd5d246196c7fc：58cffe9隔离启动器使用PowerShell自动变量$Args，--version未传入，native空参报stdin is not a terminal并退出；两项测试NOT RUN，不是模块失败。已发002限定修正私有启动器参数名/传递，再开展原首次测试；不改绑定源码或正式配置。
+- Mac报告d558f05078b4041f00d909cfc779aa24：58cffe9协议-race PASS，真实App内置0.162.0-alpha.2初始化返回/private/tmp而fixture使用/tmp，filepath.Clean比较失败；只读stat证实同一目录身份。测试尚未创建thread，原生收件/继续未验证；正式保护不变，测试子进程已退出，旧cmd.Wait未记录退出码。
+- 对此测试门禁最小修订为两个绝对路径均stat成功且为目录并os.SameFile；不同、缺失或相对路径仍拒绝，真实别名允许。临时子进程Wait后记录ProcessState/ExitCode/错误，不把取消终止的非零退出包装为自然成功。仅fixture变化，生产240行保持，旧平台错误证据保留；真实Desktop仍不启动。
+- 修订后Linux0.161.0两项最小-race验证PASS，package2.390s；目录不同/缺失/相对拒绝与symlink同身份允许通过；原生收件/owner继续/卸载拒绝通过。临时PID1757800已Wait，cleanup明确exitCode=-1/state=signal:killed/waitErr=signal:killed（测试CommandContext取消直接子进程），不是自然exit0。Mac修订后结果待原生复验。

@@ -286,3 +286,5 @@ internal/codexowner.ReadWriter以lock文件device/inode匹配/proc/locks的FLOCK
 真实隔离命令：`RA2A_TEST_CODEX_BIN=<官方绝对路径> GOPROXY=off go test -race ./internal/codexcli -run '^TestNativeStdioBridgeReceiptAndOwnerContinuation$' -count=1 -timeout 90s -v`。fixture直接启动自己的stdio app-server，8个profile/temp环境隔离、file mock凭据、plugins=false，不走正式daemon/IPC。thread_unload_delay_secs=1仅写入临时配置，用于退订后等待卸载并核不唤醒；不调整正式用户延迟。
 
 Linux0.161.0已验证输入ACK/通知/原客户端继续/卸载拒绝。该实验不证明真实Desktop屏幕、权限审批交互或跨平台holder仲裁；Windows固定codex-ipc命名管道未隔离，不能因此启动第二个Desktop App。模块不接正式发现/投递，不部署。
+
+macOS native initialize会将/tmp canonicalize为/private/tmp；临时home门禁比较实际目录身份（绝对路径、stat目录、os.SameFile），不能只filepath.Clean字符串，也不能通过放宽前缀绕隔离。子进程cleanup记录cmd.Wait与ProcessState；取消后的signal/非零退出如实保存，已Wait与自然exit0分开。PowerShell私有启动器参数避开$Args等自动变量，.NET ArgumentList逐项传递，版本命令失败不能把未执行的go test记为失败或skip。
