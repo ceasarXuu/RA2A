@@ -217,3 +217,12 @@
 - application-network-startup-Bt0a8E1L.js=aa5478e31c8a623632dfedffcecfbe40d5033d38a8504649716657681a0840b4：spawn stdio三pipe，send JSON+newline写proc.stdin，native参数app-server --analytics-default-enabled无listen。实际backend28172/parent12628也hasListen=false；支持当前App自身stdio，不证明可另连接的安全socket，未复制或注入正式流。
 - 对ROG产物modified=true补充：当时部署聊天记录只见.commandcode/未跟踪、tracked diff0，与Git未跟踪dirty标记相容；没有精确构建输入manifest，不能宣称可复现来源已证。现场保护hash及正式进程创建身份报告未变，未业务请求、部署或重启。
 - 私有证据在ROG PRECHECK目录app-interface-excerpts.json、interface-final-baseline.json，包含文件/offset/源码摘录。Mac同版本独立报告仍待返回；本项目只补充SelectThreadOwner注释，明确pin客户端不锁writer且不关闭resume回退，避免未来误用，不改变功能。
+
+## Evidence E-020
+
+- 类型：Mac当前安装App独立静态核验报告，消息ID542b2b501a5d7d8e1fbe4a729bc9496b；对应H-009/E-019跨平台调用链对照。
+- App26.1002.52244；app.asar SHA256=40efd7acdf03a24817fcd7f35684fc2173b154df06774243cb4ab227e36fa915，bootstrap-CTpobVUg.js=db1f524387e9e3bfc5b72cb1b4180dd30fe53a307c9c3b4f224ae0e50399a21c；src-BPM2XJL0.js与ROG同hash0f43ea10acf2852395ba10a8a24838bc5646b8543197e8eeadd1e4fadea4c7b1。
+- 实际包Yv字符offset747779在初始role=follower/no-client-found后markConversationNeedsResumeForUnavailableOwner→resumeConversationForUnavailableOwner，start1068626/steer1078990调用Yv，返回null后检查owner并本地发送；_se初始assertThreadFollowerOwner不能覆盖后续await迁移。恢复调用链终至thread/resume重试helper，与ROG独立路径证据一致。
+- 外部targetClientId/hostId/timeoutMs只路由等待；steer expectedTurnId只约束turn，不能当writer。内部函数钩子仍没有已证远程JSON传递方式；完整外部schema缺证保留unknown，不宣称全接口不存在。当前已核路径不能保证禁止恢复。
+- 私有证据/tmp/ra2a-app-interface-20261008-001/manifest.json、call-chain-snippets.txt及静态包文件；未接/复制stdio，实际backend安全外部复用unknown。本轮未运行App代码、获取锁、投递业务、改正式设置/进程。两端仅静态证明恢复分支，不宣称此次已重现抢锁。
+- 产品PD36/37继续有效；完整动态仲裁依赖尚未证实的宿主writer查询与无恢复条件接口。禁止以增加轮询、静态优先级、修改官方App或部署unknown占位来偷换这两个条件；不得据此标记根治完成。
