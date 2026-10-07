@@ -50,7 +50,8 @@ func (client *Client) FindThreadOwner(ctx context.Context, threadID string) (str
 
 // SelectThreadOwner pins subsequent follower requests to a discovered owner.
 // The caller must refresh ownership evidence before delivery; discovery alone
-// does not change this selection. Empty clears the explicit selection.
+// does not change this selection. This pins only the IPC client, not the native
+// writer lock, and does not disable Desktop's resume fallback. Empty clears it.
 func (client *Client) SelectThreadOwner(ownerID string) {
 	client.ownerID = ownerID
 }

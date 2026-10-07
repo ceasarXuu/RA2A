@@ -81,4 +81,5 @@
 - Darwin 固定 XNU f6217f8 的 F_FLOCK 以 fileglob 持有、lf_owner=NULL，F_GETLK 返回 PID=-1；现代 lsof 1ebf257 的 Darwin 路径仅枚举 vnode/openflags，没有实际锁owner读取。文件打开者或曾锁位不能满足本契约。
 - Windows LockFileEx 没有owner返回；FileProcessIdsUsingFileInformation/RmGetList枚举文件使用者，不能证明byte-range实际持锁者；FILE_LOCK_INFO虽然有ProcessId却属于内核system-use，不是已证可部署用户态reader。
 - App backend现有匿名stdio由App独占协议流，没有已证外部可另接入原生已有thread-only投递入口；禁止通过复制其FD注入/争读响应。当前外部IPC仍带UI恢复分支。
+- ROG实际Appx26.1002.7124.0/asar26.1002.52244/backend0.162.0-alpha.2的只读核验也证实Yv在follower no-client-found后调用resumeConversationForUnavailableOwner，最终thread/resume。targetClientId仍仅固定IPC client。完整schema未取得，不能据此宣称所有可能接口不存在；已检查入口不具备已证禁止恢复保障，Mac独立新版本核验尚待返回。
 - 因此当前无法声明三平台严格契约已可实现。下一技术选项必须先证明官方owner接口/禁止恢复入口或受批准的宿主协作机制；不以驱动、句柄劫持或静态优先级绕过限制。

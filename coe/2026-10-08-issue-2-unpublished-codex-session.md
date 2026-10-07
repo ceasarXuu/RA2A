@@ -195,7 +195,7 @@
 
 ## Hypothesis H-009
 
-- 状态：open；对应E-017新版本差异。
+- 状态：blocked；对应E-017/E-019。已检查的新版follower路径仍带resume，不能通过门禁；完整接口集合缺schema，不把局部证据升级为全接口不存在。
 - 主张：ROG当前App版本可能提供与Ubuntu不同的已有writer-only投递接口；现有证据不能确认或排除。
 - 预测：若有可用接口，已安装协议schema与handler应出现可由外部JSON调用的禁止恢复/预期writer条件，且执行路径在角色失效或not-found后不resume。只有内部函数钩子、UI owner或普通turn/start名称不足以通过。
 - 诊断证据计划：ROG只读固定实际App包hash/版本，定位owner discovery、follower start/steer及恢复分支调用链、支持的请求字段与backend传输形态；不调用业务接口、不获取writer锁、不修改宿主。明确参数和无恢复路径支持假说，仍有恢复或无外部入口则反驳当前可用接口主张。
@@ -207,3 +207,13 @@
 - Mac报告此前用户授权部署来源临时clone /tmp/ra2a-dev-h4OG7M2k，RA2A显示v0.0.18、revision38589fbca9e36514ed8aca748cc0c6ce8aeab4ad、modified=false、binary SHA256=f0091e06e9a02bc58471e1894d22edc88b224a6dac2d8337f54daa5d2fef7af8、运行PID71269映像inode一致。原分叉repo HEADffb52fd、ahead5/behind156和.commandcode/保留。本轮未部署/服务操作。
 - 私有证据/tmp/ra2a-owner-precheck-20261008-001/evidence.json；保护hash/mtime/进程身份基线仅本轮快照，不推断未来持续不变，未输出凭据。与ROG共同触发H-009当前App新版本接口只读核验。
 - 向ROG与Mac各唯一发送APP_INTERFACE_20261008_001控制请求，均原始accepted/isError=false，尚待接口源码报告；仅诊断，不做动态切换或业务验证。
+
+## Evidence E-019
+
+- 类型：ROG新版实际App包只读调用链报告，消息ID56635feaf5a6e0d8baeb9d74d5960558；对应H-009禁止恢复/预期writer条件证据计划。尚未独立读取本机私有附件，保留为接收端详细源码报告。
+- 实际Appx26.1002.7124.0，asar package版本26.1002.52244，backend0.162.0-alpha.2；app.asar SHA256=76fe7078248c00e4e03dd2177a4275ec9ce158a9dd43452a4f0427d39a4ed012；bootstrap-Dz9A8y86.js=a70497f5ffa764fe74f4de7ac05a5f73aff8d1e2f44de4476d1d9a684af43ddd；src-BPM2XJL0.js=0f43ea10acf2852395ba10a8a24838bc5646b8543197e8eeadd1e4fadea4c7b1。
+- bootstrap _se入口assertThreadFollowerOwner，start只调用startTurn(conversationId,turnStart)，steer转发既定输入/附件/context/toolOutput字段；Fue/Bue await之后经Yv，Yv捕获follower no-client-found后markConversationNeedsResumeForUnavailableOwner→resumeConversationForUnavailableOwner，随后本地执行。resumeThread明确sendRequest thread/resume。因此targetClientId不保证writer epoch，也不禁止睡眠窗口恢复。
+- start上下文内部beforeSendRequest/assertRequestCurrent是可调用函数钩子，外部JSON不能提供函数；steer入口不转发这些钩子。协议版本表不是完整schema，未拿到完整schema，不能宣称全部接口没有loadedOnly/expectedWriter。已核实入口没有已证安全条件，动态集成门禁继续未通过。
+- application-network-startup-Bt0a8E1L.js=aa5478e31c8a623632dfedffcecfbe40d5033d38a8504649716657681a0840b4：spawn stdio三pipe，send JSON+newline写proc.stdin，native参数app-server --analytics-default-enabled无listen。实际backend28172/parent12628也hasListen=false；支持当前App自身stdio，不证明可另连接的安全socket，未复制或注入正式流。
+- 对ROG产物modified=true补充：当时部署聊天记录只见.commandcode/未跟踪、tracked diff0，与Git未跟踪dirty标记相容；没有精确构建输入manifest，不能宣称可复现来源已证。现场保护hash及正式进程创建身份报告未变，未业务请求、部署或重启。
+- 私有证据在ROG PRECHECK目录app-interface-excerpts.json、interface-final-baseline.json，包含文件/offset/源码摘录。Mac同版本独立报告仍待返回；本项目只补充SelectThreadOwner注释，明确pin客户端不锁writer且不关闭resume回退，避免未来误用，不改变功能。
