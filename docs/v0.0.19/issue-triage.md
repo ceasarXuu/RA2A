@@ -68,3 +68,9 @@ Owner 已授权先修问题，本轮在 Ubuntu main 实施；初始工作区 cle
 Owner 明确原始来源为 MacMini M2，原目标为当前 `ra2a://ubuntu407/01a0f6ff-b902-7970-acba-ef8d3451c6f7`。旧 CLI 登记与现 App 宿主冲突确认为该目标根因。备份后执行既有 release-cli，只重启 RA2A；原 ID 现发布为 codex-app，单次收件标记已真实进入原 App 会话。官方 CLI/App/daemon 进程和 config/auth/launcher 保持，RA2A 配置只改变 cliSessions，PIN/节点身份保留；二进制未升级。
 
 M2 当前不可达，原始跨设备链复验待其恢复在线。issue 保持 open，不用本机自投递替代 M2 验收。保护与原始收件证据见 coe E-006。
+
+## 重复归属冲突的根因修复调查
+
+Owner 要求根治重复出现的 CLI/App 竞争。现有手动 release-cli 恢复不足以防复发：持久登记和启动时 App 排除集合不随宿主关闭/迁移失效（coe H-004）。官方 loaded/directInput 也不是 TUI 活跃独占信号（H-005），不能机械替换为“loaded 即 CLI”。
+
+当前 App 原生只读 thread-owner-discovery 已完成正反对照（H-006），将先补可复用查询与 owner 定向能力；正式路由暂不改变。后续需把发现与投递放在相同实时归属规则下，投递前复核，禁止 unknown 后跨宿主重放。双宿主证据同时成立时的产品规则正在向 Owner 询问，未将推荐选项当作批准。该根因修复阶段新增手写生产代码总预算 500 行，正式宿主/认证/模型/代理保护约束继续有效。

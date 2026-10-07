@@ -17,17 +17,19 @@ import (
 const maxFrameBytes = 256 * 1024 * 1024
 
 type envelope struct {
-	Type           string         `json:"type"`
-	RequestID      string         `json:"requestId,omitempty"`
-	SourceClientID string         `json:"sourceClientId,omitempty"`
-	Version        int            `json:"version,omitempty"`
-	Method         string         `json:"method,omitempty"`
-	Params         map[string]any `json:"params,omitempty"`
-	ResultType     string         `json:"resultType,omitempty"`
-	Result         map[string]any `json:"result,omitempty"`
-	Error          any            `json:"error,omitempty"`
-	Request        map[string]any `json:"request,omitempty"`
-	Response       map[string]any `json:"response,omitempty"`
+	Type              string         `json:"type"`
+	RequestID         string         `json:"requestId,omitempty"`
+	SourceClientID    string         `json:"sourceClientId,omitempty"`
+	HandledByClientID string         `json:"handledByClientId,omitempty"`
+	TargetClientID    string         `json:"targetClientId,omitempty"`
+	Version           int            `json:"version,omitempty"`
+	Method            string         `json:"method,omitempty"`
+	Params            map[string]any `json:"params,omitempty"`
+	ResultType        string         `json:"resultType,omitempty"`
+	Result            map[string]any `json:"result,omitempty"`
+	Error             any            `json:"error,omitempty"`
+	Request           map[string]any `json:"request,omitempty"`
+	Response          map[string]any `json:"response,omitempty"`
 }
 
 // StartModelResolver reports the model a thread is currently using. It exists
@@ -38,6 +40,7 @@ type StartModelResolver func(context.Context, string) (string, error)
 type Client struct {
 	conn     net.Conn
 	clientID string
+	ownerID  string
 }
 
 type TurnResult struct {
@@ -144,6 +147,7 @@ func (client *Client) StartTurn(
 	request := envelope{
 		Type:           "request",
 		SourceClientID: client.clientID,
+		TargetClientID: client.ownerID,
 		Version:        2,
 		Method:         "thread-follower-start-turn",
 		Params: map[string]any{
@@ -233,6 +237,7 @@ func (client *Client) steerTurn(
 	result, err := client.call(ctx, envelope{
 		Type:           "request",
 		SourceClientID: client.clientID,
+		TargetClientID: client.ownerID,
 		Version:        1,
 		Method:         "thread-follower-steer-turn",
 		Params: map[string]any{
@@ -301,23 +306,31 @@ func isEmptyModelRejection(err error) bool {
 }
 
 func (client *Client) call(ctx context.Context, request envelope) (map[string]any, error) {
+	response, err := client.callEnvelope(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	return response.Result, err
+}
+
+func (client *Client) callEnvelope(ctx context.Context, request envelope) (envelope, error) {
 	request.RequestID = newRequestID()
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := client.conn.SetDeadline(deadline); err != nil {
-			return nil, err
+			return envelope{}, err
 		}
 		defer client.conn.SetDeadline(time.Time{})
 	}
 	if err := writeFrame(client.conn, request); err != nil {
-		return nil, err
+		return envelope{}, err
 	}
 	for {
 		response, err := readFrame(client.conn)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return envelope{}, ctx.Err()
 			}
-			return nil, err
+			return envelope{}, err
 		}
 		if response.Type == "client-discovery-request" {
 			if err := writeFrame(client.conn, envelope{
@@ -325,7 +338,7 @@ func (client *Client) call(ctx context.Context, request envelope) (map[string]an
 				RequestID: response.RequestID,
 				Response:  map[string]any{"canHandle": false},
 			}); err != nil {
-				return nil, err
+				return envelope{}, err
 			}
 			continue
 		}
@@ -333,9 +346,9 @@ func (client *Client) call(ctx context.Context, request envelope) (map[string]an
 			continue
 		}
 		if response.ResultType == "error" || response.Error != nil {
-			return nil, &requestRejectedError{Method: request.Method, Cause: response.Error}
+			return response, &requestRejectedError{Method: request.Method, Cause: response.Error}
 		}
-		return response.Result, nil
+		return response, nil
 	}
 }
 
