@@ -1,7 +1,7 @@
 # PRD：下一版本 Pi Agent 支持
 
 - 状态：Ready for implementation；发布准入仍以验收证据为准。
-- 版本：下一版本，版本号暂未确认；当前已发布 v0.0.18。
+- 版本：v0.0.19；当前已发布 v0.0.18。版本目标见[索引](../v0.0.19/README.md)。
 - 请求：Owner「开始下一个版本，做对 pi agent 的支持」。
 - 既有产品约束：[统一互通 PRD](../v0.0.15/prd.md) 的 PD26–PD33 继续有效；本文不替代这些决策。
 - 工程方案：[plan.md](./plan.md)（P1 本地验证通过，P2 验收待完成）。
@@ -52,7 +52,7 @@
 ## Open Questions And Risks
 
 - 全交叉准入沿用既有 PD26 / PD31，包括 Pi ↔ Codex App、Codex CLI、OpenCode 及 Pi ↔ Pi；此前范围提问未获答复，不将其升级为新确认，也不缩减既有准入门槛。
-- 版本号和用于跨设备验收的 Pi 会话尚未指定。
+- Owner 已将本阶段新目标纳入 v0.0.19；ROG Pi 会话已用于阶段验收，剩余跨设备端点仍待准备。
 - 本机安装包已按 Owner 要求从 `@earendil-works/pi-coding-agent` 0.87.1 升级到 1.0.0；后续调研以 1.0.0 为基线，最低兼容版本待技术验证。
 - 扩展 `sendUserMessage()` 返回 void，并在宿主中异步捕获失败；调用返回本身不足以证明收件。需要先实验确认可靠收件边界，不能重复上一版本的确认耦合问题。
 
@@ -86,4 +86,4 @@ Owner 要求先升级 Pi，避免基于旧接口继续适配。已沿用本机�
 
 在同样隔离 SDK 条件下重新执行无凭据反例，1.0.0 仍出现调用返回 undefined、input 已触发、后续 send_user_message 认证错误、user message 数为 0；保护文件哈希与 mtime 未变化。原始结果在 `.cache/pi-discovery/`。独立只读源码核对进一步确认：RPC 暴露的 preflight queued/started/handled 回调未通过普通扩展 sendUserMessage 暴露，user message_start 要等排队消息消费，不能代表即时入队。
 
-Owner 已授权原生扩展明确收件、模型输入另行处理的路线（PI2）及安装/升级流程接入（PI3）。本地验证通过；插件 ACK 不等同 Pi 原生入队。版本号仍后置，未创建发布标签。
+Owner 已授权原生扩展明确收件、模型输入另行处理的路线（PI2）及安装/升级流程接入（PI3）。本地验证通过；插件 ACK 不等同 Pi 原生入队。发布目标已确定为 v0.0.19，未创建发布标签。

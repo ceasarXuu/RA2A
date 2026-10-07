@@ -1,7 +1,7 @@
 # 下一版本 Pi 支持工程方案
 
 - 状态：P1 已实现并完成本地隔离验证；P2 跨平台/全交叉尚未完成。Owner 在插件与安装职责说明后要求「开始实施ba」。
-- 发布版本：下一版本；建议 v0.0.19，尚未确认，暂沿用主题目录。确认后迁至 `docs/releases/<version>/pi-support/plan.md`，不保留两份有效方案。
+- 发布版本：v0.0.19；Owner 于2026-10-08明确将当前会话地址和PIN查询纳入该版本。版本索引见[README](../v0.0.19/README.md)；Pi主题文档保持单一来源。
 - Product Authority：[prd.md](./prd.md#confirmed-product-decisions)。该 PRD 引用的既有统一互通 PD26–PD33 继续有效，不复制或改写其权威记录。
 - Applicable Decisions：PI1–PI3、继承 PD26–PD28 / PD30–PD33；PD29 原文仅约束 Codex CLI，不自行扩展为 Pi 产品决策。
 - Plan validity：valid-with-qualifications。
@@ -55,7 +55,7 @@ Pi 原生工具 → 既有 control → 统一 Registry/LAN → 其他 Agent
 | Q1 | 收件成功由谁确认 | 已确认 PI2：路线 A | 不把插件收件冒充原生队列接受 |
 | Q2 | 工作中消息策略 | 已确认 PI2：followUp | 不声明 steerActiveTurn；不自动 abort |
 | Q3 | 安装与启动入口 | 已确认 PI3：安装/升级管理专属扩展，原生 pi 自动加载 | 仅写 ra2a.js；不改 settings/auth，不覆盖非本产品文件 |
-| Q4 | 发布版本 / 兼容范围 | 建议 v0.0.19；先以 Pi 1.0.0 为验证基线 | 不自行宣称兼容旧 Pi，不因为本机升级就保证三平台支持 |
+| Q4 | 发布版本 / 兼容范围 | v0.0.19 目标已确认；Pi 1.0.0 / ROG 1.0.2 已分平台验证，其他兼容范围待验 | 不自行宣称兼容旧 Pi，不因为本机升级就保证三平台支持 |
 
 跨 Agent 验收范围按既有 PD26 / PD31 覆盖 Pi ↔ Codex App、Codex CLI、OpenCode 及 Pi ↔ Pi，不缩减为仅 Codex CLI。跨设备会话地址在自动本地验证完成后收集，人工操作留在最后。
 
@@ -149,7 +149,7 @@ P0 基线：真实 Pi 1.0 PTY A→new→resume A，两个接收记录均属于 A
 - 保护证据 `.cache/pi-implementation/{native,gates,full}-protection.json`；Pi/Codex/OpenCode/RA2A 已检查文件未变化，没有运行正式安装器或启停正式服务。
 - `.cache/pi-implementation/` 保留首次 fixture 失败日志：最初假凭据没有注册到所选模型 provider，后更正为专用内存 provider；另核对 1.0 公共 `streamFunction/getAllRegisteredTools/emit` 签名后修正测试夹具。没有通过修改生产收件语义绕过失败。
 - P2 仍 pending：真实 Mac/Windows、跨设备目标和全交叉、双真实实例、人工继续、自更新新插件生效链路。安装脚本升级路径与 `ra2a update` 旧进程路径不能混为一谈；见 [runbook](../../runbooks/pi-native-extension.md)。
-- 建议发布版本仍未确认，不更新 Version、不创建 tag、不改正式支持声明。
+- 发布版本目标已确定为 v0.0.19；尚未发布，不更新 Version、不创建 tag、不改正式支持声明。
 
 ## D2：ROG 原生接入与自动加载修正
 
@@ -180,3 +180,7 @@ P0 基线：真实 Pi 1.0 PTY A→new→resume A，两个接收记录均属于 A
 `RA2A_APP_PI_SERIAL_RESULT` 独立完成两方向：Pi→App 3个原生send唯一串行、工具结果全部confirmed/accepted，App3个原始输入来自指定Pi并进入同一未complete活跃task；Pi控制stage唯一精确ACK/stop。App→Pi 3条每次发送前重新发现ready，间隔25621/30792ms，收件、user及精确finalACK/stop各唯一，tools0/回投0。error/unknown/retry/缺失/重复/pending均0，未把3条收件算作3个Pi发送stage。证据 `C:/Users/77585/AppData/Local/RA2A-evidence/pi-app-serial-001` 保存原始入参、结果、关联与源行号。
 
 当前已验组合：CLI↔Pi 的基本回信、反向活跃22条、正向空闲22条及Pi忙时followUp；App↔Pi 的基本回信和双向连续3条（反向为活跃App任务）。当前发现三个节点均ready/stale=false，唯一Pi仍在ROG；没有OpenCode或第二个Pi端点。剩余OpenCode↔Pi、Pi↔Pi及Mac/人工/同会话resume/真实多实例/升级链路门禁未完成，不发布正式支持声明。保护快照仅活动App的models_cache变化且来源未知，其他基线一致，不能升级为全文件零差异。
+
+## v0.0.19 新增查询目标（2026-10-08）
+
+Owner 已确认加入当前 session 投递地址查询与本机 PIN 只读查询；产品权威和验收条件见[查询 PRD](../v0.0.19/session-query-prd.md) PD34 / PD35。本 Pi 接入方案不复制新权威，也不将查询登记视为代码已实现。后续制定查询实现方案时单独核验宿主上下文、只读行为与实际增量预算，不自动扩大现阶段379行生产代码边界。Pi剩余发布门禁保持有效。
