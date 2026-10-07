@@ -292,3 +292,8 @@
 - Mac报告d558f05078b4041f00d909cfc779aa24：58cffe9协议-race PASS，真实App内置0.162.0-alpha.2初始化返回/private/tmp而fixture使用/tmp，filepath.Clean比较失败；只读stat证实同一目录身份。测试尚未创建thread，原生收件/继续未验证；正式保护不变，测试子进程已退出，旧cmd.Wait未记录退出码。
 - 对此测试门禁最小修订为两个绝对路径均stat成功且为目录并os.SameFile；不同、缺失或相对路径仍拒绝，真实别名允许。临时子进程Wait后记录ProcessState/ExitCode/错误，不把取消终止的非零退出包装为自然成功。仅fixture变化，生产240行保持，旧平台错误证据保留；真实Desktop仍不启动。
 - 修订后Linux0.161.0两项最小-race验证PASS，package2.390s；目录不同/缺失/相对拒绝与symlink同身份允许通过；原生收件/owner继续/卸载拒绝通过。临时PID1757800已Wait，cleanup明确exitCode=-1/state=signal:killed/waitErr=signal:killed（测试CommandContext取消直接子进程），不是自然exit0。Mac修订后结果待原生复验。
+
+## Evidence E-028
+
+- ROG报告8aa949b86b61ba8f06f9213e60a373dd：修正参数传递后官方0.160.0版本exit0/hash一致；发送方原指令误写-timeout30s，go参数解析exit1，unit用例未运行，native NOT RUN。不是模块断言/race失败，也不是skip。正式保护无差异。
+- 已向Mac002/ROG003下发固定6599c796ebd5ba002798d445298903098844da94独立archive，明确正确-timeout=30s/-timeout=90s与两项native/identity run选择；允许修正私有启动器后首次用例/fixture复验，保留旧证据，不扩大生产实现或部署范围。工具两端accepted仅控制消息收件，实际测试结果待回报。
