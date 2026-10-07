@@ -159,3 +159,20 @@
 - 本项目 delivery.go 仍在读和写之前 threadResume，随后 unsubscribe；可独立删除此主动恢复环节，保留已有线程读取/directInput/active-turn gate 和一次写入。
 - 已安装 bootstrap-CXJAEjVI.js：lx assertThreadFollowerOwner→startTurn→nue/rue；rue/cue 经 Zb 在角色迁移且 no-client-found 后调用 resumeConversationForUnavailableOwner。targetClientId 只固定 IPC client，不冻结 backend writer。没有发现 JSON 可传 loadedOnly/allowResume=false/expectedWriterPID/epoch；内部 assertRequestCurrent/beforeSendRequest 钩子不可远程注入。
 - 因此 IPC 查询基础能力并不等于安全末端；App 动态集成继续等待安全已有 backend 接口证据。无业务写入、正式配置/服务修改或锁获取。
+
+
+## Evidence E-014
+
+- 类型：Mac/Windows一手接口源码的独立只读调查。
+- Darwin XNU f6217f891ac0bb64f3d375211650a4c1ff8ca1ea kern_descrip.c sys_flock以fileglob作为owner，kern_lockf.c F_FLOCK设置lf_owner=NULL，lf_getlock返回PID=-1；lsof 1ebf257c64db1b2ece5e4d5e922ed711c692f161 Darwin dfile.c没有实际lockowner读取。单一opener和sticky FWASLOCKED不证明当前owner。来源 https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/kern_lockf.c。
+- Windows LockFileEx只返回成功失败；FileProcessIdsUsingFileInformation/RmGetList只有文件资源使用者集合，不能证明byte-lock holder；FILE_LOCK_INFO有ProcessId但属于内核system-use。来源 https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex 和 https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class。
+- App原目标backend stdin/stdout是匿名socket，并非可另接WebSocket入口；复制FD注入会竞争App协议流，不是安全替代。完整动态仲裁和正式部署仍不进入；不部署unknown占位reader破坏当前CLI/App使用。
+
+## Evidence E-015
+
+- 对应：H-008独立CLI修复，范围rebase记录于plan.md Phase B；类型：源码最小修复、相关race与真实原生隔离验证。
+- delivery.go删除投递前threadResume及此次unsubscribe；保留实时thread/read/directInput/active-turn与原生一次start/steer。写入错误仍unknown、不跨宿主重试。新增2行生产注释、删除旧恢复代码，本阶段保守新增累计89行，修改源文件均≤500行。
+- fake已纠正错误的“必须resume后start”假设，以官方已有内存线程模型拒绝unloaded；测试覆盖发现后unload不resume/不写、read后start/steer前unload不resume/不重放，原收件与capability回归保留。
+- GOPROXY=off go test -race ./internal/codexcli -count=1 PASS。绝对真实0.161.0二进制RA2A_TEST_CODEX_BIN opt-in TestNativeCLIIsolatedDelivery -race/count1/timeout180s PASS，24.08s：22receipt+独立owner执行/继续+heldmodel活跃receipt+隔离daemon重启+DTLS/CoAP目标隔离/关闭节点恢复/丢ACK取消不重放。
+- 临时home /tmp/ra2a-native-210171139 已移除；两个临时daemon PID1712109/1712475均不存在。临时native stop记录官方自身forced shutdown，未作用于正式宿主。
+- 未部署正式RA2A、未调整正式配置/官方宿主。上述仅验证独立禁止唤醒子项，不代表三平台动态仲裁或App安全末端已完成。

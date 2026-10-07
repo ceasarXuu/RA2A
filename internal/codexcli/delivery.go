@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
 )
@@ -90,23 +89,16 @@ func (adapter *Adapter) deliverToThread(ctx context.Context, server *appServer, 
 	callCtx, cancel := context.WithTimeout(ctx, adapter.config.CallTimeout)
 	defer cancel()
 
-	if _, err := server.threadResume(callCtx, threadID); err != nil {
-		return agentbridge.DeliveryResult{
-			Code: agentbridge.ResultNotFound, NativeErrorClass: classifyRPCError(err), Detail: err.Error(),
-		}
-	}
-	// The capability flag and the live status only come from thread/read, so the
-	// gate runs after the subscription is established and before any write.
+	// Read capability/status without loading or subscribing. Native start/steer
+	// only operate on an existing in-memory thread; never acquire a writer here.
 	thread, err := server.threadRead(callCtx, threadID)
 	if err != nil {
-		adapter.unsubscribe(ctx, server, threadID)
 		return agentbridge.DeliveryResult{
 			Code: agentbridge.ResultNotFound, NativeErrorClass: classifyRPCError(err), Detail: err.Error(),
 		}
 	}
 	if !thread.acceptsDirectInput() {
 		adapter.logger.Info("cli_capability_rejected", "endpoint_id", threadID, "capability", "canAcceptDirectInput")
-		adapter.unsubscribe(ctx, server, threadID)
 		return agentbridge.DeliveryResult{
 			Code: agentbridge.ResultUnsupported, NativeErrorClass: "capability_rejected",
 			Detail: "host has not enabled direct input for this thread",
@@ -127,14 +119,12 @@ func (adapter *Adapter) deliverToThread(ctx context.Context, server *appServer, 
 
 	turn, err := adapter.submitTurn(ctx, server, threadID, activeTurnID, text)
 	if err != nil {
-		adapter.unsubscribe(ctx, server, threadID)
 		return agentbridge.DeliveryResult{
 			Code:             agentbridge.ResultUnknown,
 			NativeErrorClass: classifyRPCError(err),
 			Detail:           err.Error(),
 		}
 	}
-	adapter.unsubscribe(ctx, server, threadID)
 	adapter.logger.Info("cli_message_received", "endpoint_id", threadID, "turn_id", turn.ID, "mode", submitMode(activeTurnID))
 	return agentbridge.Delivered(turn.ID)
 }
@@ -153,17 +143,6 @@ func (adapter *Adapter) submitTurn(ctx context.Context, server *appServer, threa
 		return server.turnSteer(callCtx, threadID, activeTurnID, text)
 	}
 	return server.turnStart(callCtx, threadID, text)
-}
-
-func (adapter *Adapter) unsubscribe(ctx context.Context, server *appServer, threadID string) {
-	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	defer cancel()
-	status, err := server.threadUnsubscribe(callCtx, threadID)
-	if err != nil {
-		adapter.logger.Info("cli_unsubscribe_failed", "endpoint_id", threadID, "error", err.Error())
-		return
-	}
-	adapter.logger.Info("cli_unsubscribed", "endpoint_id", threadID, "status", status)
 }
 
 // CheckTargetID implements agentbridge.TargetShapeChecker so the router can tell

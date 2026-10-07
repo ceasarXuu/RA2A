@@ -33,7 +33,6 @@ type fakeAppServer struct {
 
 	mu                sync.Mutex
 	calls             []string
-	resumeSeen        map[string]bool
 	threads           map[string]*fakeThread
 	activeTurns       map[string]string
 	steerExpectations []string
@@ -47,6 +46,7 @@ type fakeAppServer struct {
 	completeBeforeAck bool
 	disconnectTurn    bool
 	invalidReceipt    string
+	unloadBeforeTurn  bool
 
 	// codexHome is reported by initialize; accountReadErr and
 	// accountReadSilent shape the account read the managed-host gate performs.
@@ -75,7 +75,6 @@ func newFakeAppServer(t *testing.T) *fakeAppServer {
 	}
 	server := &fakeAppServer{
 		t: t, listener: listener, socketPath: socketPath,
-		resumeSeen:        map[string]bool{},
 		threads:           map[string]*fakeThread{},
 		activeTurns:       map[string]string{},
 		suppressDone:      map[string]bool{},
@@ -268,9 +267,6 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 		if reason, blocked := server.rejectResume[threadID]; blocked {
 			return server.rpcError(conn, id, -32600, reason)
 		}
-		server.mu.Lock()
-		server.resumeSeen[threadID] = true
-		server.mu.Unlock()
 		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": map[string]any{
 			"thread": map[string]any{"id": threadID, "status": map[string]any{"type": "idle"}},
 		}})
@@ -285,10 +281,14 @@ func (server *fakeAppServer) dispatch(conn *websocket.Conn, id int64, method str
 		server.writeJSON(conn, map[string]any{"id": id, "jsonrpc": "2.0", "result": map[string]any{"data": turns}})
 	case "turn/start", "turn/steer":
 		server.mu.Lock()
-		server.inputs = append(server.inputs, append(json.RawMessage(nil), params...))
-		if method == "turn/start" && !server.resumeSeen[threadID] {
-			server.t.Errorf("turn/start was sent before thread/resume was acknowledged for %s", threadID)
+		if server.unloadBeforeTurn {
+			delete(server.threads, threadID)
 		}
+		if server.threads[threadID] == nil {
+			server.mu.Unlock()
+			return server.rpcError(conn, id, -32600, "thread not loaded: "+threadID)
+		}
+		server.inputs = append(server.inputs, append(json.RawMessage(nil), params...))
 		if method == "turn/steer" {
 			server.steerExpectations = append(server.steerExpectations, extractString(params, "expectedTurnId"))
 		} else {

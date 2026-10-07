@@ -43,12 +43,8 @@ func TestDeliverConfirmsHostReceipt(t *testing.T) {
 		t.Fatal("delivered result must carry the turn id")
 	}
 	order := server.callOrder()
-	resumeAt, startAt := indexOf(order, "thread/resume"), indexOf(order, "turn/start")
-	if resumeAt < 0 || startAt < 0 || resumeAt > startAt {
-		t.Fatalf("thread/resume must precede turn/start, got %v", order)
-	}
-	if server.unsubscribeCount() == 0 {
-		t.Fatalf("adapter must unsubscribe so the host can unload the thread, got %v", order)
+	if countCalls(order, "turn/start") != 1 || countCalls(order, "thread/resume") != 0 || server.unsubscribeCount() != 0 {
+		t.Fatalf("delivery must use the existing thread without taking a subscription: %v", order)
 	}
 }
 
@@ -145,24 +141,32 @@ func TestDeliverDoesNotTurnLaterExecutionFailureIntoReceiptFailure(t *testing.T)
 	}
 }
 
-func TestDeliverMapsResumeRejectionToNotFound(t *testing.T) {
+func TestDeliverDoesNotWakePreviouslyPublishedThread(t *testing.T) {
 	server := newFakeAppServer(t)
 	server.addThread(testThreadID, false, true)
-	server.mu.Lock()
-	server.rejectResume[testThreadID] = "no rollout found for thread id " + testThreadID
-	server.mu.Unlock()
 	adapter := newTestAdapter(t, server)
 	t.Cleanup(func() { _ = adapter.Close() })
 	if err := adapter.Register(testThreadID); err != nil {
 		t.Fatal(err)
 	}
+	endpoints, err := adapter.ListEndpoints(context.Background())
+	if err != nil || len(endpoints) != 1 {
+		t.Fatalf("prepare loaded endpoint: %+v, %v", endpoints, err)
+	}
+	server.mu.Lock()
+	delete(server.threads, testThreadID) // Owner unloads after discovery.
+	server.mu.Unlock()
 	result := adapter.Deliver(context.Background(),
 		agentbridge.Address{NodeID: "node-a", EndpointID: testThreadID}, testEnvelope("hi"))
 	if result.Code != agentbridge.ResultNotFound {
-		t.Fatalf("resume rejection must be not_found, got %+v", result)
+		t.Fatalf("unloaded thread must be not_found, got %+v", result)
 	}
 	if result.NativeErrorClass != "thread_not_found" {
 		t.Fatalf("native class must classify the host error, got %q", result.NativeErrorClass)
+	}
+	calls := server.callOrder()
+	if countCalls(calls, "thread/resume")+countCalls(calls, "turn/start")+countCalls(calls, "turn/steer")+countCalls(calls, "thread/unsubscribe") != 0 {
+		t.Fatalf("sleeping thread must not be loaded or written: %v", calls)
 	}
 }
 

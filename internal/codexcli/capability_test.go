@@ -55,8 +55,8 @@ func TestDirectInputRequiresExplicitHostCapability(t *testing.T) {
 				} else if result.Code != agentbridge.ResultUnsupported || result.NativeErrorClass != "capability_rejected" || starts+steers != 0 {
 					t.Errorf("%s must reject with zero turn writes: result=%+v, starts=%d, steers=%d", field, result, starts, steers)
 				}
-				if server.unsubscribeCount() != 1 {
-					t.Errorf("delivery must release its subscription, got %v", calls)
+				if server.unsubscribeCount() != 0 || countCalls(calls, "thread/resume") != 0 {
+					t.Errorf("delivery must not take or release a subscription, got %v", calls)
 				}
 			})
 		}

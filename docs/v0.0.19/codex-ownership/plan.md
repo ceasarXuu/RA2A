@@ -3,7 +3,7 @@
 - 日期：2026-10-08。
 - Product Authority：./prd.md#confirmed-product-decisions。
 - Applicable Decisions：PD36、PD37。
-- 当前基准：aabcf3c；只读 Desktop owner 查询已实现，未接入仲裁 / 正式部署。
+- 设计基准：aabcf3c；只读 Desktop owner 查询已实现；后续独立 CLI 禁止投递前恢复已实现并隔离验证，完整仲裁未接入 / 未正式部署。
 - Plan validity：valid-with-qualifications；跨平台实际持锁 PID 读取与 App 冷加载竞态已证存在、末端替代接口仍需验证。
 - 证据主线：coe/2026-10-08-issue-2-unpublished-codex-session.md。
 
@@ -48,14 +48,14 @@
 
 - Pre-Phase Plan Rebase Gate：ready；现实现=aabcf3c，根治未接入；Material plan delta=none（首次按Owner新规则设计）；User approval=not-required（已授权根治及明确持锁/动态规则）。
 - 最小投入：Linux actual holder 已证；补平台读 API 与 native existing-thread 投递时序，禁止修改正式配置/宿主或获取正式锁。跨平台 holder 不能证明就标 blocked-on-discovery，不允许包装为通过。
-- Tracking：in-progress。
+- Tracking：Linux锁与CLI末端已证；Mac/Windows实际holder和App安全末端 blocked-on-discovery。不得部署返回unknown的占位reader来破坏当前正常使用。
 
 ### Phase B：最小实现（W2、W3、W4）
 
 - Pre-Phase Plan Rebase Gate：pending；进入前以 A 的真实接口 / 代码预算重新核对，重大变化才走批准门禁。
-- 预算：本批准根治阶段新增手写生产总代码≤500行，已用保守87行；所有单源文件≤500。优先删静态排除/冷resume，再改现有路径。若跨平台方案需新代理/完整lease系统或超过预算，先停止扩张并提出最小替代。
-- Tracking：not-started；不让Linux实现的成功替代Mac/Windows适用性。
-- 可独立先行项：W3 的 CLI 删除投递前 resume/unsubscribe，固定原生源码证明已有内存 thread 足以同步收件；此子项 ready，不依赖未确定的平台 reader 或 App 末端。验证必须覆盖已有线程收件、睡眠线程不唤醒、读后卸载不重放。其他 W2/W3/W4 集成仍 pending。
+- 预算：本批准根治阶段新增手写生产总代码≤500行，IPC基础已用保守87行；CLI独立子项新增2行注释、删除旧恢复/订阅流程，累计新增保守89行；所有单源文件≤500。优先删静态排除/冷resume，再改现有路径。若跨平台方案需新代理/完整lease系统或超过预算，先停止扩张并提出最小替代。
+- Tracking：完整集成 not-started；CLI独立子项 completed；不让Linux实现的成功替代Mac/Windows适用性。
+- 可独立先行项：W3 的 CLI 删除投递前 resume/unsubscribe，固定原生源码证明已有内存 thread 足以同步收件；此子项独立 rebase 为 ready，未新增产品决策或扩大范围，不依赖未确定的平台 reader 或 App 末端。验证已覆盖已有线程收件、睡眠线程不唤醒、读后卸载不重放；internal/codexcli -race通过，真实0.161.0隔离原生22收件/owner继续/活跃收件/恢复/CoAP丢ACK不重放通过。其他 W2/W3/W4 集成仍 pending。
 
 ### Phase C：原生与正式现场验收（W5）
 
@@ -68,8 +68,17 @@
 | Phase | Decision Surface | Observed Semantics | Authority Coverage | Classification | Required Action |
 |---|---|---|---|---|---|
 | 已完成只读IPC基础 | 查询与显式定向，尚未路由 | 不选固定宿主、不启动任务 | PD36/37前置技术能力 | engineering-only | 保留回归，等待实际锁接入 |
-| A | 锁证据/现有API契约 | 读取正式原目标和隔离锁，无正式写入 | PD36 | covered | 补跨平台/时序关键证据 |
+| A | 锁证据/现有API契约 | 读取正式原目标和隔离锁，无正式写入 | PD36 | covered | 跨平台holder/App安全末端仍未证 |
+| B独立CLI子项 | 禁止投递前恢复 | 已有线程直接收件，卸载不恢复，无订阅变化 | PD36/37 | covered | 代码和隔离测试完成；不等同完整仲裁通过 |
 
 ## Pending Product Decisions
 
 无待确认固定优先级；Owner 已明确以实际锁为准。工程未决：Mac/Windows reader、App handler 已证冷resume分支的安全替代、跨进程最终写入前置条件、刷新延迟实测。这些不是改用静态宿主优先级的授权。
+
+
+## 技术接口限制（2026-10-08 取证补充）
+
+- Darwin 固定 XNU f6217f8 的 F_FLOCK 以 fileglob 持有、lf_owner=NULL，F_GETLK 返回 PID=-1；现代 lsof 1ebf257 的 Darwin 路径仅枚举 vnode/openflags，没有实际锁owner读取。文件打开者或曾锁位不能满足本契约。
+- Windows LockFileEx 没有owner返回；FileProcessIdsUsingFileInformation/RmGetList枚举文件使用者，不能证明byte-range实际持锁者；FILE_LOCK_INFO虽然有ProcessId却属于内核system-use，不是已证可部署用户态reader。
+- App backend现有匿名stdio由App独占协议流，没有已证外部可另接入原生已有thread-only投递入口；禁止通过复制其FD注入/争读响应。当前外部IPC仍带UI恢复分支。
+- 因此当前无法声明三平台严格契约已可实现。下一技术选项必须先证明官方owner接口/禁止恢复入口或受批准的宿主协作机制；不以驱动、句柄劫持或静态优先级绕过限制。

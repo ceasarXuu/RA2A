@@ -93,3 +93,39 @@ func TestDeliverRequiresUnambiguousReceipt(t *testing.T) {
 		})
 	}
 }
+
+func TestDeliverDoesNotResumeOrReplayIfOwnerUnloadsBeforeWrite(t *testing.T) {
+	for _, active := range []bool{false, true} {
+		name := "start"
+		if active {
+			name = "steer"
+		}
+		t.Run(name, func(t *testing.T) {
+			server := newFakeAppServer(t)
+			server.addThread(testThreadID, active, true)
+			server.mu.Lock()
+			server.unloadBeforeTurn = true
+			server.activeTurns[testThreadID] = "active-turn"
+			server.mu.Unlock()
+			adapter := newTestAdapter(t, server)
+			t.Cleanup(func() { _ = adapter.Close() })
+			if err := adapter.Register(testThreadID); err != nil {
+				t.Fatal(err)
+			}
+			result := adapter.Deliver(context.Background(), agentbridge.Address{EndpointID: testThreadID}, testEnvelope("do not wake"))
+			if result.Delivered() {
+				t.Fatalf("unloaded thread accepted input: %+v", result)
+			}
+			calls := server.callOrder()
+			if countCalls(calls, "turn/start")+countCalls(calls, "turn/steer") != 1 || countCalls(calls, "thread/resume")+countCalls(calls, "thread/unsubscribe") != 0 {
+				t.Fatalf("owner change must not resume or replay: %v", calls)
+			}
+			server.mu.Lock()
+			writes := len(server.inputs)
+			server.mu.Unlock()
+			if writes != 0 {
+				t.Fatalf("unloaded owner received %d writes", writes)
+			}
+		})
+	}
+}
