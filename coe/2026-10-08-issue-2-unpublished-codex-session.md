@@ -123,3 +123,39 @@
 - go test -race ./internal/desktopipc ./cmd/ra2a -count=1 两包 PASS；原默认请求与低层错误语义兼容，owner 查询与显式定向、取消/超时等新增测试通过。
 - 新增生产代码保守统计 87 行（含字段格式调整），client.go 413 行，owner.go 56 行；本阶段 500 行预算继续生效。
 - 没有部署、改变路由、写正式配置、重启服务或发送业务消息；不将基础能力通过等同根治完成。剩余为实时仲裁接入和双宿主冲突规则确认。
+
+
+## Evidence E-011
+
+- 类型：Owner 直接确认，2026-10-08；覆盖 E-009/E-010 先前未决产品项。
+- Owner 明确「谁持有则登记给谁，都未持有就保持睡眠状态」，并补充「持有者切换的时候也要能及时切换过去」。固定 CLI/App 优先级问题已被此确认取代，不再待确认。
+- 产品权威 docs/v0.0.19/codex-ownership/prd.md 的 PD36/PD37；技术方案 plan.md 不得把平台取证缺口变成固定优先级或唤醒授权。
+
+## Hypothesis H-007
+
+- 状态：confirmed；对应 E-012。
+- 主张：官方 writer 锁而非登记/历史/loaded 可证明实际写入归属，锁文件残留不能证明持有。
+- 预测：当前原 App 目标 writer 锁对应 App backend；睡眠对照无 holder；独立锁释放后即使文件保留也无 holder。
+
+## Evidence E-012
+
+- 类型：固定官方 0.160/0.161 writer_lock.rs、正式原目标只读与独立原语实验。
+- 官方 CODEX_HOME/thread-writer-locks/<ID>.lock 是空文件，以排他锁保持 writer 生命周期；协调锁只管理创建移除，异常退出可留残文件，两 tag writer_lock.rs 字节相同。来源 https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/rollout/src/writer_lock.rs。
+- 原目标 Linux device/inode=103:0a:9306450，/proc/locks 精确 FLOCK ADVISORY WRITE PID888157；exe=/usr/lib/chatgpt/resources/codex，是 App 内置 app-server，进程身份与 App cgroup 匹配。App owner discovery client 与 E-009 一致。没有获取或修改正式锁。
+- 真实历史对照 01a11132-9d61-7d62-a008-32ea588dfa9d 无 writer 锁，Desktop discovery 精确 no-client-found；仅历史存在不能发布。
+- 独立临时 Rust File.try_lock 实验：PID1706610 持锁时 /proc/locks 指向它，额外只读打开不改变 holder，释放后保留文件但无锁记录；实验退出清理完成，.cache/owner-lifecycle/primitive-result.json 保存非敏感证据。
+- 跨平台局限：Darwin F_GETLK 的 flock PID=-1，FHASLOCK/FWASLOCKED sticky 不能当当前持锁 PID；Windows LockFileEx 尚无已证只读实际 holder API。不能用 openers/RestartManager 代替持锁者。
+
+## Hypothesis H-008
+
+- 状态：confirmed；对应 E-013。
+- 主张：投递前重复锁检查并非原子条件；现 CLI resume 和 App 恢复分支可在持有者变化后创建 writer，违反睡眠规则。
+- 预测：CLI 原生已有线程投递无需 resume；App follower UI 路径可能在角色失效后恢复，而现 IPC 无禁止恢复条件。
+
+## Evidence E-013
+
+- 类型：独立固定官方源代码与已安装 App 调用链只读核验。
+- 官方 0.160/0.161 turn_processor load_thread 只调用 thread_manager.get_thread 内存 map；缺失 ThreadNotFound，不 coldresume/读历史/获取 writer 锁。turn/start/steer 同步响应不依赖订阅。来源 https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/app-server/src/request_processors/turn_processor.rs 和 core/src/thread_manager.rs。
+- 本项目 delivery.go 仍在读和写之前 threadResume，随后 unsubscribe；可独立删除此主动恢复环节，保留已有线程读取/directInput/active-turn gate 和一次写入。
+- 已安装 bootstrap-CXJAEjVI.js：lx assertThreadFollowerOwner→startTurn→nue/rue；rue/cue 经 Zb 在角色迁移且 no-client-found 后调用 resumeConversationForUnavailableOwner。targetClientId 只固定 IPC client，不冻结 backend writer。没有发现 JSON 可传 loadedOnly/allowResume=false/expectedWriterPID/epoch；内部 assertRequestCurrent/beforeSendRequest 钩子不可远程注入。
+- 因此 IPC 查询基础能力并不等于安全末端；App 动态集成继续等待安全已有 backend 接口证据。无业务写入、正式配置/服务修改或锁获取。
