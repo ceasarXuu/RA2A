@@ -105,3 +105,4 @@
 - 结果：internal/codexstdio生产240行，低于本阶段300行；原客户端完成唯一初始化，App请求ID重映射并恢复，桥接响应独立消费，通知与原生权限请求透传。取消未写请求不关闭原客户端；已写无ACK不重发，迟到响应不泄漏给App。只开放既有thread查询/start/steer，不开放resume、thread/start或注入。
 - 验证：模拟协议-race通过；真实Linux官方0.161.0新建stdio backend与mock provider验证输入原生turn ACK、通知回原客户端、原客户端独立继续、missing/unloaded拒绝且不创建writer或模型输入。Windows amd64/Mac arm64仅模块交叉构建通过，尚无平台原生实验或真实Desktop渲染验证。
 - 剩余缺口：新建连接原型不接管现有App；没有executable wrapper/安装/发现路径。真实Desktop状态同步、权限交互及三平台actual holder与最终写入仲裁仍需证据，不能据本阶段批准部署或扩大实现。
+- 三端原生补验：固定6599c79，Windows官方0.160.0与Mac App内置0.162.0-alpha.2均完成指定协议/原生+目录身份两命令，真实exit0/PASS、无skip/race失败。临时backend各由fixture取消并Wait，Windowsexit1、Macsignal killed如实记录，非自然exit0；临时home清理、正式保护前后无差异。Mac旧/tmp别名失败及ROG两次启动器错误保留，均不计业务测试失败或PASS。三端隔离原型验证 completed，正式App集成及整体根治仍未完成。

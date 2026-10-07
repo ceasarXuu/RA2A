@@ -288,3 +288,5 @@ internal/codexowner.ReadWriter以lock文件device/inode匹配/proc/locks的FLOCK
 Linux0.161.0已验证输入ACK/通知/原客户端继续/卸载拒绝。该实验不证明真实Desktop屏幕、权限审批交互或跨平台holder仲裁；Windows固定codex-ipc命名管道未隔离，不能因此启动第二个Desktop App。模块不接正式发现/投递，不部署。
 
 macOS native initialize会将/tmp canonicalize为/private/tmp；临时home门禁比较实际目录身份（绝对路径、stat目录、os.SameFile），不能只filepath.Clean字符串，也不能通过放宽前缀绕隔离。子进程cleanup记录cmd.Wait与ProcessState；取消后的signal/非零退出如实保存，已Wait与自然exit0分开。PowerShell私有启动器参数避开$Args等自动变量，.NET ArgumentList逐项传递，版本命令失败不能把未执行的go test记为失败或skip。
+
+6599c79已在Windows官方0.160.0和Mac App内置0.162.0-alpha.2原生执行上述fixture通过（无skip/race失败）；Windows无ArgumentList时用固定Arguments字符串，正则作为一个参数、不携带shell单引号，timeout必须写-timeout=30s/-timeout=90s。临时进程取消后Windowsexit1、Macsignal killed是已reaped证据，不计自然成功退出。各端正式保护快照无差异；此结论仍仅限隔离协议原型。

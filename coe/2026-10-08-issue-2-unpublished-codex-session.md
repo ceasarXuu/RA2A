@@ -297,3 +297,11 @@
 
 - ROG报告8aa949b86b61ba8f06f9213e60a373dd：修正参数传递后官方0.160.0版本exit0/hash一致；发送方原指令误写-timeout30s，go参数解析exit1，unit用例未运行，native NOT RUN。不是模块断言/race失败，也不是skip。正式保护无差异。
 - 已向Mac002/ROG003下发固定6599c796ebd5ba002798d445298903098844da94独立archive，明确正确-timeout=30s/-timeout=90s与两项native/identity run选择；允许修正私有启动器后首次用例/fixture复验，保留旧证据，不扩大生产实现或部署范围。工具两端accepted仅控制消息收件，实际测试结果待回报。
+
+## Evidence E-029
+
+- ROG报告035ddddda6c6f9208b09c816300d7924：固定6599c79独立source.zip SHA256=88B9F81DA81E753BF018F9D449528CC838718314560A5637186783E068C6FABB；官方0.160.0 binary SHA256=FDDA5FA3CF3FB3D000B876720742857676293E4315E4B045FAE6F8BD7E866D1D。协议-race及原生/目录身份两命令各一次exit0/PASS、无skip/race报告，native包3.832s；新目录C:/Users/77585/AppData/Local/Temp/ra2a-stdio3-ef96c6e2保存原始日志/final.json，001/002错误保留。
+- Windows临时PID49548已Wait（exit1，取消后非自然exit0）、终点不存在，pumps退出、tmp空/home清理；正式文件hash/mtime及正式进程创建身份前后无差异。只fakeApp和独立app-server/mock，不启动Desktop或改正式配置/服务。生产bridge hash与58cffe9相同。
+- Mac报告c574a48c09326c261b9154c25c9846a2：固定6599c79 archive SHA256=aa3dc7edbdf71ba33aeb8208a88b3fc68fb1de4860ab523c16c4e6b1a625b5bc；实际App内置binary0.162.0-alpha.2 SHA256=cb4e4994627e770800a940b42969c77855a3fc09a6e60b02aa6319f670d6b6ab。协议-race1.621s、原生+目录身份包2.636s均exit0/PASS，无skip/race失败；native收件/通知/owner继续/missing与sleep拒绝断言完成。证据/tmp/ra2a-stdio-002保留原始日志/verification，旧001不删除。
+- Mac临时PID493已Wait（signal killed/exitCode=-1，取消非自然exit0），fixture资源清理；正式文件hash/mtime/inode、正式进程集合无差异。本地分叉和.commandcode/保持，仅授权fetch更新远端tracking。
+- 三平台隔离原型验证通过；仍无实际Desktop UI/权限/生命周期接入、平台actual writer与最终写入原子仲裁证明，不将此结果认定issue2整体fixed，不部署正式链路。
