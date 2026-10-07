@@ -274,3 +274,14 @@
 - bootstrap的CODEX_ELECTRON_USER_DATA_PATH隔离userData/单实例，CODEX_HOME隔离native状态及Unix ipc/ipc.sock；Windows IPC固定\\.\\pipe\\codex-ipc，不随这些变量变化，不能安全承诺第二App隔离。
 - native turn/started与item/started可以对已有conversation合成turn/userMessage并广播，未知conversation被丢弃；只是静态通知接收路径，不是原型UI实测。
 - 新代理明显扩大当前最小实现架构，按Owner AGENTS.md与plan要求已发一次明确审批问题：仅隔离stdio原型≤300新增生产行、不改正式宿主/配置/登录、不部署，Windows只模拟App+临时backend。批准未到之前不实施，不把候选当根治已可保证。
+
+## Evidence E-025
+
+- Owner直接回复「批准」，授权E-024所述隔离原型阶段；不授权正式部署、改App/CLI配置、接管既有stdio或启动Windows第二Desktop App。生产新增预算300行，此前277行独立阶段已提交，分阶段记录不合并扩大授权。
+
+## Evidence E-026
+
+- internal/codexstdio独立模块生产240行，未接正式路由；原客户端唯一初始化与capabilities保留，请求ID分离与恢复、双向server request/approval透传、桥接ACK私有、通知转原客户端。桥接口禁止resume/thread/start/fork/inject；上下文取消或断链不重放。
+- 模拟协议go test -race ./internal/codexstdio -count=1通过（1.073s），覆盖ID碰撞、server request同ID、禁止第二初始化、丢ACK/迟到响应、error/空/null收件拒绝、断链与阻塞写取消。未写取消不关闭原客户端，真实写错误关闭桥接并返回错误。
+- 实际Linux官方0.161.0直接app-server + fresh home/8env/file mock凭据/plugins=false：TestNativeStdioBridgeReceiptAndOwnerContinuation -race通过；原客户端创建thread，桥输入同步返回原生ACK，原客户端收到turn/userMessage/completed，mock收到输入；原客户端再独立输入成功。missing拒绝，原客户端退订后loaded撤回且writer文件不存在，桥向卸载thread输入拒绝，不新建writer/不向mock投递。没有正式IPC、服务或用户配置操作。
+- Windows amd64与Mac arm64新模块交叉构建exit0，仅编译证明；未执行跨平台原生或真实Desktop UI。原型不证明actual writer仲裁或原App可无损接管，整体issue2尚未根治。

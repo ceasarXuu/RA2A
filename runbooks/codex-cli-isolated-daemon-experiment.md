@@ -278,3 +278,11 @@ Mac 的旧 shell fixture 冷探测实测需 406–449ms，将其包含在 300ms 
 internal/codexowner.ReadWriter以lock文件device/inode匹配/proc/locks的FLOCK ADVISORY WRITE，结合PID、start ticks及exe并复读身份；不获取锁。文件残留、额外打开者不证明持锁。错误及unsupported不能当睡眠；该reader与被查进程必须处于同一PID/mount视图，快照不能取代写入末端条件。
 
 最小验证：`GOPROXY=off go test -race ./internal/codexowner -count=1`。fixture只在临时文件用独立测试子进程持锁，覆盖释放但保持文件打开、同inode接手、进程退出和路径inode替换。显式查询耗时不是后台发现刷新延迟，Mac/Windows交叉构建不证明实际holder可读取。该模块当前尚未接入正式路由。
+
+## 新建stdio连接的隔离桥实验（2026-10-08）
+
+`internal/codexstdio`仅用于新建模拟App与backend的四条管道，不能复制正式App描述符或与原读者争抢stdout。保留原客户端唯一initialize/capabilities及initialized通知；区分App请求、桥请求与原生server请求，迟到桥响应不能落入App。取消后不重放；桥接返回原生RPC结果，验证者还须检查有效turn ID及独立完成记录。
+
+真实隔离命令：`RA2A_TEST_CODEX_BIN=<官方绝对路径> GOPROXY=off go test -race ./internal/codexcli -run '^TestNativeStdioBridgeReceiptAndOwnerContinuation$' -count=1 -timeout 90s -v`。fixture直接启动自己的stdio app-server，8个profile/temp环境隔离、file mock凭据、plugins=false，不走正式daemon/IPC。thread_unload_delay_secs=1仅写入临时配置，用于退订后等待卸载并核不唤醒；不调整正式用户延迟。
+
+Linux0.161.0已验证输入ACK/通知/原客户端继续/卸载拒绝。该实验不证明真实Desktop屏幕、权限审批交互或跨平台holder仲裁；Windows固定codex-ipc命名管道未隔离，不能因此启动第二个Desktop App。模块不接正式发现/投递，不部署。
