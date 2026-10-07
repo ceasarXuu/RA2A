@@ -266,3 +266,11 @@
 - flag确从acceptFromFollower保留到持久storage；但prepare await权限/配置后needsResume分支可先resume，submitPrepared host.needsResume亦在admission/guard之前resume。真实函数隔离mock的needsResume=true/d=false仍记录[resume,d=false]后deferred。mock不是实际App/锁验收，但与源码顺序共同反驳先guard禁止恢复。
 - 新owner readiness/storage/turncomplete可重新加载仍保留的队列，未绑定接收时owner epoch；具体自动配置未读，不能宣称现场必重放。follower ok只确认队列持久更新，不是native ACK。因此不用此路径投递正式消息。
 - 本机独立源码也确认prepare不传入guard且在异步配置读取后resume，下一d在整个prepare返回后，支持同一反例。无正式业务、锁获取、配置或服务操作。
+
+## Evidence E-024
+
+- 新reader对原Ubuntu地址正式锁仅只读查询：PID888157/StartTicks25895141/exe=/usr/lib/chatgpt/resources/codex/Device66314/Inode9306450，与E-012旧样本一致；queryOnly=true。仅运行.cache/owner-lifecycle/reader-probe.go，未取锁/连接backend/业务写入，不是正式路由接入。
+- 独立源码候选：App application-network-startup-BEAX-hka.js的Qs支持CODEX_CLI_PATH及hostConfig.codex_cli_command，source=override通过Hs.spawnProcess的stdio pipes启动，override不走local-daemon websocket；Windows override相关registered-core条件亦区别处理。当前运行实例不能被无损接管，候选只适用于新的明确隔离进程。
+- bootstrap的CODEX_ELECTRON_USER_DATA_PATH隔离userData/单实例，CODEX_HOME隔离native状态及Unix ipc/ipc.sock；Windows IPC固定\\.\\pipe\\codex-ipc，不随这些变量变化，不能安全承诺第二App隔离。
+- native turn/started与item/started可以对已有conversation合成turn/userMessage并广播，未知conversation被丢弃；只是静态通知接收路径，不是原型UI实测。
+- 新代理明显扩大当前最小实现架构，按Owner AGENTS.md与plan要求已发一次明确审批问题：仅隔离stdio原型≤300新增生产行、不改正式宿主/配置/登录、不部署，Windows只模拟App+临时backend。批准未到之前不实施，不把候选当根治已可保证。

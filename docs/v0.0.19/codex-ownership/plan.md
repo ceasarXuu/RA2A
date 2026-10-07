@@ -93,3 +93,12 @@
 - native loaded map在ephemeral/inMemory以及shutdown已释放guard但尚未删除map时不能证明持锁；仅正常running本地persistent Session有guard生命周期依据。不能用loaded替代actual锁来绕过跨平台门禁。
 - ROG完整覆盖新版18个IPC请求注册，发现requiresExistingOwner队列flag；调用链及原函数mock证实prepare/submitPrepared可在执行guard之前resume，队列ACK只确认持久存储，并有新owner再执行路径。此入口不用于正式投递。
 - 下一独立取证仅研究App既有受支持backend executable/connection override，判断能否在完全隔离环境验证宿主协作入口。不实施stdio代理或改正式App；此架构若需新增代理/宿主配置或超过500行预算，必须先取得下一阶段批准。
+
+## 待批准的隔离桥接原型阶段
+
+- 状态：pending-user-approval，不能按「继续取证」自行进入代理实施；AGENTS.md及本Execution Contract要求新增代理的范围扩张先批准。保持PD36/37，不修改已确认产品规则。
+- 新证据：App支持进程级CODEX_CLI_PATH覆盖backend启动，以及CODEX_ELECTRON_USER_DATA_PATH/CODEX_HOME隔离数据；已有conversation的native turn/started与item/started可被App映射至UI stream，未知conversation仍会丢弃。可验证不经过UI恢复路径的原生输入候选；这不证明writer查询已解决。
+- 具体原型：包装指定官方backend的一个新建stdio连接，保持模拟App原请求/响应/通知，用唯一RPC ID空间追加既有内存thread的输入；不得对现有正式stdio复制FD或争读，不使用resume，不接入正式RA2A路由。先验证协议隔离、一次写入/丢ACK不重放、通知回到原客户端、closed/unloaded拒绝，再评估writer与UI状态缺口。
+- 本新阶段原型新增手写生产代码预计≤300行；单文件≤500。若批准仅授权本原型，不自动授权正式安装、替换App backend、改登录模型或超额扩张。此前独立实现阶段保守新增277行已提交。
+- Windows App IPC固定codex-ipc命名管道，不随CODEX_HOME/userData变化；目前没有安全完整第二App隔离证明。Windows只用模拟App与临时原生backend，禁止启动实验App。Linux/Mac即使路径可隔离，完整App启动也要先核所有单实例/IPC/data条件，不能只凭环境变量名称保证安全。
+- Safe stop：任何数据/IPC指向正式实例、实际writer仍无法可靠证明、通知同步不兼容或预算超出，保留证据并停止；不能把原型输入成功升级为整体根治通过。
