@@ -17,12 +17,9 @@ import (
 	"github.com/pion/dtls/v3"
 	dtlsnet "github.com/pion/dtls/v3/pkg/net"
 	coapdtls "github.com/plgd-dev/go-coap/v3/dtls"
-	coapserver "github.com/plgd-dev/go-coap/v3/dtls/server"
 	"github.com/plgd-dev/go-coap/v3/message"
 	"github.com/plgd-dev/go-coap/v3/message/codes"
 	"github.com/plgd-dev/go-coap/v3/mux"
-	coapnet "github.com/plgd-dev/go-coap/v3/net"
-	"github.com/plgd-dev/go-coap/v3/net/blockwise"
 	"github.com/plgd-dev/go-coap/v3/options"
 	udpClient "github.com/plgd-dev/go-coap/v3/udp/client"
 )
@@ -81,8 +78,7 @@ type sessionsResponse struct {
 type Node struct {
 	config     Config
 	key        []byte
-	listener   *coapnet.DTLSListener
-	server     *coapserver.Server
+	bindings   *boundServers
 	advertiser *zeroconf.Client
 	cancel     context.CancelFunc
 	closeOnce  sync.Once
@@ -111,13 +107,14 @@ func Start(parent context.Context, config Config) (*Node, error) {
 		cancel()
 		return nil, err
 	}
-	port := n.listener.Addr().(*net.UDPAddr).Port
+	port := n.bindings.port
 	n.peers[config.ID] = Peer{ID: config.ID, Name: config.Name, Address: net.JoinHostPort("127.0.0.1", fmt.Sprint(port))}
 	serviceType := zeroconf.NewType(serviceName)
 	service := zeroconf.NewService(serviceType, config.ID, uint16(port))
 	service.Text = []string{"version=1", "id=" + config.ID, "name=" + config.Name}
 	advertiser, err := zeroconf.New().
 		Network("udp4").
+		InterfaceAddrs(n.bindings.interfaceAddrs).
 		Expiry(peerDiscoveryExpiry).
 		Publish(service).
 		Browse(n.handlePeerEvent, serviceType).
@@ -137,32 +134,18 @@ func Start(parent context.Context, config Config) (*Node, error) {
 }
 
 func (n *Node) startServer() error {
-	dtlsOptions := coapnet.NewDTLSServerOptions(
-		dtls.WithPSK(func([]byte) ([]byte, error) { return n.key, nil }),
-		dtls.WithPSKIdentityHint([]byte("ra2a-server")),
-		dtls.WithCipherSuites(dtls.TLS_PSK_WITH_AES_128_GCM_SHA256),
-		dtls.WithExtendedMasterSecret(dtls.RequireExtendedMasterSecret),
-	)
-	listener, err := coapnet.NewDTLSListener("udp4", "0.0.0.0:0", dtlsOptions)
-	if err != nil {
-		return fmt.Errorf("listen CoAP/DTLS: %w", err)
-	}
-
 	router := mux.NewRouter()
 	if err := router.Handle("/v1/sessions", mux.HandlerFunc(n.handleSessions)); err != nil {
-		_ = listener.Close()
 		return fmt.Errorf("register sessions handler: %w", err)
 	}
 	if err := router.Handle("/v1/messages", mux.HandlerFunc(n.handleMessage)); err != nil {
-		_ = listener.Close()
 		return fmt.Errorf("register message handler: %w", err)
 	}
-	n.listener = listener
-	n.server = coapdtls.NewServer(
-		options.WithMux(router),
-		options.WithBlockwise(true, blockwise.SZX1024, sessionBlockwiseTimeout),
-	)
-	go func() { _ = n.server.Serve(listener) }()
+	bindings, err := newBoundServers(n.key, router, localIPv4)
+	if err != nil {
+		return err
+	}
+	n.bindings = bindings
 	return nil
 }
 
@@ -260,13 +243,19 @@ func peerFromService(service *zeroconf.Service, id, name string) (Peer, bool) {
 }
 
 func (n *Node) reloadDiscovery(ctx context.Context) {
-	ticker := time.NewTicker(discoveryReloadInterval)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	reload := time.NewTicker(discoveryReloadInterval)
+	defer reload.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if n.bindings.reconcile() {
+				n.advertiser.Reload()
+			}
+		case <-reload.C:
 			n.advertiser.Reload()
 		}
 	}
@@ -413,11 +402,8 @@ func (n *Node) Close() {
 		if n.advertiser != nil {
 			_ = n.advertiser.Close()
 		}
-		if n.server != nil {
-			n.server.Stop()
-		}
-		if n.listener != nil {
-			_ = n.listener.Close()
+		if n.bindings != nil {
+			n.bindings.close()
 		}
 	})
 }

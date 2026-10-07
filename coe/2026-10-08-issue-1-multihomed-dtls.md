@@ -1,6 +1,6 @@
 # Problem P-001
 
-- 状态：诊断完成，未修复；纳入 v0.0.19。
+- 状态：已实施最小修复并通过 Linux 隔离回归；实机跨平台双网卡验收待完成，尚未部署或关闭 issue。
 - 来源：https://github.com/ceasarXuu/RA2A/issues/1。
 - 症状：同子网双网卡 Mac 对 Wi-Fi 地址的 DTLS 请求从 Ethernet 回复，connected UDP 客户端握手超时。
 - 基准：v0.0.18 与 origin/main e891277；本轮未改正式配置、网络或生产代码。
@@ -32,3 +32,11 @@
 - 对应：H-001 后续修复可行性；类型：依赖源码事实。
 - 结果：x/net v0.49.0 在 Darwin/Linux 支持 pktinfo；ipv4/control_windows.go:9 返回 errNotImplemented。Pion WithListenConfig 改变 socket 配置但不改变上述读写。连接路由还需考虑同一远端访问两个本地地址。
 - 含义：packet-info 不能直接作为三平台统一方案；按地址绑定 listener 候选需验证共用端口和广告生命周期。详细验收见 docs/v0.0.19/issue-triage.md。
+
+## Evidence E-004
+
+- 类型：锁定依赖的隔离真实 DTLS/CoAP 与回归测试，未修改正式接口/服务。
+- 结果：`internal/lannode/listeners_test.go` 中两个 loopback IPv4 共享同一随机端口，各自 connected UDP → DTLS PSK → CoAP sessions 查询通过；地址移除关闭对应 listener，端口冲突失败地址不发布且下一轮可重试，枚举错误保留工作绑定，关闭后不再重开。
+- 验证：`go test -race ./internal/lannode -count=1` PASS。Linux 运行；跨平台构建不是 macOS/Windows 原生双网卡验收。
+- 实现：每 IPv4 独立 listener 和 CoAP Server；mDNS 通过依赖 `InterfaceAddrs` 仅广告成功绑定地址。每 5 秒检查地址变化并同步广告；原有一分钟发现 reload 保留。远端旧广告受原 30 秒 TTL 约束，不能声明瞬时撤回。
+- 剩余：macOS/Windows 原生共端口绑定、双网卡 ClientHello 回包源地址、真实接口增删/睡眠唤醒及授权会话双向消息。
