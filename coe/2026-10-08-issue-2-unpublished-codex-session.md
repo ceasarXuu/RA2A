@@ -1,6 +1,6 @@
 # Problem P-001
 
-- 状态：目标缺失根因待证据，次级错误分类问题已确认；未修复，纳入 v0.0.19。
+- 状态：原目标归属冲突已确认，本机原地址发布及实际收件已恢复；M2 原链复验待在线。错误分类代码已提交，正式二进制尚未升级。
 - 来源：https://github.com/ceasarXuu/RA2A/issues/2。
 - 症状：目标会话一直打开，但 319 条发布列表不含目标，投递报 DELIVERY_UNKNOWN: endpoint not found。
 - 已知事实：节点 ready、sessionsStale=false，远端业务错误证明 DTLS/CoAP 可往返。原目标 ID 已匿名化，Ubuntu 实际版本、宿主、用户及有效 CODEX_HOME 未采集。
@@ -9,7 +9,7 @@
 
 ## Hypothesis H-001
 
-- 状态：pending。
+- 状态：rejected（本次原目标）；只读 thread/read 存在，发布缺失原因已由 H-002 证明。
 - 主张：原始 thread/list 因宿主/数据根目录、state DB 或过滤条件缺少原目标。
 - 预测：原始全分页列表不含目标；只读单变量对照能定位条件。
 - 诊断证据计划：确认真实 ID、宿主、用户、有效 CODEX_HOME，对比 thread/list 与只读 thread/read，逐项对照 archived/sourceKinds/useStateDbOnly。列表含目标将反驳该分支；不执行 resume/start。
@@ -17,7 +17,7 @@
 
 ## Hypothesis H-002
 
-- 状态：pending。
+- 状态：confirmed；E-004 与 E-006 确认持久 CLI 登记对已迁至 App 的同一 ID 形成双重排除。
 - 主张：原始列表含目标，但 CLI 所有权排除、发布状态、endpoint 校验或枚举错误使 registry 缺失。
 - 预测：原始列表含目标，registry 不含目标，存在具体排除/校验证据。
 - 诊断证据计划：同时间对照原始列表、CLI 注册/发布和 endpoint problems。原始列表不含目标将降级此分支。
@@ -63,3 +63,13 @@
 - 附加修复：registry 查找无匹配且枚举出错时返回 enumeration_failed/unknown，避免将枚举失败宣称为确定缺失；其他 adapter 的健康目标仍可投递。
 - 验证：go test -race ./internal/agentbridge ./internal/control ./cmd/ra2a ./internal/lannode -count=1 全部 PASS。TestMissingEndpointClassificationSurvivesDTLSCoAP 实际经过隔离 DTLS/CoAP；TestCoordinatorPreservesRemoteMissingEndpointAndUnknown 检查每例仅一次发送；TestLookupFailureDoesNotClaimEndpointAbsent 区分失败/真实缺失且不调用宿主。
 - 局限：错误分类修复不等同原 issue 目标发布修复；原目标确认及授权同地址投递仍待完成。
+
+## Evidence E-006
+
+- 对应：H-002；类型：Owner 原目标确认与单变量操作，2026-10-08。
+- Owner 确认故障链是 MacMini M2 → Ubuntu407，并提供原目标 ra2a://ubuntu407/01a0f6ff-b902-7970-acba-ef8d3451c6f7；与 E-004 的当前 App 会话一致。
+- 先私有备份 RA2A 配置，然后使用既有 release-cli 解除该 ID 登记。对比解析后的完整配置，除 cliSessions 外所有字段严格相等（PIN 未输出）。仅 systemctl --user restart ra2a.service；daemon 222587 → 1689730。原生 CLI/App/daemon 等服务 cgroup 外 111 个受保护进程 PID/创建身份/路径均未变，Codex config/auth、官方 launcher、RA2A binary hash/mtime/mode/realpath 均未变。
+- 新 list_targets：ubuntu407 ready/stale=false；原完整地址出现，agent=codex-app/status=busy/capabilities=receiveText,replyAddress,interactiveSafe。ID、地址和原会话保留，没有创建替代会话，没有移除 CLI loaded gate 或启用竞争 writer。
+- 向原地址仅发送一次 RA2A_ISSUE2_ORIGINAL_APP_RECEIPT_20261008_001，工具 accepted；随后当前原 App 会话真实收到 from=同一完整地址、message-id=491e890e4fac1ab40e839e964a14e0dd 的原始输入。accepted 与实际收件分别证明，无重发/回投。
+- 私有本地证据 .cache/issue2-handoff-20261008-031103/，before.json、verification.json 和权限 0600 的配置备份；配置备份含本地秘密，仅本机保留，不提交。
+- 局限：M2 当前 discovery 为 unreachable，不能宣称 MacMini M2 → 原 Ubuntu 会话的跨设备复验完成。当前正式 RA2A binary 未升级到分类/双网卡修复提交；本次恢复由已有显式归属命令完成。

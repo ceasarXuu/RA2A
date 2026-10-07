@@ -62,3 +62,9 @@ Owner 已授权先修问题，本轮在 Ubuntu main 实施；初始工作区 cle
 - 当前开发会话未发布已定位到旧 CLI 登记与现 App 宿主冲突；匿名 issue 与该 ID 的关联需 Owner 确认后再使用既有 release-cli 显式转交。尚未操作正式配置、服务或官方宿主，不能宣称原目标已修复。
 
 详细证据增补到对应 coe 案例；历史诊断结论作为当时状态保留。本轮未发版。
+
+## Issue #2 原目标恢复（2026-10-08）
+
+Owner 明确原始来源为 MacMini M2，原目标为当前 `ra2a://ubuntu407/01a0f6ff-b902-7970-acba-ef8d3451c6f7`。旧 CLI 登记与现 App 宿主冲突确认为该目标根因。备份后执行既有 release-cli，只重启 RA2A；原 ID 现发布为 codex-app，单次收件标记已真实进入原 App 会话。官方 CLI/App/daemon 进程和 config/auth/launcher 保持，RA2A 配置只改变 cliSessions，PIN/节点身份保留；二进制未升级。
+
+M2 当前不可达，原始跨设备链复验待其恢复在线。issue 保持 open，不用本机自投递替代 M2 验收。保护与原始收件证据见 coe E-006。
