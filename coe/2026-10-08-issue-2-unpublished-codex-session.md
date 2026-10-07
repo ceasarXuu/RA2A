@@ -176,3 +176,10 @@
 - GOPROXY=off go test -race ./internal/codexcli -count=1 PASS。绝对真实0.161.0二进制RA2A_TEST_CODEX_BIN opt-in TestNativeCLIIsolatedDelivery -race/count1/timeout180s PASS，24.08s：22receipt+独立owner执行/继续+heldmodel活跃receipt+隔离daemon重启+DTLS/CoAP目标隔离/关闭节点恢复/丢ACK取消不重放。
 - 临时home /tmp/ra2a-native-210171139 已移除；两个临时daemon PID1712109/1712475均不存在。临时native stop记录官方自身forced shutdown，未作用于正式宿主。
 - 未部署正式RA2A、未调整正式配置/官方宿主。上述仅验证独立禁止唤醒子项，不代表三平台动态仲裁或App安全末端已完成。
+
+## Evidence E-016
+
+- 类型：Owner 提供新的跨设备协助会话，2026-10-08；继续 H-007/H-008 的平台取证，不属于修复验收通过。
+- Mac 完整地址 ra2a://macmini-m4/01a117fc-febe-71c3-9460-6914ff413bc5；ROG 完整地址 ra2a://rog306/01a117fc-7d0b-7bb0-9070-e4920fa98eb9。实时 list_targets 两节点 ready/sessionsStale=false，两端点 agent=codex-app/status=busy。这里只证明发布字段，不据此证明官方实际锁归属。
+- 显式 from=原 Ubuntu 地址，分别唯一发送 RA2A_OWNER_MAC_PRECHECK_20261008_001 与 RA2A_OWNER_ROG_PRECHECK_20261008_001。原始工具结果各 status=accepted/to=对应完整地址/isError=false，没有重发。accepted 仅证明收件，现场核验报告尚待接收。
+- 指令只做有界只读版本/产物来源/锁文件与宿主身份/脱敏保护基线/既有CLI验收端点核验；无正式锁获取、会话唤醒、部署或多轮业务测试。平台 actual holder 不能证明须明确 unknown，不把使用文件者或历史加载当锁持有者。
