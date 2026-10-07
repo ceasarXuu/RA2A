@@ -226,3 +226,43 @@
 - 外部targetClientId/hostId/timeoutMs只路由等待；steer expectedTurnId只约束turn，不能当writer。内部函数钩子仍没有已证远程JSON传递方式；完整外部schema缺证保留unknown，不宣称全接口不存在。当前已核路径不能保证禁止恢复。
 - 私有证据/tmp/ra2a-app-interface-20261008-001/manifest.json、call-chain-snippets.txt及静态包文件；未接/复制stdio，实际backend安全外部复用unknown。本轮未运行App代码、获取锁、投递业务、改正式设置/进程。两端仅静态证明恢复分支，不宣称此次已重现抢锁。
 - 产品PD36/37继续有效；完整动态仲裁依赖尚未证实的宿主writer查询与无恢复条件接口。禁止以增加轮询、静态优先级、修改官方App或部署unknown占位来偷换这两个条件；不得据此标记根治完成。
+
+## Hypothesis H-010
+
+- 状态：confirmed；对应E-012及E-021已证Linux原语的模块化与动态时序验证。
+- 主张：Linux只读inode+锁表+进程创建身份能形成有失效检测的瞬时holder快照，释放残文件不产生owner，另进程接手无需服务重启即可观察。
+- 预测：真实临时子进程独占flock→查询PID/start/exe；释放但保留文件→nil；第二进程持同路径→新PID；异常退出→nil；共享锁/无法确定身份→error；查询本身不改变锁。
+- 诊断/修复验证计划：实现未接路由的独立reader，以临时文件和测试子进程验证上述预测；与已有正式只读及Rust原语证据一致。查询不能冻结跨进程交接，读后inode/PID变化报error；unsupported平台明确error。不得碰正式锁、配置或宿主。
+
+## Hypothesis H-011
+
+- 状态：open。
+- 主张：backend内存thread仅在特定生命周期内可能证明writer guard；需要排除ephemeral和shutdown后缓存，不能直接升级loaded列表为持锁证据。
+- 诊断证据计划：独立固定官方ThreadManager→Session→LiveThread→WriterLockGuard生命周期源码，寻找无guard却仍在map的反例及是否有只读RPC排除。另一独立路径覆盖当前App所有对外handler，判断是否有尚未核验的已有backend-only入口。不改宿主、不业务投递。
+
+
+## Evidence E-021
+
+- 对应H-010：独立Linux reader已实现，未接入路由/未部署。ReadWriter结合文件device/inode、/proc/locks当前FLOCK WRITE PID及进程start ticks/exe，复读身份变化error，无法确认/unsupported不当sleep；不获取正式或被查锁。
+- GOPROXY=off go test -race ./internal/codexowner -count=1 PASS。真实临时子进程验证：额外opener不变owner、释放但留文件和打开句柄→nil、新PID同inode接手→新身份、异常退出→nil、inode替换→新身份、共享锁/cancel/错误文件拒绝。一次handoff显式查询4.861685ms，不声称后台刷新SLA。
+- Mac/Windows amd64 go build ./internal/codexowner均exit0；只证明unsupported分支可构建，不等同平台实际owner已证。
+- 本轮生产新增186行，source最大156行；计入前置基础累计保守277行。无新依赖/服务/宿主变更。临时子进程均由fixture仅清理自己的实例，正式配置/锁/宿主未触碰。
+
+## Evidence E-022
+
+- 对应H-011原生map反例：官方本地非ephemeral running Session→LiveThread→LocalThreadStore→LiveRecorderEntry强持WriterLockGuard，idle缓存可能是真实writer。
+- 但session.rs:1022 ephemeral跳过LiveThread，InMemoryThreadStore亦无OS锁；handlers.rs:356先LiveThread.shutdown释放guard再发ShutdownComplete，thread_lifecycle.rs:416–450完成shutdown后才删map。loaded/list仅map、thread/read live view未核is_running。释放锁到删除map的交接窗口里loaded并不证明owner，不能据此替代Mac/Windows锁查询。
+- 本机App全asar JS/MJS/CJS覆盖证据.cache/codex-owner-protocol-20261008/app-ipc-dispatch.json：旧已安装包17个请求注册/25个method版本（含广播），无generic native passthrough；ROG新版18请求新增read-model-settings，仅只读manager设置，不提供输入。没有依据把native权限/approval响应当通用text入口。
+
+## Hypothesis H-012
+
+- 状态：refuted；对应E-023。
+- 主张：已有队列requiresExistingOwner flag可能实现不coldresume的宿主协作入口。
+- 证据计划：已向ROG发限定静态任务，追输入flag保留→executor guard→每个await→prepare/submitPrepared→native边界及持久/重放/ACK；禁止正式队列试验。若guard之前可resume或新owner自动执行则反驳严格契约。
+
+## Evidence E-023
+
+- ROG报告65758927c3ad8cf0d7e9a32c7f148bd4绑定实际bootstrap hash，existing-owner-queue-audit.json及原函数hash的queue-mock记录。
+- flag确从acceptFromFollower保留到持久storage；但prepare await权限/配置后needsResume分支可先resume，submitPrepared host.needsResume亦在admission/guard之前resume。真实函数隔离mock的needsResume=true/d=false仍记录[resume,d=false]后deferred。mock不是实际App/锁验收，但与源码顺序共同反驳先guard禁止恢复。
+- 新owner readiness/storage/turncomplete可重新加载仍保留的队列，未绑定接收时owner epoch；具体自动配置未读，不能宣称现场必重放。follower ok只确认队列持久更新，不是native ACK。因此不用此路径投递正式消息。
+- 本机独立源码也确认prepare不传入guard且在异步配置读取后resume，下一d在整个prepare返回后，支持同一反例。无正式业务、锁获取、配置或服务操作。

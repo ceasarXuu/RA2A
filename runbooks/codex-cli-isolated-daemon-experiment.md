@@ -241,7 +241,7 @@ Windows 的 `os.UserHomeDir()` 读取 `USERPROFILE`，仅设置 `HOME` 无法隔
 
 Owner 已纠正旧的完成确认设计。CLI Deliver 的成功只依据有效 start/steer 输入 ACK，不等待 turn/completed；RPC返回不明确时仍unknown且不重放。不要延长超时来掩盖收件与工作量的耦合。
 
-真实fixture中由独立owner observer另行等待完成，确保每轮模型输入和后续人工客户端调用有序；这属于执行验证，不是Deliver的等待条件。活跃测试保持mock模型阻塞，先断言Deliver已返回成功且turn ID不变，再释放模型、观察完成。observer重连后必须重新绑定完成处理器。RA2A及时退订自己的订阅，独立owner持续观察；不得关闭或退订真实TUI。
+真实fixture中由独立owner observer另行等待完成，确保每轮模型输入和后续人工客户端调用有序；这属于执行验证，不是Deliver的等待条件。活跃测试保持mock模型阻塞，先断言Deliver已返回成功且turn ID不变，再释放模型、观察完成。observer重连后必须重新绑定完成处理器。v0.0.19修复后RA2A直接给已有内存thread输入，不在投递前resume或建立/释放订阅；独立owner持续观察，不得关闭或退订真实TUI。
 
 ## 短收件限时测试的准备阶段（2026-10-04）
 
@@ -271,3 +271,10 @@ Mac 的旧 shell fixture 冷探测实测需 406–449ms，将其包含在 300ms 
 2026-10-08 Ubuntu 现场验证：旧 `cliSessions` 登记会同时阻止未加载 CLI 发布及 App 历史发布。官方只读 `thread/read` 可找到 thread，但 `thread/loaded/list` 为空；source/originator 不能替代当前宿主证据。
 
 先由 Owner 确认同一 ID 当前已在 App 打开且 CLI 不再承载它；备份 RA2A 配置后执行 `ra2a release-cli <完整ID>`，仅重启既有 RA2A 服务。命令不更改原生会话，地址 ID 保持不变。检查 `list_targets` 的该 ID 为 codex-app，并在原 App 窗口独立确认一次授权标记收件。未经宿主确认不得根据 CLI 未加载自动转交 App；App 历史记录存在也不证明可投递。
+
+
+## Linux writer归属只读查询（2026-10-08）
+
+internal/codexowner.ReadWriter以lock文件device/inode匹配/proc/locks的FLOCK ADVISORY WRITE，结合PID、start ticks及exe并复读身份；不获取锁。文件残留、额外打开者不证明持锁。错误及unsupported不能当睡眠；该reader与被查进程必须处于同一PID/mount视图，快照不能取代写入末端条件。
+
+最小验证：`GOPROXY=off go test -race ./internal/codexowner -count=1`。fixture只在临时文件用独立测试子进程持锁，覆盖释放但保持文件打开、同inode接手、进程退出和路径inode替换。显式查询耗时不是后台发现刷新延迟，Mac/Windows交叉构建不证明实际holder可读取。该模块当前尚未接入正式路由。

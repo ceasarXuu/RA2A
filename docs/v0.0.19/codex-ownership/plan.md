@@ -49,11 +49,12 @@
 - Pre-Phase Plan Rebase Gate：ready；现实现=aabcf3c，根治未接入；Material plan delta=none（首次按Owner新规则设计）；User approval=not-required（已授权根治及明确持锁/动态规则）。
 - 最小投入：Linux actual holder 已证；补平台读 API 与 native existing-thread 投递时序，禁止修改正式配置/宿主或获取正式锁。跨平台 holder 不能证明就标 blocked-on-discovery，不允许包装为通过。
 - Tracking：Linux锁与CLI末端已证；Mac/Windows实际holder和App安全末端 blocked-on-discovery。不得部署返回unknown的占位reader来破坏当前正常使用。
+- 独立 Linux reader 子阶段 rebase：ready；已有正式只读样本和隔离flock原语证据，新增内部只读模块及临时子进程交接测试，不接入路由、不部署。以文件device/inode、/proc/locks当前FLOCK WRITE PID、进程start ticks/exe构成瞬时快照，复读身份变化返回error；不把快照声称原子写入授权。其他平台返回明确unsupported，不能转换为睡眠。该子项不新增产品规则、服务或依赖，纳入500行总预算。
 
 ### Phase B：最小实现（W2、W3、W4）
 
 - Pre-Phase Plan Rebase Gate：pending；进入前以 A 的真实接口 / 代码预算重新核对，重大变化才走批准门禁。
-- 预算：本批准根治阶段新增手写生产总代码≤500行，IPC基础已用保守87行；CLI独立子项新增2行注释、删除旧恢复/订阅流程，累计新增保守89行；所有单源文件≤500。优先删静态排除/冷resume，再改现有路径。若跨平台方案需新代理/完整lease系统或超过预算，先停止扩张并提出最小替代。
+- 预算：本批准根治阶段新增手写生产总代码≤500行，IPC基础保守87行、CLI子项2行注释、IPC pin边界补充2行注释、独立reader186行（含空行注释），累计保守277行；所有单源文件≤500。优先删静态排除/冷resume，再改现有路径。若跨平台方案需新代理/完整lease系统或超过预算，先停止扩张并提出最小替代。
 - Tracking：完整集成 not-started；CLI独立子项 completed；不让Linux实现的成功替代Mac/Windows适用性。
 - 可独立先行项：W3 的 CLI 删除投递前 resume/unsubscribe，固定原生源码证明已有内存 thread 足以同步收件；此子项独立 rebase 为 ready，未新增产品决策或扩大范围，不依赖未确定的平台 reader 或 App 末端。验证已覆盖已有线程收件、睡眠线程不唤醒、读后卸载不重放；internal/codexcli -race通过，真实0.161.0隔离原生22收件/owner继续/活跃收件/恢复/CoAP丢ACK不重放通过。其他 W2/W3/W4 集成仍 pending。
 
@@ -83,3 +84,12 @@
 - App backend现有匿名stdio由App独占协议流，没有已证外部可另接入原生已有thread-only投递入口；禁止通过复制其FD注入/争读响应。当前外部IPC仍带UI恢复分支。
 - ROG实际Appx26.1002.7124.0/asar26.1002.52244/backend0.162.0-alpha.2的只读核验也证实Yv在follower no-client-found后调用resumeConversationForUnavailableOwner，最终thread/resume。Mac App26.1002.52244独立核验同样证实该分支，两端IPC method/version文件hash一致。targetClientId仍仅固定IPC client。完整schema未取得，不能据此宣称所有可能接口不存在；已检查入口不具备已证禁止恢复保障。证据是实际包静态路径，不等同本轮动态抢锁重现。
 - 因此当前无法声明三平台严格契约已可实现。下一技术选项必须先证明官方owner接口/禁止恢复入口或受批准的宿主协作机制；不以驱动、句柄劫持或静态优先级绕过限制。
+
+
+## 本轮独立阶段结果（2026-10-08）
+
+- Linux reader 子阶段 completed：internal/codexowner新增只读实现，相关-race通过，真实子进程释放/保留打开句柄/同inode接手/异常退出/文件替换及共享锁拒绝均验证。Mac/Windows仅交叉构建unsupported实现通过，未宣称原生holder识别。
+- reader未接入发现或投递；显式查询实测毫秒级不等同后台刷新SLA。瞬时快照不是不可变writer lease或最终写入授权。
+- native loaded map在ephemeral/inMemory以及shutdown已释放guard但尚未删除map时不能证明持锁；仅正常running本地persistent Session有guard生命周期依据。不能用loaded替代actual锁来绕过跨平台门禁。
+- ROG完整覆盖新版18个IPC请求注册，发现requiresExistingOwner队列flag；调用链及原函数mock证实prepare/submitPrepared可在执行guard之前resume，队列ACK只确认持久存储，并有新owner再执行路径。此入口不用于正式投递。
+- 下一独立取证仅研究App既有受支持backend executable/connection override，判断能否在完全隔离环境验证宿主协作入口。不实施stdio代理或改正式App；此架构若需新增代理/宿主配置或超过500行预算，必须先取得下一阶段批准。
