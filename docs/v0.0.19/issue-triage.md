@@ -52,3 +52,13 @@ issue 的节点 ready、非 stale、319 个 session 不含目标，与 Ubuntu �
 ## 本阶段验证
 
 缺失端点诊断测试通过；已有分页、registry 路由和 CLI 所有权过滤测试通过。精确诊断结果见对应 coe 案例。这些测试不证明 Ubuntu 原目标已发布，也不替代双网卡实机验收。本阶段未安装测试二进制、修改节点配置、重启正式服务或实施生产修复。GitHub issue 保持 open；后续补齐现场证据及修复验证后才能关闭。
+
+## 2026-10-08 实现推进
+
+Owner 已授权先修问题，本轮在 Ubuntu main 实施；初始工作区 clean，已快进到 180afda。新增手写生产代码合计不到 200 行，单源文件均低于 500 行。
+
+- #1：逐 IPv4 绑定同端口、5 秒同步地址、只广告成功监听地址，绑定失败继续重试。Linux 两个 loopback 地址真实 DTLS/CoAP 和地址生命周期测试通过；Darwin/Windows 仅交叉构建，双网卡实机/唤醒/双向业务仍待验收，issue 不关闭。
+- #2：确定缺失通过 LAN 返回 TARGET_NOT_FOUND；枚举失败保留 enumeration_failed/unknown，不重放未知投递。四包 race 回归通过。
+- 当前开发会话未发布已定位到旧 CLI 登记与现 App 宿主冲突；匿名 issue 与该 ID 的关联需 Owner 确认后再使用既有 release-cli 显式转交。尚未操作正式配置、服务或官方宿主，不能宣称原目标已修复。
+
+详细证据增补到对应 coe 案例；历史诊断结论作为当时状态保留。本轮未发版。

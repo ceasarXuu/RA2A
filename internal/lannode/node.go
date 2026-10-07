@@ -34,6 +34,7 @@ const (
 )
 
 var ErrPeerUnreachable = errors.New("peer unreachable before delivery")
+var ErrEndpointNotFound = errors.New("endpoint not found before delivery")
 
 type Config struct {
 	ID          string
@@ -165,7 +166,9 @@ func (n *Node) handleMessage(w mux.ResponseWriter, request *mux.Message) {
 	}
 	if err := n.config.SendMessage(request.Context(), incoming); err != nil {
 		code := codes.InternalServerError
-		if strings.Contains(err.Error(), "SESSION_BUSY") {
+		if strings.HasPrefix(err.Error(), "TARGET_NOT_FOUND:") {
+			code = codes.NotFound
+		} else if strings.Contains(err.Error(), "SESSION_BUSY") {
 			code = codes.PreconditionFailed
 		}
 		_ = w.SetResponse(code, message.TextPlain, strings.NewReader(err.Error()))
@@ -367,6 +370,9 @@ func (n *Node) SendMessage(ctx context.Context, peer Peer, outgoing Message) err
 	defer client.ReleaseMessage(response)
 	if response.Code() != codes.Changed {
 		body, _ := io.ReadAll(response.Body())
+		if response.Code() == codes.NotFound {
+			return fmt.Errorf("%w: %s", ErrEndpointNotFound, strings.TrimSpace(string(body)))
+		}
 		return fmt.Errorf("send message to %s: CoAP code %v: %s", peer.ID, response.Code(), strings.TrimSpace(string(body)))
 	}
 	return nil

@@ -265,3 +265,9 @@ Mac 的旧 shell fixture 冷探测实测需 406–449ms，将其包含在 300ms 
 - native stop成功、PID记录/socket/package退出与整个home目录清理是独立事实；os.RemoveAll错误必须显式报告，不能忽略后宣称清理成功。Windows实测功能PASS后仍可能留下 `.tmp`/`app-server-daemon`，先保留错误、目录和只读资源清单，不自行删证据或修ACL。
 
 - 隔离投递fixture应在全新home配置 `[features] plugins = false`，避免默认插件启动同步引入外部Git下载和Windowsindex.lock共享句柄，不能修改正式用户插件设置。d13d656实测Linux0.159.3/0.160.0与Windows0.160.0保持全部投递/恢复覆盖，新Windowshome完整清理通过；插件同步自身不计入此fixture覆盖。旧失败目录继续保存。
+
+## 同一 thread 从 CLI 转到 App 后不发布
+
+2026-10-08 Ubuntu 现场验证：旧 `cliSessions` 登记会同时阻止未加载 CLI 发布及 App 历史发布。官方只读 `thread/read` 可找到 thread，但 `thread/loaded/list` 为空；source/originator 不能替代当前宿主证据。
+
+先由 Owner 确认同一 ID 当前已在 App 打开且 CLI 不再承载它；备份 RA2A 配置后执行 `ra2a release-cli <完整ID>`，仅重启既有 RA2A 服务。命令不更改原生会话，地址 ID 保持不变。检查 `list_targets` 的该 ID 为 codex-app，并在原 App 窗口独立确认一次授权标记收件。未经宿主确认不得根据 CLI 未加载自动转交 App；App 历史记录存在也不证明可投递。

@@ -180,6 +180,9 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 			return fmt.Errorf("%w: %v", ErrTargetUnreachable, err)
 		}
 	}
+	if errors.Is(err, lannode.ErrEndpointNotFound) {
+		return fmt.Errorf("%w: %v", ErrTargetNotFound, err)
+	}
 	if err != nil && strings.Contains(err.Error(), ErrDeliveryUnknown.Error()) {
 		return fmt.Errorf("%w: %v", ErrDeliveryUnknown, err)
 	}

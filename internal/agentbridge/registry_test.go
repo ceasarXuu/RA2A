@@ -440,3 +440,30 @@ func TestEveryRegisteredKindIsPartOfTheSharedContract(t *testing.T) {
 		t.Fatal("an unregistered kind must stay invalid")
 	}
 }
+
+func TestLookupFailureDoesNotClaimEndpointAbsent(t *testing.T) {
+	registry := NewRegistry("node-a")
+	broken := &fakeAdapter{kind: AgentCodexCLI, listErr: errors.New("daemon disconnected")}
+	healthy := &fakeAdapter{kind: AgentCodexApp, health: Ready(), result: Delivered(""), endpoints: []Endpoint{readyEndpoint("node-a", "present", AgentCodexApp, CapabilityReceiveText)}}
+	if err := registry.Register(broken); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(healthy); err != nil {
+		t.Fatal(err)
+	}
+	missing := registry.Deliver(context.Background(), envelope("ra2a://node-a/missing", "probe"))
+	if missing.Code != ResultUnknown || missing.NativeErrorClass != "enumeration_failed" || !strings.Contains(missing.Detail, "daemon disconnected") {
+		t.Fatalf("enumeration failure: %+v", missing)
+	}
+	if len(broken.deliveries) != 0 || len(healthy.deliveries) != 0 {
+		t.Fatal("lookup failure called host")
+	}
+	present := registry.Deliver(context.Background(), envelope("ra2a://node-a/present", "probe"))
+	if !present.Delivered() || len(healthy.deliveries) != 1 {
+		t.Fatalf("healthy endpoint unavailable: %+v", present)
+	}
+	broken.listErr = nil
+	if got := registry.Deliver(context.Background(), envelope("ra2a://node-a/missing", "probe")); got.Code != ResultNotFound {
+		t.Fatalf("confirmed absence: %+v", got)
+	}
+}

@@ -48,3 +48,18 @@
 - 命令：go test ./cmd/ra2a -run TestIssue2DiagnosticMissingEndpointClassification -v。
 - 结果：PASS；registry=not_found; LAN=DELIVERY_UNKNOWN: endpoint missing-session not found; no adapters registered and no host delivery possible。
 - 含义：支持错误分类机制，不证明 H-001/H-002。临时诊断测试不保留为以错误行为为标准的永久回归测试。后续现场步骤见 docs/v0.0.19/issue-triage.md。
+
+## Evidence E-004
+
+- 对应：H-002；类型：Ubuntu 本地进程、配置、日志和官方 socket 只读 RPC，2026-10-08。
+- 当前开发会话 ID 为 01a0f6ff-b902-7970-acba-ef8d3451c6f7；RA2A config 的 cliSessions 仍含该 ID，日志持续报告 cli_ownership_unknown/reason=not_loaded。当前开发宿主为 Codex App（调用环境）；它与匿名 issue 原目标是否为同一会话仍待 Owner 确认。
+- 官方 daemon socket initialize 报 0.161.0、CodexHome=/home/zhangxu/.codex；thread/loaded/list 返回 data=[]、nextCursor=null。只读 thread/read 找到该 ID，status=notLoaded、canAcceptDirectInput 缺失、source=vscode、originator=codex-tui。RA2A 独立 App Server socket 的对应结果也为 notLoaded。
+- 含义：当前目标不是历史列表不存在，而是持久 CLI 登记与当前 App 宿主不一致：CLI loaded gate 排除，App 明确所有权过滤也排除。不能依据 source/originator 历史字段自动接管，也不能删 loaded gate。若 Owner 确认目标，应显式 release-cli 后仅重启 RA2A，核验同 ID App 端点；本轮尚未修改正式配置/服务。
+
+## Evidence E-005
+
+- 对应：H-003；类型：修复及永久回归测试。
+- 修复：LAN bridge 保留 ResultNotFound，接收端编码 CoAP NotFound，发送端用 ErrEndpointNotFound 并在 control 转为 TARGET_NOT_FOUND。其他错误和已写入后未知仍保留 unknown，无自动重发。
+- 附加修复：registry 查找无匹配且枚举出错时返回 enumeration_failed/unknown，避免将枚举失败宣称为确定缺失；其他 adapter 的健康目标仍可投递。
+- 验证：go test -race ./internal/agentbridge ./internal/control ./cmd/ra2a ./internal/lannode -count=1 全部 PASS。TestMissingEndpointClassificationSurvivesDTLSCoAP 实际经过隔离 DTLS/CoAP；TestCoordinatorPreservesRemoteMissingEndpointAndUnknown 检查每例仅一次发送；TestLookupFailureDoesNotClaimEndpointAbsent 区分失败/真实缺失且不调用宿主。
+- 局限：错误分类修复不等同原 issue 目标发布修复；原目标确认及授权同地址投递仍待完成。

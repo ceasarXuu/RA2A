@@ -209,5 +209,8 @@ func deliverOverLAN(ctx context.Context, nodeID string, registry *agentbridge.Re
 	if result.Code == agentbridge.ResultStartRequired {
 		return fmt.Errorf("%w: %s", control.ErrStartRequired, result.Detail)
 	}
+	if result.Code == agentbridge.ResultNotFound {
+		return fmt.Errorf("%w: %s", control.ErrTargetNotFound, result.Detail)
+	}
 	return fmt.Errorf("%w: %s", control.ErrDeliveryUnknown, result.Detail)
 }

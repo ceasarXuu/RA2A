@@ -2,10 +2,14 @@ package agentbridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 )
+
+// ErrEndpointEnumeration marks a lookup whose absence cannot be established.
+var ErrEndpointEnumeration = errors.New("endpoint enumeration failed")
 
 // Adapter is the only host-specific surface in RA2A. Adapters never reference
 // each other; the registry is what turns a set of adapters into a routable
@@ -125,7 +129,7 @@ func (registry *Registry) Lookup(ctx context.Context, address Address) (Endpoint
 	if address.NodeID != registry.nodeID {
 		return Endpoint{}, nil, fmt.Errorf("target node %q is not served by this daemon", address.NodeID)
 	}
-	endpoints, _ := registry.Endpoints(ctx)
+	endpoints, problems := registry.Endpoints(ctx)
 	for _, endpoint := range endpoints {
 		if endpoint.Address == address {
 			registry.mu.RLock()
@@ -136,6 +140,9 @@ func (registry *Registry) Lookup(ctx context.Context, address Address) (Endpoint
 			}
 			return endpoint, adapter, nil
 		}
+	}
+	if len(problems) > 0 {
+		return Endpoint{}, nil, fmt.Errorf("%w: %w", ErrEndpointEnumeration, errors.Join(problems...))
 	}
 	return Endpoint{}, nil, fmt.Errorf("endpoint %s not found", address.EndpointID)
 }
@@ -193,6 +200,9 @@ type TargetShapeChecker interface {
 }
 
 func (registry *Registry) explainMiss(ctx context.Context, address Address, lookupErr error) DeliveryResult {
+	if errors.Is(lookupErr, ErrEndpointEnumeration) {
+		return DeliveryResult{Code: ResultUnknown, NativeErrorClass: "enumeration_failed", Detail: lookupErr.Error()}
+	}
 	for _, adapter := range registry.Adapters() {
 		checker, ok := adapter.(TargetShapeChecker)
 		if !ok {
