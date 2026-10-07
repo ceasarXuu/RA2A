@@ -183,3 +183,27 @@
 - Mac 完整地址 ra2a://macmini-m4/01a117fc-febe-71c3-9460-6914ff413bc5；ROG 完整地址 ra2a://rog306/01a117fc-7d0b-7bb0-9070-e4920fa98eb9。实时 list_targets 两节点 ready/sessionsStale=false，两端点 agent=codex-app/status=busy。这里只证明发布字段，不据此证明官方实际锁归属。
 - 显式 from=原 Ubuntu 地址，分别唯一发送 RA2A_OWNER_MAC_PRECHECK_20261008_001 与 RA2A_OWNER_ROG_PRECHECK_20261008_001。原始工具结果各 status=accepted/to=对应完整地址/isError=false，没有重发。accepted 仅证明收件，现场核验报告尚待接收。
 - 指令只做有界只读版本/产物来源/锁文件与宿主身份/脱敏保护基线/既有CLI验收端点核验；无正式锁获取、会话唤醒、部署或多轮业务测试。平台 actual holder 不能证明须明确 unknown，不把使用文件者或历史加载当锁持有者。
+
+## Evidence E-017
+
+- 类型：ROG 新协助会话唯一前置报告，消息ID04f0ae4b21d2976fc106aa997d595189；对应E-016的实际平台证据目标。
+- standalone真实CLI0.160.0，App内置二进制真实版本0.162.0-alpha.2；另有backend路径含0.161.0，但路径不是运行版本证明。当前实际writer holder PID及本session backend精确关联unknown，没有发布codex-cli验收端点。
+- ROG报告此前用户授权main快进和install.ps1已部署磁盘vcs.revision=38589fbca9e36514ed8aca748cc0c6ce8aeab4ad、vcs.modified=true；repo当前HEAD38589fb、tracked diff0，只有既有.commandcode/。构建修改位未澄清，不以revision或当前clean等同完整产物来源。daemon此前11600→3184；本次前置核验没有部署重启。
+- 正式锁file ID=0x000000000000000001c100000000b62e；hash读取共享冲突，不重试/取锁，文件存在或共享冲突不证明holder。RA2A own lease/socket只证明managed进程，不证明thread writer归属。
+- 私有证据C:/Users/77585/AppData/Local/Temp/ra2a-owner-precheck-e2f8fd1f15954b53b5b0218b475fef58/precheck.json；ROG报告保护终点hash无变化，无PIN/token/auth正文。现场结果尚未独立读取原始附件，作为接收端报告证据保留。
+- E-013的App调用链结论基于Ubuntu已安装版本，不自动外推至ROG0.162.0-alpha.2，需要固定其实际App来源核验。
+
+## Hypothesis H-009
+
+- 状态：open；对应E-017新版本差异。
+- 主张：ROG当前App版本可能提供与Ubuntu不同的已有writer-only投递接口；现有证据不能确认或排除。
+- 预测：若有可用接口，已安装协议schema与handler应出现可由外部JSON调用的禁止恢复/预期writer条件，且执行路径在角色失效或not-found后不resume。只有内部函数钩子、UI owner或普通turn/start名称不足以通过。
+- 诊断证据计划：ROG只读固定实际App包hash/版本，定位owner discovery、follower start/steer及恢复分支调用链、支持的请求字段与backend传输形态；不调用业务接口、不获取writer锁、不修改宿主。明确参数和无恢复路径支持假说，仍有恢复或无外部入口则反驳当前可用接口主张。
+
+## Evidence E-018
+
+- 类型：Mac 新协助会话唯一前置报告，消息ID1431be448ff2fb03732529c77482a6a8；对应E-016实际平台证据目标。
+- App26.1002.52244内置官方backend0.162.0-alpha.2，官方CLI0.160.1；另有独立daemon路径标注0.161.0，不等同真实版本。锁device16777234/inode37785033/size0；lsof只证明App backend PID8513打开文件，实际holder仍unknown。独立CLI验收会话unknown，无额外官方backend连接或owner RPC。
+- Mac报告此前用户授权部署来源临时clone /tmp/ra2a-dev-h4OG7M2k，RA2A显示v0.0.18、revision38589fbca9e36514ed8aca748cc0c6ce8aeab4ad、modified=false、binary SHA256=f0091e06e9a02bc58471e1894d22edc88b224a6dac2d8337f54daa5d2fef7af8、运行PID71269映像inode一致。原分叉repo HEADffb52fd、ahead5/behind156和.commandcode/保留。本轮未部署/服务操作。
+- 私有证据/tmp/ra2a-owner-precheck-20261008-001/evidence.json；保护hash/mtime/进程身份基线仅本轮快照，不推断未来持续不变，未输出凭据。与ROG共同触发H-009当前App新版本接口只读核验。
+- 向ROG与Mac各唯一发送APP_INTERFACE_20261008_001控制请求，均原始accepted/isError=false，尚待接口源码报告；仅诊断，不做动态切换或业务验证。
