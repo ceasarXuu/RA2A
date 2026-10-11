@@ -42,3 +42,15 @@
 - Matched signal: 自投唯一输入，RA2A confirmed/accepted，原生user1/final0；关联APIError、httpStatus400、retryable=false、category=MODEL_NOT_AVAILABLE。OC reserved1/limit1；无重试。
 - Interpretation: 本次不是RA2A投递丢失；服务端拒绝所选opencode-go/space-bunny-free。错误原文只在内存分类，不保存header/body/message/auth/thinking；不能由HTTP400外推具体服务政策或所有模型均不可用。
 - Outcome: 新增脱敏nativeErrors；敏感信息拒绝导出测试通过。已向Owner请求可用provider/model，只改沙盒、不静默切换正式设置。自有资源REAPED、凭据副本REMOVED、8项正式auth/config终点哈希不变。
+
+## Hypothesis H-003: OpenAI内置OAuth路由被目录api门禁误拒绝
+- Status: confirmed
+- Claim: 显式选择本机已有OpenAI OAuth模型时，catalog缺api不代表无可核验端点；固定原生插件实际重写至ChatGPT路由。
+- Diagnostic evidence plan: 子调查先指出catalog.api缺省与OAuth区别；随后只读auth类型/字段名、固定1.18.34内置插件路由，禁止打印token。若不是内置OpenAI SDK/OAuth或出现未核域名，保持failclosed。
+
+## Evidence E-003: 内置OAuth端点源码与私有覆盖测试
+- Related hypotheses: H-003
+- Direction: supports
+- Source: 固定官方 https://raw.githubusercontent.com/anomalyco/opencode/v1.18.34/packages/opencode/src/plugin/openai/codex.ts；本机auth字段名与catalog只读核验；test_profiles.py。
+- Matched signal: 当前openai凭据type=oauth，catalog.npm=@ai-sdk/openai/api缺省；原生插件将/v1/responses或/chat/completions重写chatgpt.com/backend-api/codex/responses，刷新auth.openai.com，gpt-6-sol在固定允许集合。不修改原生插件，仅投影最小凭据副本与三项明确域名。
+- Outcome: 新增--opencode-model显式沙盒参数，无自动回退；未知provider/model拒绝。内置OAuth投影九项相关测试通过，正式配置/认证不变。Owner是否选用openai/gpt-6-sol待答复，未新增收费输入；参数可运行不等于真实上游验收通过。

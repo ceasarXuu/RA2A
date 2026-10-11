@@ -81,6 +81,54 @@ class ProfileTests(unittest.TestCase):
             profiles.prepare(root, [], self.host)
         self.assertEqual((root / 'preserve').read_text(), 'data')
 
+    def opencode_override_fixture(self):
+        self.binary('opencode')
+        config = self.write('.config/opencode/opencode.json', {'model': 'a/old'})
+        recent = self.write('.local/state/opencode/model.json', {'recent': [{'providerID': 'a', 'modelID': 'old'}]})
+        auth = self.write('.local/share/opencode/auth.json', {'a': {'type': 'api', 'key': 'secret'}})
+        self.write('.cache/opencode/models.json', {'a': {'api': 'https://api.example.test/v1',
+                                                       'models': {'old': {}, 'new': {}}}})
+        return {p: p.read_bytes() for p in (config, recent, auth)}
+
+    def test_opencode_override_is_private_and_explicit(self):
+        originals = self.opencode_override_fixture()
+        result = profiles.prepare(self.base/'run', ['opencode'], self.host, opencode_model='a/new')
+        selection = result['manifest']['opencode']
+        self.assertEqual(selection['model'], 'new')
+        self.assertEqual(selection['selection_source'], 'sandbox-explicit-override')
+        private = Path(result['nodes']['opencode']['home'])/'.config/opencode/opencode.json'
+        self.assertEqual(json.loads(private.read_text())['model'], 'a/new')
+        self.assertTrue(all(p.read_bytes() == raw for p, raw in originals.items()))
+
+    def test_opencode_override_unknown_provider_refused_without_fallback(self):
+        self.opencode_override_fixture()
+        result = profiles.prepare(self.base/'run', ['opencode'], self.host, opencode_model='missing/new')
+        self.assertEqual(result['manifest']['opencode']['status'], 'BLOCKED_AUTH')
+        self.assertNotIn('opencode', result['nodes'])
+
+    def test_opencode_override_unknown_model_refused_without_fallback(self):
+        self.opencode_override_fixture()
+        result = profiles.prepare(self.base/'run', ['opencode'], self.host, opencode_model='a/missing')
+        self.assertEqual(result['manifest']['opencode']['status'], 'BLOCKED_AUTH')
+        self.assertNotIn('opencode', result['nodes'])
+
+    def test_openai_oauth_builtin_route_without_catalog_api(self):
+        self.binary('opencode')
+        self.write('.config/opencode/opencode.json', {})
+        self.write('.cache/opencode/models.json', {
+            'openai': {'npm': '@ai-sdk/openai', 'models': {'gpt-6-sol': {}}}})
+        original = self.write('.local/share/opencode/auth.json', {
+            'openai': {'type': 'oauth', 'access': 'secret-access', 'refresh': 'secret-refresh',
+                       'expires': 9999999999999, 'accountId': 'secret-account'}})
+        before = original.read_bytes()
+        result = profiles.prepare(self.base/'run', ['opencode'], self.host,
+                                  opencode_model='openai/gpt-6-sol')
+        self.assertEqual(result['manifest']['opencode']['status'], 'READY')
+        self.assertEqual(result['manifest']['opencode']['hosts'],
+                         ['chatgpt.com', 'auth.openai.com', 'api.openai.com'])
+        self.assertNotIn('secret', json.dumps(result['manifest']))
+        self.assertEqual(original.read_bytes(), before)
+
 
 if __name__ == '__main__':
     unittest.main()

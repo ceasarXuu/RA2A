@@ -93,10 +93,14 @@ def _codex(home, target, snapshots, private_env):
             'hosts': ['chatgpt.com', 'auth.openai.com', 'api.openai.com']}
 
 
-def _opencode(home, target, snapshots, private_env):
+def _opencode(home, target, snapshots, private_env, model_override=None):
     config = _read(home / '.config/opencode/opencode.json', snapshots)
-    selected = config.get('model')
-    provenance = 'config.model'
+    if model_override is not None and (not isinstance(model_override, str) or
+            len(model_override) > 200 or '/' not in model_override or
+            not all(model_override.split('/', 1)) or any(c.isspace() for c in model_override)):
+        raise BlockedAuth('explicit OpenCode model must use provider/model format')
+    selected = model_override if model_override is not None else config.get('model')
+    provenance = 'sandbox-explicit-override' if model_override is not None else 'config.model'
     catalog = None
     if not isinstance(selected, str) or '/' not in selected:
         # Fixed v1.18.34 Provider.defaultModel reads the first available recent.
@@ -120,12 +124,17 @@ def _opencode(home, target, snapshots, private_env):
     catalog = catalog or _read(home / '.cache/opencode/models.json', snapshots)
     description = catalog.get(provider, {})
     hostname = urlsplit(description.get('api', '')).hostname
-    if not hostname or model not in description.get('models', {}):
+    # Fixed 1.18.34 bundled OpenAI OAuth plugin rewrites SDK requests to
+    # chatgpt.com and refreshes only this private auth copy at auth.openai.com.
+    oauth_openai = (provider == 'openai' and credential['type'] == 'oauth'
+                    and description.get('npm') == '@ai-sdk/openai' and not hostname)
+    if (not hostname and not oauth_openai) or model not in description.get('models', {}):
         raise BlockedAuth('OpenCode selected model provider endpoint is unverified')
+    hosts = ['chatgpt.com', 'auth.openai.com', 'api.openai.com'] if oauth_openai else [hostname]
     _write(target / '.cache/opencode/models.json', {provider: {
         **{k: description[k] for k in ('id', 'env', 'npm', 'api', 'name', 'doc') if k in description},
         'models': {model: description['models'][model]}}})
-    return {'provider': provider, 'model': model, 'selection_source': provenance, 'hosts': [hostname]}
+    return {'provider': provider, 'model': model, 'selection_source': provenance, 'hosts': hosts}
 
 
 def _pi(home, target, snapshots, private_env):
@@ -153,7 +162,7 @@ def _pi(home, target, snapshots, private_env):
     return {'provider': provider, 'model': model, 'hosts': [hostname, 'pi.dev']}
 
 
-def prepare(root: Path, selected: list[str], host_home: Path) -> dict:
+def prepare(root: Path, selected: list[str], host_home: Path, *, opencode_model=None) -> dict:
     """Return public manifest, nodes/bins, and per-kind PRIVATE env; no model calls.
 
     BLOCKED_AUTH is per kind. Consumers must skip blocked nodes, never choose a
@@ -178,7 +187,9 @@ def prepare(root: Path, selected: list[str], host_home: Path) -> dict:
         private_env = {}
         try:
             binary = _bin(host_home, kind)
-            choice = globals()['_' + kind](host_home, target, snapshots, private_env)
+            choice = (_opencode(host_home, target, snapshots, private_env, opencode_model)
+                      if kind == 'opencode' else
+                      globals()['_' + kind](host_home, target, snapshots, private_env))
             result['manifest'][kind] = {'status': 'READY', **choice}
             result['bins'][kind] = binary['args'][0] if kind == 'pi' else binary['executable']
             if kind == 'pi':

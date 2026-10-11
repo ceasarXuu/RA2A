@@ -90,3 +90,14 @@ Go probe也要求当前net namespace与外部记录宿主不同且匹配明确�
 - 最初8秒观察采用 timeout 产生124；后改为观察指定子 PID、窗口树、私有 socket 和 namespace 后停止自己的 App，分别记录观察与资源回收。不能把 timeout 124 当自然退出或把进程存活当 ready。
 - 窗口截图与日志在忽略目录 app-005；私有用户数据实际落于 home/config/Codex，不能用设置了环境变量推定特定 userdata 变量已经生效。没有导入秘密；截图只包含启动错误。
 - 每次 client/server 已 wait，独立 cookie 已移除；宿主 X0/X1 保留、X2 消失，没有测试进程残留。报告保留 cleanup 字段。剩余私有无认证用户数据与日志保留供核验。
+
+## 指定本轮沙盒OpenCode模型
+
+当当前默认被上游拒绝时，可以显式指定本机已有认证、原生模型目录中的模型：
+
+```sh
+python3 experiments/sandbox/run.py --output .cache/sandbox-discovery/matrix-new \
+  --opencode-model provider/model
+```
+
+参数只写本轮私有配置，报告记录`sandbox-explicit-override`；不改变正式默认，不自动切换模型，不自动重试失败输入。未知provider/model或未经核验的端点保持BLOCKED_AUTH。固定1.18.34内置OpenAI OAuth会将请求重写到ChatGPT，沙盒仅复制该认证并放行已核域名；不会把所有缺少api的供应商视为可用。

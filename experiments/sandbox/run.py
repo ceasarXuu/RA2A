@@ -41,6 +41,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, help='fresh persistent report directory')
     parser.add_argument('--manual', action='store_true', help='budgeted terminal observation after automation')
+    parser.add_argument('--opencode-model', help='explicit provider/model override for the private OpenCode profile only')
     parser.add_argument('--inner', type=Path, help=argparse.SUPPRESS)
     options = parser.parse_args()
     if options.inner:
@@ -61,7 +62,8 @@ def main():
         root = Path(temporary)
         server = None
         try:
-            prepared = profiles.prepare(root/'profiles', ['codex', 'opencode', 'pi'], home)
+            prepared = profiles.prepare(root/'profiles', ['codex', 'opencode', 'pi'], home,
+                                        opencode_model=options.opencode_model)
             bins = prepared['bins']
             env = os.environ.copy()
             env.pop('LD_PRELOAD', None)
