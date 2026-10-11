@@ -107,9 +107,10 @@
 
 ### Phase A：隔离与入口Discovery
 
-- Pre-Phase Plan Rebase Gate：pending；material delta=pending；approval=pending-if-material。
-- 执行not-started；D1/D2先无凭据无模型验证，预算桶/写回规则确认后才D3。
+- Pre-Phase Plan Rebase Gate：ready（仅D1/D2无凭据验证）；material delta=none；approval=user-approved-plan-direct：Owner「先验证」。依据当前库存与代码复用，仅做namespace/bwrap/display/DBus探针，D3及实现仍未授权。
+- 执行verified（本次无Agent基础探针范围）；D1真实三节点LAN、D2显示/DBus/bwrap原语通过，D2真实App与单实例验收尚not-started，不能整体声明GUI已兼容。预算桶/写回规则确认后才D3。
 - 建议阶段生产新增≤250行；主要一次性诊断脚本/报告，不把阶段验证扩成完整部署工具。依赖安装、特权常驻服务或VM变更另行评审。
+- 2026-10-12本机实际结果：[复现与证据摘要](../../experiments/sandbox/README.md)。214行一次性探针，无新增依赖；unprivileged namespace可建私有bridge/3个net，真实mDNS+DTLS/CoAP环形投递通过；bwrap隔离HOME/运行目录与私有passwd支持D-Bus，Xephyr单socket/new-cookie下xdpyinfo通过。正式Agent、Auth与模型未运行，收费消息0；原语方向direction-supported，不等同完整App/预算实现。
 
 ### Phase B：预算与最小真实矩阵
 
@@ -135,6 +136,7 @@
 |---|---|---|---|---|
 | 本轮设计 | 单机真实客户端、认证复用、10条限制 | PD1/2/3覆盖；只有文档，无运行 | covered | 评审设计 |
 | 本轮设计 | 计数桶/保守预留/认证写回 | Q1/Q2建议，未实施 | provisional | 用户确认前不执行依赖项 |
+| 无凭据基础预验证 | 三节点namespace/显示/DBus | 真实网络与显示原语通过，无Agent/Auth/额度实现 | engineering-only | 真实App与认证/预算门禁另行验证，不扩大为正式部署 |
 
 ## Plan Delta
 
