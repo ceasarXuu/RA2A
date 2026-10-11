@@ -24,6 +24,23 @@ class EvidenceTests(unittest.TestCase):
         (directory / 'fixture.jsonl').write_text('\n'.join(json.dumps(row) for row in rows) + '\n')
         return evidence.native(self.home, kind, MARKER, ACK, SOURCE)
 
+    def test_combined_opencode_final_keeps_parent_semantics(self):
+        base = {'marker': 'BASE', 'busyAtFollowup': True,
+                'native': {'status': 'PENDING', 'users': [{'id': 'base-user'}], 'finals': [], 'errorClasses': []}}
+        follow = {'marker': 'FOLLOW', 'status': 'PASS', 'native': {'status': 'PASS',
+                  'users': [{'id': 'follow-user'}], 'finals': [{'id': 'final', 'parent': 'follow-user',
+                  'ack': 'ACK_BASE\nACK_FOLLOW'}]}}
+        self.assertTrue(evidence.combined_completion(base, follow))
+        self.assertEqual(base['native']['finals'], [])
+        follow['native']['finals'][0]['ack'] = 'ACK_FOLLOW'
+        self.assertFalse(evidence.combined_completion(base, follow))
+        follow['native']['finals'][0]['ack'] = 'ACK_BASE\nACK_FOLLOW'
+        follow['native']['finals'][0]['parent'] = 'unrelated-user'
+        self.assertFalse(evidence.combined_completion(base, follow))
+        follow['native']['finals'][0]['parent'] = 'follow-user'
+        base['native']['users'].append({'id': 'duplicate-base'})
+        self.assertFalse(evidence.combined_completion(base, follow))
+
     def test_codex_final_requires_completed_task(self):
         rows = [
             {'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'turn-a'}},

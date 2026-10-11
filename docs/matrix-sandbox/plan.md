@@ -193,3 +193,10 @@
 
 - Owner已明确批准本阶段累计900行上限及6.1-sol light模型。按本机模型声明，准确标识为gpt-6.1-sol、轻量推理low；OpenCode显式选择openai/gpt-6.1-sol/low，Codex/App私有配置保留对应low。正式配置不改，Pi保留现有选定provider/model。
 - 四类矩阵工具环与对应basic边复用同一次真实输入，另独立核验工具回信，避免重复付费；各类最大10输入仍由接收端预算硬限制，耗尽后人工项明确拦截说明，不能自动开新run规避。
+
+### 2026-10-12 冻结矩阵与有界补证
+
+- source239852f冻结matrix-007：sourceDirty/sourceChanged均false；整体INCOMPLETE。OC/Pi基础互通、工具回信、恢复和ACK丢失不重放有原生通过证据；Pi忙时追加通过。App/CLI启动端点未发布，OC忙时BASE没有独立final，人工未执行，不计通过。
+- 原账本CLI1/App1/OC7/Pi6；后续诊断继承各类原预算，不自动创建新轮清零。App仅本地mock模型诊断，真实Auth私有副本不向真实模型发送；CLI最多1、OC最多2新输入，分别核查新会话选择与原生parent切换。
+- CLI共享目录的新启动选择只接受启动前不存在的rollout，防止误选App历史；57项Python测试通过。App第一拒绝门禁和OC合并完成语义仍待实际补证，不能据预测删掉writer/capability门禁或宣布完整矩阵完成。
+- 当前本阶段手写生产新增按保守差异计877/900；测试与证据不计入。正常运行后的临时凭据副本已随自有资源回收；正式8项认证配置终点hash相同，不扩张为全过程无变化证明。

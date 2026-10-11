@@ -127,12 +127,14 @@ def execute(root):
                 report['cases'] += [case, follow]; continue
             combined = 'ACK_'+case.get('marker', '')+'\n{ack}'
             send(runtime, config, endpoints, receiver, receiver, follow,
-                 'If previous input has not finished, final reply exactly '+json.dumps(combined)+'. Otherwise only the new ACK.',
+                 'Preserve the unfinished previous request and its four serial tool calls. When finished, final reply exactly '+json.dumps(combined)+'. No additional tools for this followup.',
                  alternate=combined)
             case['native'] = wait_native(runtime, receiver, config['nodes'][receiver]['home'], endpoints[receiver]['id'],
                                         case.get('marker', ''), ['ACK_'+case.get('marker', ''),
                                         'ACK_'+case.get('marker', '')+'\nACK_'+follow.get('marker', '')], endpoints[receiver]['address'], 90)
             case['status'] = case['native']['status'] if case['native']['status'] != 'PENDING' else 'INCOMPLETE_TIMEOUT'
+            if receiver == 'opencode' and evidence.combined_completion(case, follow):
+                case.update(status='PASS', completionMode='ONE_COMBINED_NATIVE_FINAL', combinedFinal=follow['native']['finals'][0])
             report['cases'] += [case, follow]
         for kind in (k for k in endpoints if k not in failed):
             case = {'case': 'resume-'+kind, 'sender': kind, 'receiver': kind}

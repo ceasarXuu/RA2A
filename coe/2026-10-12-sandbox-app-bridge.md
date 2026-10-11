@@ -91,3 +91,9 @@
 - Source: .cache/sandbox-discovery/matrix-007/summary.json、ledger.jsonl；source239852f，dirty=false/sourceChanged=false。
 - Matched signal: App与CLI真实bootstrap均出现原生task_complete，但均BLOCKED_ADAPTER/RuntimeError且未发布端点；保护源8文件SHA256终点不变、自有资源REAPED、临时凭证副本清理。App1/CLI1/OC7/Pi6，各limit10，未自动重发。OC/Pi四个基本格、工具回信、恢复及ACK丢失原生完成通过；OCBASE活跃输入未找到独立parent final而FOLLOWUP已完成。
 - Interpretation: 整体INCOMPLETE，不能因UI输入或其他Agent通过升级App接入成功。App第一拒绝门禁未保存，清理后无法补现场归属。CLI源码枚举共享HOME全部历史首meta存在错误选择；本轮actual registeredUUID未持久保存，不能伪造已证误登记。后续须只登记TUI启动后新文件，并以零收费插桩定位App首拒绝门禁，保持安全检查不放宽。
+
+## Evidence E-009: OpenCode真实忙时parent切换补证
+
+- Source: .cache/sandbox-repair/opencode-working-002/result.json；真实1.18.34/openai gpt-6.1-sol low，两条新输入继承matrix007原账本7→9/10。
+- Matched signal: BASE/FOLLOWUP各唯一user，busy gate通过，四次list_targets唯一callID均完成；第1次parent为BASE，后3次及唯一final parent为FOLLOWUP。最终精确两个ACK换行、finish=stop/completed存在；没有两个独立final。
+- Interpretation: 原匹配仅BASE parent会漏判这一原生合并完成；修正明确指令和组合关联，保留BASE.native=PENDING及ONE_COMBINED_NATIVE_FINAL说明，不伪造第二final。单ACK、无关parent、重复输入的拒绝回归通过。matrix007旧结果不回写升级。正式8项hash相同，原账本不改写，资源与私有凭据回收。

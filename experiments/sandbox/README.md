@@ -8,7 +8,8 @@
 python3 experiments/sandbox/run.py --output .cache/sandbox/matrix-new \
   --opencode-model openai/gpt-6.1-sol --opencode-effort low
 # 人工操作留在自动阶段之后：
-python3 experiments/sandbox/run.py --output .cache/sandbox/matrix-manual-new --manual
+python3 experiments/sandbox/run.py --output .cache/sandbox/matrix-manual-new --manual \
+  --opencode-model openai/gpt-6.1-sol --opencode-effort low
 ```
 
 目录必须不存在。已有Python3/Go/cc、unshare/nsenter/ip/bwrap、Xephyr/xauth以及官方CLI/App/OpenCode/Pi；不会安装软件或改正式服务。启动器构建本次源码的测试node/RA2A/OC wrapper，创建三类独立namespace、短私有HOME、PTY和真实LAN。退出码0仅整体PASS；失败、阻塞或依赖未运行均非0。`summary.json`、`report.md`、`ledger.jsonl`可核对，每条收件与native最终完成分别记录。
@@ -30,7 +31,7 @@ RA2A_TEST_LINUX_RUNTIME=1 python3 -m unittest discover -s experiments/sandbox -p
 GOPROXY=off go test -race ./internal/sandbox ./cmd/ra2a-sandbox-node -count=1 -timeout=60s
 ```
 
-最新真实报告matrix-006：六个基础格原生收件/final通过，CLI/Pi忙时追加、Pi恢复和ACK丢失不重放取得原生证据；CLI6/OC1/Pi7预留。OpenCode模型错误、CLI恢复未通过、App阻塞和人工未执行使整体INCOMPLETE。active汇总漏置成功状态已修正，原报告和qualification解释分开保留；运行期间源码变化也单列，不能作为最终冻结发布验收。正式认证配置终点哈希不变，自有资源与凭据副本已回收。以下旧记录为前置阶段证据。
+最新冻结源码真实报告matrix-007：OpenCode/Pi四个基础格、工具回信、两者恢复和ACK丢失不重放取得原生通过证据；Pi忙时追加通过。CLI/App启动后未发布端点，OpenCode忙时BASE未取得对应最终完成，整体INCOMPLETE，人工未执行。预算CLI1/App1/OC7/Pi6，不自动新开一轮清零。CLI共享历史目录误选风险已修正并有回归测试，尚未计作现场复验通过；App首个拒绝门禁仍在零收费诊断。正式认证配置终点哈希不变，自有资源与凭据副本已回收。matrix-006旧失败及运行期间源码变化记录保留，不作为冻结发布验收。
 
 ---
 

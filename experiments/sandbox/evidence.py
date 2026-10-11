@@ -107,3 +107,16 @@ def envelope_id(text):
         if line.startswith('message-id: '):
             return line[len('message-id: '):].strip()
     return None
+
+
+def combined_completion(base, follow):
+    """One OpenCode final acknowledges both users; never fabricate two finals."""
+    b, f = base.get('native', {}), follow.get('native', {})
+    expected = 'ACK_'+base.get('marker', '')+'\nACK_'+follow.get('marker', '')
+    return (base.get('busyAtFollowup') is True and b.get('status') == 'PENDING'
+            and len(b.get('users', [])) == 1 and not b.get('errorClasses')
+            and follow.get('status') == f.get('status') == 'PASS'
+            and len(f.get('users', [])) == len(f.get('finals', [])) == 1
+            and b['users'][0]['id'] != f['users'][0]['id']
+            and f['finals'][0].get('parent') == f['users'][0]['id']
+            and f['finals'][0].get('ack') == expected)
