@@ -110,6 +110,18 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(result['status'], 'PASS')
         self.assertEqual(len(result['users']), 1)
 
+    def test_native_error_diagnostics_never_export_sensitive_fields(self):
+        error = {'name': 'APIError', 'data': {'statusCode': 401, 'isRetryable': False,
+                 'message': 'unauthorized Bearer SECRET', 'responseHeaders': {'Authorization': 'SECRET'},
+                 'responseBody': 'SECRET'}}
+        rows = [{'info': {'id': 'u', 'role': 'user'}, 'parts': [{'type': 'text', 'text': TEXT}]},
+                {'info': {'id': 'a', 'role': 'assistant', 'parentID': 'u', 'error': error}, 'parts': []}]
+        result = evidence.native(self.home, 'opencode', MARKER, ACK, SOURCE, rows)
+        self.assertEqual(result['status'], 'FAIL')
+        self.assertEqual(result['nativeErrors'], [{'type': 'APIError', 'httpStatus': 401,
+                                                  'retryable': False, 'category': 'AUTH_REJECTED'}])
+        self.assertNotIn('SECRET', json.dumps(result))
+
 
 if __name__ == '__main__':
     unittest.main()

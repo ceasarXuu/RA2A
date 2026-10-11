@@ -1,6 +1,7 @@
 """Extract marker/receipt/final evidence without retaining thinking or secrets."""
 import json
 import hashlib
+import re
 from pathlib import Path
 
 
@@ -16,9 +17,33 @@ def matches_input(text, marker, source):
             and bool(separator) and (envelope_id(header) == marker or body.split()[:1] == [marker]))
 
 
+def model_error(error):
+    """Fixed diagnostic enums only; never export response headers/body/message."""
+    error = error if isinstance(error, dict) else {}
+    data = error.get('data', {})
+    data = data if isinstance(data, dict) else {}
+    allowed = {'APIError', 'AuthError', 'ContextOverflowError', 'MessageAbortedError', 'UnknownError'}
+    result = {'type': error.get('name') if error.get('name') in allowed else 'OTHER_NATIVE_ERROR'}
+    status = data.get('statusCode')
+    if type(status) is int and 100 <= status <= 599:
+        result['httpStatus'] = status
+    if type(data.get('isRetryable')) is bool:
+        result['retryable'] = data['isRetryable']
+    message = str(data.get('message', '')).lower()
+    for category, pattern in [('AUTH_MISSING', r'missing.{0,20}(api.?key|credential)'),
+                              ('AUTH_REJECTED', r'unauthorized|invalid api.?key|authentication failed'),
+                              ('MODEL_NOT_AVAILABLE', r'model.{0,40}(not found|unavailable|unsupported)'),
+                              ('RATE_LIMIT', r'rate limit|too many requests'),
+                              ('NETWORK_FAILURE', r'enotfound|econnreset|tls|proxy|timed? ?out')]:
+        if re.search(pattern, message):
+            result['category'] = category
+            break
+    return result
+
+
 def native(home, kind, marker, ack, from_address, oc_messages=None):
     accepted = [ack] if isinstance(ack, str) else ack
-    users, finals, errors = [], [], []
+    users, finals, errors, diagnostics = [], [], [], []
     if kind == 'opencode':
         for row in oc_messages or []:
             info = row['info']
@@ -27,6 +52,7 @@ def native(home, kind, marker, ack, from_address, oc_messages=None):
                 users.append({'id': info['id'], 'messageId': envelope_id(text)})
             if info['role'] == 'assistant' and info.get('error') and any(info.get('parentID') == u['id'] for u in users):
                 errors.append('NATIVE_MODEL_ERROR')
+                diagnostics.append(model_error(info['error']))
             if info['role'] == 'assistant' and text in accepted and info.get('time', {}).get('completed'):
                 finals.append({'id': info['id'], 'parent': info['parentID']})
         finals = [r for r in finals if any(r['parent'] == u['id'] for u in users)]
@@ -72,7 +98,7 @@ def native(home, kind, marker, ack, from_address, oc_messages=None):
                         else:
                             finals.append(final)
     return {'users': users, 'finals': finals,
-            'errorClasses': errors, 'status': 'FAIL' if errors else 'PASS' if len(users) == len(finals) == 1 else 'PENDING' if not finals else 'FAIL'}
+            'errorClasses': errors, 'nativeErrors': diagnostics, 'status': 'FAIL' if errors else 'PASS' if len(users) == len(finals) == 1 else 'PENDING' if not finals else 'FAIL'}
 
 
 def envelope_id(text):
