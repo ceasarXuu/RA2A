@@ -18,3 +18,15 @@
 - App 存活、窗口存在、backend/IPC 就绪是三项不同证据。无网络启动实际停在组织设置加载错误，不能把该窗口计入完整 UI 验收。
 - 截图工具 `/usr/bin/import` 通过未挂载的 `/etc/alternatives` 解析，在最小文件系统不可用。本机使用实际映像 `/usr/bin/import-im6.q16`；不要为此把整个 `/etc` 挂入。
 - `preflight.py --output <新目录> --app` 将独立检查与报告汇总为一条命令。已有证据目录拒绝覆盖；真实额度保持0，完整矩阵状态保持 NOT_RUN。
+
+## 真实套件的已证边界
+
+- 同类node/原生TUI必须共用PID身份空间；各类分别独立PID空间。budget worker与PID1设置dumpable0，Agent不给SYS_PTRACE；通过真实/proc拒绝测试确认预算socket不能经worker root越界访问。
+- 只挂单个Codex binary会使daemon start报没有完整local package；应挂固定releases/<version>完整官方包，校验marker/白名单与无Auth/逃逸symlink。不能上扩到正式.codex。
+- PTY固定30×120，回复DSR/DA/OSC10/11终端查询不属于模型输入。模型bootstrap须单独预留额度。
+- Codex final必须匹配原生turn并且phase=final_answer/task_complete；Pi按parent链+stop关联；OpenCode按原生parentID/completed关联。commentary、其他turn结束、地址正文引用均不当完成证据。
+- 私有controller监督outer PID1，超时整组TERM→KILL→wait；真实测试覆盖内部setsid后代随PIDnamespace消失。清理失败保留证据和凭据恢复路径，报告不完整，不按名称杀正式进程。
+
+- 官方Codex0.162.1 control socket可能是指向`/tmp/codex-daemon-<uid>/...`的symlink。同kind各进程必须共享**本轮私有tmp**；各进程各自tmpfs会让TUI看不到已启动daemon。只绑定该kind新建tmp，不能共享宿主/tmp或其他kind。
+- 官方TUI将paste burst期间Enter视为换行。预算先reserve，文本仅写一次，等待0.5秒再单独Enter；本机真实诊断已生成session/task_started，不以此代替最终模型完成。固定来源：`rust-v0.162.1/codex-rs/tui/src/bottom_pane/paste_burst.rs`。
+- 关闭恢复必须先观察旧attachment从发现结果撤回，再接受相同原生ID的新端点；sessionsStale=true不算ready。超时止步，不能靠历史ID冒充新TUI所有权。

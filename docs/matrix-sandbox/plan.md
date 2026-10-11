@@ -1,13 +1,13 @@
 # Linux 矩阵沙盒工程设计
 
 - Product Authority：[PRD Confirmed Product Decisions](prd.md#confirmed-product-decisions)。
-- Applicable Decisions：PD1、PD2、PD3；Codex 所有权语义引用既有 PD36/PD37。
-- 状态：隔离预检查可运行；完整矩阵实现 pending 产品边界/代码限额确认；有效性 valid-with-qualifications。
+- Applicable Decisions：PD1、PD2、PD3、PD4、PD5；Codex 所有权语义引用既有 PD36/PD37。
+- 状态：隔离预检查与真实矩阵运行器已实现；真实验收进行中，App适配与人工观察仍有资格限制。
 - 更新：2026-10-12。基础设施主题独立于版本目录，不自行指定发布版本。
 
 ## Execution Contract
 
-产品权威仅限用户直接确认行，Agent 不自批准。当前工程证据可修订方案，不能改变产品权威；新增核心规则列入待决。每个实现阶段前按实际实现 rebase，pending/blocked-on-plan-approval 不执行；重大方向/范围变化记录 Plan Delta 并取得批准。阶段后仅审计本阶段 Product Decision Delta。Owner「继续，把沙盒做完」授权继续实施。Q1/Q2 尚未确认；当前先实施独立无凭据预检查，不复制认证、不启动付费输入或正式服务。
+产品权威仅限用户直接确认行，Agent 不自批准。当前工程证据可修订方案，不能改变产品权威；新增核心规则列入待决。每个实现阶段前按实际实现 rebase，pending/blocked-on-plan-approval 不执行；重大方向/范围变化记录 Plan Delta 并取得批准。阶段后仅审计本阶段 Product Decision Delta。Owner「继续，把沙盒做完」授权继续实施。Q1/Q2已由Owner三项清单后「允许，继续，这个算测试套件」确认；1800行实现范围获批。可执行私有凭据导入与有界付费输入，不启动正式服务。
 
 ## 1. 已核实的实现基础
 
@@ -36,7 +36,7 @@
 ```
 
 - Codex CLI/App同一节点共享该节点私有CODEX_HOME，用于真实同ID交接；基础互通矩阵使用各自不同ID，避免同时争同一锁。
-- 每类Agent可创建第二个来源会话验收同类互通；该类接收总预算不增加（待PD统计桶确认）。
+- 每类Agent可创建第二个来源会话验收同类互通；该类接收总预算不增加（PD4：同类跨会话共享10）。
 - 候选以Linux namespace为隔离原语；先验证现有工具能否建立user/mount/pid/net/ipc隔离，再确定用rootless容器还是受控namespace启动器。不是同时建设两套运行时。
 - 私有地址池根据现有路由检查后分配，不硬编码冲突网段；无host network、无宿主控制端/IPC/用户home可写挂载，无Docker socket给Agent。mDNS、DTLS、节点重启使用真实协议，不直接调用Deliver冒充全链路。
 - controller仅从隔离节点control端发请求或启动绑定真实session的MCP；真实Agent主动工具回信另行验证。不能仅伪造from地址就宣称发送端工具链通过。
@@ -56,7 +56,7 @@
 
 先只读识别认证类型和当前选择的provider/model，不输出值；文件/API key选择最小可用集合复制/传递到私有环境，原文件只由宿主启动器读取。正式配置中的任意shell command、MCP、插件不得整套继承执行。
 
-不继承host Secret Service/DBus解锁会话作为快捷方式。优先验证文件认证可复用；keyring-only或设备绑定情况做单独Discovery：若无法隔离复用，报告该Agent AUTH_BLOCKED并停止收费用例，不能擅自更改正式store。复制token可能触发账户刷新互斥/失效，需小规模验证并报告；是否写回仍待产品确认。
+不继承host Secret Service/DBus解锁会话作为快捷方式。优先验证文件认证可复用；keyring-only或设备绑定情况做单独Discovery：若无法隔离复用，报告该Agent AUTH_BLOCKED并停止收费用例，不能擅自更改正式store。复制token可能触发账户刷新互斥/失效，需小规模验证并报告；PD5已确认：刷新只留私有副本，不写回正式认证。
 
 真实凭据用于真实客户端小规模矩阵；mock fixture保留用于不限真实额度的计数并发/故障回归。日志只白名单采集协议状态、marker、原生事件ID和时间，不导出完整会话thinking、auth、headers或环境块；trace/screenshots可能有敏感内容，人工UI证据按需保存。
 
@@ -66,7 +66,7 @@
 
 所有沙盒接收路径在进入Adapter.Deliver/原生输入前向可信controller预留额度。Agent无账本写权限、不能选择预算桶；桶由启动时登记的harness身份决定。MCP/control、LAN回信、直接sandbox CLI send均须同一接收门禁。原生客户端自身启动提示/人工输入还需按相同账本调度；无法阻止绕过的路径不得开放为自动验收入口。
 
-预留记录至少run_id、bucket、case_id、message_id、状态、时间；不得保存秘密或全文。原子持久预留只提交≤10，计数服务停止/损坏时拒绝收费输入。restart/resume重新关联同桶；已有message-id返回记录状态，不重新写入。写前拒绝与写后unknown分别报告；ACK超时不退款/不重发的建议待确认。
+预留记录至少run_id、bucket、case_id、message_id、状态、时间；不得保存秘密或全文。原子持久预留只提交≤10，计数服务停止/损坏时拒绝收费输入。restart/resume重新关联同桶；已有message-id返回记录状态，不重新写入。写前拒绝与写后unknown分别报告；PD4已确认：ACK超时不退款、不自动重放。
 
 只在controller检查额度不充分：真实Agent工具会绕过调度器发信。实现前必须证明每条可能的原生输入路径有预算门禁；否则先禁止该未守门路径，而不是宣传10条硬上限。人工直接键盘无法天然被RA2A拦截，最后人工步骤需受控PTY/UI输入桥或明确用户操作协议并标注保障级别，具体方案先验证。
 
@@ -114,8 +114,8 @@
 
 ### Phase B：预算与最小真实矩阵
 
-- Pre-Phase Plan Rebase Gate：pending；必须依据A结果选择一种隔离机制及核已集成适配器。
-- 执行not-started；W1先mock验证，再W2/W3真实凭据；建议每个批准实现阶段新增生产≤500行、单文件≤500，超过就先简化并请求批准，不借测试分类隐藏生产运行器。
+- Pre-Phase Plan Rebase Gate：ready；基于d2591ef私有LAN/显示证据，单一namespace+bwrap；实际CLI/OC/Pi现有适配器复用，App actual-owner仍BLOCKED_ADAPTER。material delta=实现行数限额扩大，user-approved-plan-direct：Owner「允许，继续，这个算测试套件」。
+- 执行in-progress；W1先mock验证，再W2/W3真实凭据；建议每个批准实现阶段新增生产≤500行、单文件≤500，超过就先简化并请求批准，不借测试分类隐藏生产运行器。
 - 不以新沙盒任务顺便实现Codex actual-owner根治或App stdio安装；现有缺口标BLOCKED_ADAPTER，独立任务接入完成后才可验收。
 
 ### Phase C：真实UI/持有者生命周期
@@ -148,3 +148,20 @@
 - D2 实际网络禁用时组织设置无法加载，已保存窗口截图与 namespace/进程观察；下一阶段需受控出口及凭据副本，不能通过扩大宿主挂载绕过。
 - 完整 W1–W4 预计需 1,200–1,800 行手写生产代码，超过 AGENTS.md 当前阶段500行限制。已请求将本次实现上限扩大到1,800行，各文件仍≤500；未获批准前不扩张到依赖该上限的完整运行器。不把脚本或运行逻辑藏进测试文件规避统计。
 - Q1/Q2 已同时提供可选精确定义供 Owner 确认；不以通用继续指令替代额度桶/退款/认证写回的明确确认。
+
+### 本次实现授权与边界
+
+- Owner已确认前次最终消息列出的三项具体规则，PD4/PD5记入唯一PRD权威；本次测试套件新增运行代码上限1800行，单文件≤500，测试不计。测试套件运行器本身仍计入行数，避免借测试名隐藏可执行逻辑。
+- Runtime复用真实适配器、三节点LAN、私有PID/network/mount/user/IPC。OC租约要求node与TUI共享本轮PID命名空间；节点/控制器设置PR_SET_DUMPABLE=0并分别私有mount，预算UDS不挂给Agent，验证/proc越界拒绝。
+- 当前App无安全actual-owner边界，套件保留真实App启动观察，正式消息矩阵App相关项为BLOCKED_ADAPTER，不能创建替代App或借SDK/fakeApp填PASS。这与原计划明确的适配器阻塞语义一致，不顺带实现ownership修复。
+
+### 2026-10-12 套件实现与实际验收
+
+- 主入口 `experiments/sandbox/run.py --output <新目录> [--manual]`。独立receiver worker复用真实adapter/control/mDNS/DTLS-CoAP；原生TUI获得并发布会话，禁止RPC cold resume冒充TUI。
+- 已实现接收端持久预算、重复ID去重、私有凭据、限定HTTPS出口、基础16格、工具环、忙时输入、原生restart/resume、原生写入后故意延迟transport ACK、最后的受控人工观察。预算故障/模型错误时停止相关付费依赖项，不自动重放。
+- 同kind self格使用同一原生会话；不声称证明同类两个不同会话隔离。App actual-owner及CLI↔App交接仍明确BLOCKED_ADAPTER；无安全生产适配器不冒充完整四类PASS。
+- 真实首轮报告matrix-002为INCOMPLETE：OpenCode→Pi原生收件+精确final通过；OpenCode自身模型error、Pi self重复原生输入、Codex启动缺口分别保留。使用量CLI1/OC2/Pi3，未超10；自有资源reap、凭据副本删除、八项正式auth/config哈希终点相同。此轮结果不是最终新版回归。
+- 无模型验证：Python40项全部通过（显式namespace opt-in）；Go两个相关包race通过。用例覆盖并发预算/损坏关闭、原生记录负例、HTTPS拒绝路径、同kind PID和跨kind/proc隔离、超时清理独立process-group后代。正式root ownership故障未据这些用例宣称根治。
+- 公开报告不复制凭据、headers、thinking；报告原生ID/源行/白名单ACK/hash及预算。原生完整session位于临时私有HOME，正常结束删除，不能用公开摘要恢复全文。异常资源归属不明时保留0700恢复目录并报不完整。
+
+- 最后修订：按RA2A envelope message-id精确匹配或业务正文首token关联，FOLLOWUP引用BASE不计重复；恢复前等待旧attachment撤回，拒绝sessionsStale节点，旧端点未撤回则停止，不coldresume。

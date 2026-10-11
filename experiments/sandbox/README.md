@@ -1,3 +1,38 @@
+# Linux 单机矩阵测试套件
+
+不需要 Docker。基础预检查不消费额度；真实运行使用本机当前凭据的私有副本，刷新不写回正式认证。每轮每类Agent所有会话共享10条收件，启动输入、工具回信和人工输入也占额度；失败/unknown不退、不自动重放。缺凭据/版本/适配器时明确阻塞，不切换provider制造通过。
+
+## 真实矩阵
+
+```sh
+python3 experiments/sandbox/run.py --output .cache/sandbox/matrix-new
+# 人工操作留在自动阶段之后：
+python3 experiments/sandbox/run.py --output .cache/sandbox/matrix-manual-new --manual
+```
+
+目录必须不存在。已有Python3/Go、unshare/nsenter/ip/bwrap以及官方CLI/OpenCode/Pi；不会安装软件或改正式服务。启动器构建本次源码的测试node/RA2A/OC wrapper，创建三类独立namespace、短私有HOME、PTY和真实LAN。退出码0仅整体PASS；失败、阻塞或依赖未运行均非0。`summary.json`、`report.md`、`ledger.jsonl`可核对，每条收件与native最终完成分别记录。
+
+`--manual`最后逐类显示私有PTY，按控制器提示确认、提交一次固定标记、观察输入出现/回复出现/输入栏可继续，填写PASS。预算先预留，满额时解释并拒绝输入。此步骤不操作正式终端；不要绕过控制器键入模型提示。未执行则MANUAL_PENDING。
+
+目前App安全actual-owner入口未接入，App格与holder交接为BLOCKED_ADAPTER。同类self格仅单会话回送；不表示两会话隔离。预检查可以另行观察真实App启动窗，不能把它当完整App矩阵或GUI通过。当前实际运行仍暴露模型/客户端问题，整体INCOMPLETE是有效失败报告，不能称所有Agent兼容验收通过。
+
+## 认证与出口边界
+
+只投影当前provider最小auth/model资料，不复制正式MCP/插件/任意命令。正式keyring不共享；不支持的认证明确BLOCKED_AUTH。节点无默认外部路由，模型HTTPS通过私有UDS+loopback broker。直接出口固定已验证公网IP；配置本机HTTP代理时只向该可信上游CONNECT白名单域名:443，由上游解析DNS，不能宣称已验证其最终IP。TLS仍由真实客户端校验。正式HOME、代理端口、预算UDS和controller不直接暴露给模型Agent。
+
+正常结束回收namespace/PID后删除本轮凭据树。超时/中断TERM→KILL→wait；归属不完整时保留私有恢复目录，不删潜在使用中的认证。正式auth/config终点哈希检查覆盖报告列出的八文件，不是全过程监控或账户侧token影响的证明。
+
+## 无模型测试
+
+```sh
+RA2A_TEST_LINUX_RUNTIME=1 python3 -m unittest discover -s experiments/sandbox -p 'test_*.py'
+GOPROXY=off go test -race ./internal/sandbox ./cmd/ra2a-sandbox-node -count=1 -timeout=60s
+```
+
+真实模型首次报告：matrix-002中CLI1/OC2/Pi3预留；OpenCode→Pi收件和final通过，其他失败分别保留，未超预算；正式认证配置终点哈希不变、自有资源回收。运行记录保存在忽略目录，以下旧记录为前置阶段证据。
+
+---
+
 # Linux 无 Docker 沙盒隔离预验证
 
 - 日期：2026-10-12；依据 [矩阵沙盒方案](../../docs/matrix-sandbox/plan.md)。
