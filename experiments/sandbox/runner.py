@@ -180,7 +180,7 @@ def execute(root):
 def send(runtime, config, endpoints, sender, receiver, case, extra='', wait=True, ack_loss=False, alternate=None):
     marker = 'R2S_'+uuid.uuid4().hex
     case['marker'] = marker
-    message = 'Reply only ACK_'+marker+'. No extra text. '+('Do not call any tools. ' if not extra else '')+extra.replace('{ack}', 'ACK_'+marker)
+    message = marker+' Reply only ACK_'+marker+'. No extra text. '+('Do not call any tools. ' if not extra else '')+extra.replace('{ack}', 'ACK_'+marker)
     ack = ['ACK_'+marker, alternate.replace('{ack}', 'ACK_'+marker)] if alternate else 'ACK_'+marker
     try:
         started = time.monotonic()

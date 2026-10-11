@@ -98,7 +98,7 @@ func run() error {
 			if !result.Delivered() {
 				return fmt.Errorf("%w: %s: %s", control.ErrDeliveryUnknown, result.Code, result.Detail)
 			}
-			if _, ok := withheld.LoadAndDelete(message.MessageID); ok {
+			if consumeWithheld(&withheld, message.MessageID, message.Text) {
 				awaitTransportACK(ctx, 5*time.Second)
 			}
 			return nil
@@ -159,6 +159,17 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+func consumeWithheld(armed *sync.Map, id, text string) bool {
+	if _, ok := armed.LoadAndDelete(id); ok {
+		return true
+	}
+	if fields := strings.Fields(text); len(fields) > 0 && strings.HasPrefix(fields[0], "R2S_") {
+		_, ok := armed.LoadAndDelete(fields[0])
+		return ok
+	}
+	return false
 }
 
 // awaitTransportACK runs only after the adapter has confirmed native receipt.

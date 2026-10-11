@@ -8,11 +8,26 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/control"
 )
+
+func TestWithheldACKMatchesRemoteTransportRegeneratedID(t *testing.T) {
+	var armed sync.Map
+	armed.Store("R2S_case", true)
+	if consumeWithheld(&armed, "actual-transport-id", "another input references R2S_case") {
+		t.Fatal("a quoted marker consumed the fault")
+	}
+	if !consumeWithheld(&armed, "actual-transport-id", "R2S_case reply exactly ACK") {
+		t.Fatal("remote regenerated message ID prevented the fault")
+	}
+	if consumeWithheld(&armed, "new-transport-id", "R2S_case reply exactly ACK") {
+		t.Fatal("fault reused after the single intended message")
+	}
+}
 
 func validTestEnvironment(t *testing.T) {
 	t.Helper()

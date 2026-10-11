@@ -18,6 +18,17 @@ import relay
 PROJECT = Path(__file__).resolve().parents[2]
 
 
+def provenance():
+    files = subprocess.check_output(['git', 'ls-files', '-z', '*.go', 'go.mod', 'go.sum',
+                                     'experiments/sandbox/*.py', '*.mjs'], cwd=PROJECT).split(b'\0')
+    digest = hashlib.sha256()
+    for name in sorted(n for n in files if n):
+        digest.update(name+b'\0'+(PROJECT/os.fsdecode(name)).read_bytes())
+    return {'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=PROJECT, text=True).strip(),
+            'sourceDirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=PROJECT)),
+            'sourceInputSHA256': digest.hexdigest()}
+
+
 def protected(home):
     names = ['.codex/auth.json', '.codex/config.toml', '.config/ra2a/config.json',
              '.config/opencode/opencode.json', '.local/share/opencode/auth.json',
@@ -42,6 +53,7 @@ def main():
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     home = Path.home()
     before = protected(home)
+    source = provenance()
     report = {'matrixStatus': 'NOT_RUN', 'errorClass': None}
     # This temporary tree alone contains credentials; never copy it into reports.
     temporary = tempfile.mkdtemp(prefix='r2s-')
@@ -107,8 +119,8 @@ def main():
                 report['credentialCopies'] = 'REMOVED_WITH_OWNED_TEMP_TREE'
             else:
                 report['privateRecoveryDirectory'] = str(root)
-            report['sourceCommit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=PROJECT, text=True).strip()
-            report['sourceDirty'] = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=PROJECT, text=True))
+            report.update(source)
+            report['sourceChangedDuringRun'] = provenance()['sourceInputSHA256'] != source['sourceInputSHA256']
     (output/'summary.json').write_text(json.dumps(report, indent=2))
     if not (output/'report.md').exists():
         (output/'report.md').write_text('# Linux矩阵套件\n\n状态：'+report['matrixStatus']+'\n错误类别：'+str(report['errorClass'])+'\n')

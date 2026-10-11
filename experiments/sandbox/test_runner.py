@@ -24,6 +24,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(body['from'], self.endpoints['opencode']['address'])
         self.assertEqual(body['to'], self.endpoints['pi']['address'])
         self.assertEqual(body['messageId'], case['marker'])
+        self.assertEqual(body['text'].split()[0], case['marker'])
         self.assertIn('Do not call any tools.', body['text'])
         self.assertEqual(case['status'], 'PASS')
 
