@@ -29,7 +29,7 @@ RA2A_TEST_LINUX_RUNTIME=1 python3 -m unittest discover -s experiments/sandbox -p
 GOPROXY=off go test -race ./internal/sandbox ./cmd/ra2a-sandbox-node -count=1 -timeout=60s
 ```
 
-真实模型首次报告：matrix-002中CLI1/OC2/Pi3预留；OpenCode→Pi收件和final通过，其他失败分别保留，未超预算；正式认证配置终点哈希不变、自有资源回收。运行记录保存在忽略目录，以下旧记录为前置阶段证据。
+最新真实报告matrix-006：六个基础格原生收件/final通过，CLI/Pi忙时追加、Pi恢复和ACK丢失不重放取得原生证据；CLI6/OC1/Pi7预留。OpenCode模型错误、CLI恢复未通过、App阻塞和人工未执行使整体INCOMPLETE。active汇总漏置成功状态已修正，原报告和qualification解释分开保留；运行期间源码变化也单列，不能作为最终冻结发布验收。正式认证配置终点哈希不变，自有资源与凭据副本已回收。以下旧记录为前置阶段证据。
 
 ---
 

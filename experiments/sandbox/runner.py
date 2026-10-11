@@ -113,8 +113,7 @@ def execute(root):
             case['native'] = wait_native(runtime, receiver, config['nodes'][receiver]['home'], endpoints[receiver]['id'],
                                         case.get('marker', ''), ['ACK_'+case.get('marker', ''),
                                         'ACK_'+case.get('marker', '')+'\nACK_'+follow.get('marker', '')], endpoints[receiver]['address'], 90)
-            if case['native']['status'] != 'PASS':
-                case['status'] = 'FAIL'
+            case['status'] = case['native']['status'] if case['native']['status'] != 'PENDING' else 'INCOMPLETE_TIMEOUT'
             report['cases'] += [case, follow]
         for kind in (k for k in endpoints if k not in failed):
             case = {'case': 'resume-'+kind, 'sender': kind, 'receiver': kind}
@@ -161,6 +160,8 @@ def execute(root):
         server.shutdown()
         server.server_close()
         report['budget'] = ledger.summary()
+        report['budgetNotices'] = [k+' 本轮额度已用完；含启动/工具回信/人工输入，失败和unknown不退款，后续输入已拦截。'
+                                  for k, v in report['budget'].items() if v['reserved'] >= v['limit']]
         ledger.close()
         try:
             runtime.stop()
@@ -172,6 +173,7 @@ def execute(root):
                 '收件 accepted 与原生最终完成分别列示；阻塞/未执行项不算通过。', '']
         rows += ['- '+r['case']+'：'+r['status'] for r in report['cases']]
         rows += ['', '## 本轮预算', '']+[f'- {k}：{v["reserved"]}/{v["limit"]}' for k,v in report['budget'].items()]
+        rows += report['budgetNotices']
         rows += ['', '人工：'+report['manual'], '资源：'+report.get('ownedResources', 'UNKNOWN')]
         (root/'report.md').write_text('\n'.join(rows)+'\n')
     return report
@@ -228,6 +230,9 @@ def manual(runtime, config, endpoints, processes, ledger, report):
     report['manualObservations'] = {}
     for kind in endpoints:
         process = processes[kind]
+        if process.poll() is not None:
+            report['manualObservations'][kind] = {'status': 'BLOCKED_ADAPTER', 'reason': 'native TUI exited'}
+            continue
         print('人工观察 '+kind+'：将显示沙盒终端；确认可见后按回车提交唯一标记。', flush=True)
         process.echo = True
         os.killpg(process.pid, signal.SIGWINCH)
@@ -235,10 +240,11 @@ def manual(runtime, config, endpoints, processes, ledger, report):
         marker = 'MANUAL_'+uuid.uuid4().hex
         reservation = ledger.call('/reserve', {'kind': 'codex-cli' if kind == 'codex' else kind, 'id': marker})
         if not reservation['allow']:
+            print(reservation['error'], flush=True)
             report['manualObservations'][kind] = {'status': 'NOT_RUN_BUDGET', 'reason': reservation['error']}
         else:
             clients.submit(process, 'Reply only ACK_'+marker+'. Do not use tools.')
             answer = input('观察：输入是否出现、回复是否出现、完成后输入栏是否可继续？全满足输入 PASS：')
             report['manualObservations'][kind] = {'status': 'PASS' if answer.strip() == 'PASS' else 'FAIL'}
         process.echo = False
-    report['manual'] = 'PASS' if all(x['status'] == 'PASS' for x in report['manualObservations'].values()) else 'INCOMPLETE'
+    report['manual'] = 'PASS' if report['manualObservations'] and all(x['status'] == 'PASS' for x in report['manualObservations'].values()) else 'INCOMPLETE'

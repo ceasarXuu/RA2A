@@ -109,14 +109,22 @@ def main():
                 shutil.copyfile(root/'ledger.jsonl', output/'ledger.jsonl')
                 if 'budget' not in report:
                     import budget
-                    recovery = budget.Ledger(root/'ledger.jsonl')
-                    report['budget'] = recovery.summary(); recovery.close()
+                    try:
+                        recovery = budget.Ledger(root/'ledger.jsonl')
+                        report['budget'] = recovery.summary(); recovery.close()
+                    except (ValueError, OSError):
+                        report['budgetRecovery'] = 'CORRUPT_OR_UNAVAILABLE_LEDGER_INPUTS_REFUSED'
             report['modelRelay'] = dict(server.metrics) if server else {}
             report['officialAuthConfigUnchanged'] = protected(home) == before
             report['credentialCopies'] = 'PRESERVED_PRIVATE_ON_INCOMPLETE_CLEANUP'
             if report.get('ownedResources') == 'REAPED':
-                shutil.rmtree(root)
-                report['credentialCopies'] = 'REMOVED_WITH_OWNED_TEMP_TREE'
+                try:
+                    shutil.rmtree(root)
+                    report['credentialCopies'] = 'REMOVED_WITH_OWNED_TEMP_TREE'
+                except OSError:
+                    report['credentialCopies'] = 'CLEANUP_INCOMPLETE'
+                    report['privateRecoveryDirectory'] = str(root)
+                    report['matrixStatus'] = 'INCOMPLETE'
             else:
                 report['privateRecoveryDirectory'] = str(root)
             report.update(source)

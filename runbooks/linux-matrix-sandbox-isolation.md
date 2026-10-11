@@ -30,3 +30,5 @@
 - 官方Codex0.162.1 control socket可能是指向`/tmp/codex-daemon-<uid>/...`的symlink。同kind各进程必须共享**本轮私有tmp**；各进程各自tmpfs会让TUI看不到已启动daemon。只绑定该kind新建tmp，不能共享宿主/tmp或其他kind。
 - 官方TUI将paste burst期间Enter视为换行。预算先reserve，文本仅写一次，等待0.5秒再单独Enter；本机真实诊断已生成session/task_started，不以此代替最终模型完成。固定来源：`rust-v0.162.1/codex-rs/tui/src/bottom_pane/paste_burst.rs`。
 - 关闭恢复必须先观察旧attachment从发现结果撤回，再接受相同原生ID的新端点；sessionsStale=true不算ready。超时止步，不能靠历史ID冒充新TUI所有权。
+
+- control.Coordinator.Send跨节点重新生成message-id；调用方自填ID不等于线上ID。测试正文首token放唯一R2S marker，按完整source+首token关联并保存真实envelope ID；不要用引用ACK文本的substring匹配。ACK损失钩子只消费一次首token，已通过真实Pi接收唯一完成且发送UNKNOWN验证。

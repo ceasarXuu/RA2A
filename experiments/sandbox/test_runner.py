@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 import unittest
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -48,3 +49,12 @@ class RunnerTests(unittest.TestCase):
         native.assert_not_called()
         self.assertEqual(case['status'], 'FAIL')
         self.assertNotIn('private failure', str(case))
+
+    def test_manual_exited_tui_is_blocked_without_paid_input(self):
+        process, ledger, report = MagicMock(), MagicMock(), {}
+        process.poll.return_value = 0
+        runner.manual(None, {}, {'pi': self.endpoints['pi']}, {'pi': process}, ledger, report)
+        ledger.call.assert_not_called()
+        process.write.assert_not_called()
+        self.assertEqual(report['manual'], 'INCOMPLETE')
+        self.assertEqual(report['manualObservations']['pi']['status'], 'BLOCKED_ADAPTER')

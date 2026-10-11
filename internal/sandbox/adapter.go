@@ -90,7 +90,7 @@ func (a *Adapter) Deliver(ctx context.Context, target agentbridge.Address, envel
 	}
 	if !slot.Allow || slot.Error != "" {
 		return agentbridge.DeliveryResult{Code: agentbridge.ResultUnsupported, NativeErrorClass: "sandbox_budget_exhausted",
-			Detail: "sandbox reception budget denied; inspect controller report for the reason"}
+			Detail: "该类 Agent 本轮接收预算已用完；含启动、工具回信及失败预留，输入未送入模型，请查看控制器账本"}
 	}
 	result := a.Adapter.Deliver(ctx, target, envelope)
 	// Results may contain native errors with credentials or input text. The ledger

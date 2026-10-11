@@ -2,7 +2,7 @@
 
 - Product Authority：[PRD Confirmed Product Decisions](prd.md#confirmed-product-decisions)。
 - Applicable Decisions：PD1、PD2、PD3、PD4、PD5；Codex 所有权语义引用既有 PD36/PD37。
-- 状态：隔离预检查与真实矩阵运行器已实现；真实验收进行中，App适配与人工观察仍有资格限制。
+- 状态：Linux隔离预检查与真实矩阵运行器已交付；真实验收结果INCOMPLETE，App适配、CLI恢复及人工观察仍有资格限制。
 - 更新：2026-10-12。基础设施主题独立于版本目录，不自行指定发布版本。
 
 ## Execution Contract
@@ -161,7 +161,17 @@
 - 已实现接收端持久预算、重复ID去重、私有凭据、限定HTTPS出口、基础16格、工具环、忙时输入、原生restart/resume、原生写入后故意延迟transport ACK、最后的受控人工观察。预算故障/模型错误时停止相关付费依赖项，不自动重放。
 - 同kind self格使用同一原生会话；不声称证明同类两个不同会话隔离。App actual-owner及CLI↔App交接仍明确BLOCKED_ADAPTER；无安全生产适配器不冒充完整四类PASS。
 - 真实首轮报告matrix-002为INCOMPLETE：OpenCode→Pi原生收件+精确final通过；OpenCode自身模型error、Pi self重复原生输入、Codex启动缺口分别保留。使用量CLI1/OC2/Pi3，未超10；自有资源reap、凭据副本删除、八项正式auth/config哈希终点相同。此轮结果不是最终新版回归。
-- 无模型验证：Python40项全部通过（显式namespace opt-in）；Go两个相关包race通过。用例覆盖并发预算/损坏关闭、原生记录负例、HTTPS拒绝路径、同kind PID和跨kind/proc隔离、超时清理独立process-group后代。正式root ownership故障未据这些用例宣称根治。
+- 无模型验证：Python41项全部通过（显式namespace opt-in）；Go两个相关包race通过。用例覆盖并发预算/损坏关闭、原生记录负例、HTTPS拒绝路径、同kind PID和跨kind/proc隔离、超时清理独立process-group后代。正式root ownership故障未据这些用例宣称根治。
 - 公开报告不复制凭据、headers、thinking；报告原生ID/源行/白名单ACK/hash及预算。原生完整session位于临时私有HOME，正常结束删除，不能用公开摘要恢复全文。异常资源归属不明时保留0700恢复目录并报不完整。
 
 - 最后修订：按RA2A envelope message-id精确匹配或业务正文首token关联，FOLLOWUP引用BASE不计重复；恢复前等待旧attachment撤回，拒绝sessionsStale节点，旧端点未撤回则停止，不coldresume。
+
+### 最终套件交付记录
+
+- 新增运行代码共1775行（含空行/注释保守计数），单文件最高341行，未超过批准的1800/500限制；测试不计入。
+- matrix-006六个basic格native PASS：CLI自收、CLI→Pi、OC→CLI、OC→Pi、Pi→CLI、Pi自收。CLI/Pi busy gate及BASE/FOLLOWUP原生完成通过；Pi原生关闭恢复、跨节点写入后故意丢ACK返回UNKNOWN且接收唯一完成/不重放通过。
+- OpenCode返回NATIVE_MODEL_ERROR；CLI resume未取得恢复完成证明，App和writer交接仍BLOCKED_ADAPTER，人工MANUAL_PENDING。整体INCOMPLETE；失败停止依赖项，没有追加重试或更换模型。预留CLI6/OC1/Pi7，私有资源reap、凭据副本清理，8项正式auth/config终点哈希不变。
+- matrix-006原汇总active两个格留在RECEIPT_ONLY，但native子证据均PASS；是运行器成功状态漏更新，代码已修正，原报告不改写，qualification.md单列解释。
+- 本轮启动绑定c851e87、sourceDirty=false，但sourceChangedDuringRun=true：执行期间补充错误报告/预算提示/异常清理。因此是真实功能观察，不是最终源码冻结的发布验收；最终无模型回归独立记录。matrix-005结束时Git字段也不等于其启动构建来源，原报告保留。
+- Codex官方socket tmp别名、paste Enter窗口、跨节点控制层重生message-id三项运行期经验已纳入runbook。跨节点关联改用完整source+正文首个唯一marker，存储的message-id仍采用真实接收值；ACK故障仅消费一次首marker，不能用正文引用触发。
+- 资格解释及原始公开白名单摘要留于本机.cache/sandbox-discovery/matrix-006；未提交Auth、token、环境块、headers、thinking或完整native会话。
