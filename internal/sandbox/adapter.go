@@ -67,7 +67,7 @@ func (a *Adapter) post(ctx context.Context, path string, payload any, result any
 
 func unknown(class string) agentbridge.DeliveryResult {
 	return agentbridge.DeliveryResult{Code: agentbridge.ResultUnknown, NativeErrorClass: class,
-		Detail: "sandbox budget confirmation unavailable; do not replay"}
+		Detail: "sandbox receipt confirmation unavailable; do not replay"}
 }
 
 func (a *Adapter) Deliver(ctx context.Context, target agentbridge.Address, envelope agentbridge.MessageEnvelope) agentbridge.DeliveryResult {

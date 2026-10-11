@@ -88,6 +88,18 @@ func run() error {
 	if err := registry.Register(guarded); err != nil {
 		return err
 	}
+	if directory := os.Getenv("RA2A_SANDBOX_APP_SOCKET_DIR"); directory != "" {
+		if kind != agentbridge.AgentCodexCLI || directory != "/run/app-bridges" {
+			return fmt.Errorf("private shared Codex App bridge directory required")
+		}
+		app, err := sandbox.Wrap(&sandbox.App{NodeID: id, Directory: directory}, os.Getenv("RA2A_SANDBOX_BUDGET_SOCKET"))
+		if err != nil {
+			return err
+		}
+		if err := registry.Register(app); err != nil {
+			return err
+		}
+	}
 	defer registry.Close()
 	view := registryView{registry}
 	var withheld sync.Map
@@ -110,6 +122,14 @@ func run() error {
 	coordinator := control.NewAdapterCoordinator(id, node, view)
 	mux := http.NewServeMux()
 	mux.Handle("/", control.NewHandler(coordinator, nil))
+	mux.HandleFunc("/sandbox/identity", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "GET required", 405)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"pid": os.Getpid(), "start": sandbox.AppProcessStart(os.Getpid())})
+	})
 	mux.HandleFunc("/sandbox/withhold", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST required", 405)

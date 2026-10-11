@@ -35,5 +35,7 @@
 
 ## 失败分类与恢复门禁（2026-10-12已验证）
 
+- App桥仅用于新私有App的`CODEX_CLI_PATH`，每个wrapper绑定自己新spawn的native；真实App可能启动多个wrapper，不能固定一个全局backend。保护worker的`/sandbox/identity`返回共享PID命名空间中的PID与创建ticks，不能用宿主启动器PID代替。私有socket可见性不代表授权，桥逐请求核对SO_PEERCRED和创建ticks；投递仍须经过worker预算包装。仅该安全模块通过不代表运行器GUI矩阵接入完成。
+
 - OpenCode模型异常应保存固定类型、HTTP状态、是否可重试及白名单类别；不保留错误原文、响应headers/body或thinking。收件成功但模型被拒绝，应分别报告，禁止以更换模型或自动重试填PASS。本机唯一输入确证`opencode-go/space-bunny-free`返回HTTP400/MODEL_NOT_AVAILABLE；模型可用性需要Owner选择。
 - 官方Codex0.162.1默认`thread_unload_delay_secs=60`。隔离对照证明断开创建者后约60秒仍持真实writer，配置1秒后约1秒释放；实际RA2A start/steer不使其永久订阅。关闭恢复等待须从本轮私有配置派生，继续观察端点撤回；180秒上限内未撤回报告`NATIVE_OWNER_STILL_HELD`，禁止强制注销、unsubscribe或停daemon来制造睡眠。Pi/OpenCode租约型端仍使用原短观察期。

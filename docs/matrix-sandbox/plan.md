@@ -182,3 +182,11 @@
 - CLI旧12秒撤回门禁与官方0.162.1默认60秒真实writer保持冲突；按本轮私有config动态等待并设置180秒上限，始终观察实际端点，不强行注销/停后台。零额度默认60秒/配置1秒及实际Adapter start/steer对照证明机制；真实官方TUI关闭恢复同ID、收件和final/task_complete专项PASS。
 - OpenCode唯一输入证实当前space-bunny-free服务端HTTP400/MODEL_NOT_AVAILABLE，收件confirmed/accepted。补充安全类型/状态/白名单类别诊断，不记录message/header/body/thinking；未切换provider/model。等待Owner指定可用模型再继续收费验收。
 - Python套件44项全部PASS（开启Linux运行时隔离测试），前序失败保留。专项CLI2输入，首次独立启动器缺参止步1输入另记；OC1输入。资源已回收、私有凭据移除、正式8项auth/config终点hash不变。不外推完整矩阵通过；App仍BLOCKED_ADAPTER，人工阶段未重跑。
+
+### 2026-10-12 剩余缺口的最小安全接入阶段
+
+- Owner「修完」授权继续修复，正式App/CLI保持不变。当前默认500行限制；完整GUI矩阵预计600–900行，已提出900行扩展问题，未把未回复当批准。
+- 零模型真实App已证新spawn stdio桥唯一原App初始化，可复用现有codexstdio；实际多wrapper要求每个私有socket绑定独立nativePID/创建tick，按kernel writer选择，禁止单一全局backend推断。
+- 最小接入新增Linux-only沙盒wrapper与App适配器；Unix SO_PEERCRED核对保护worker的namespace PID与创建tick，wrapper/worker设dumpable0。发现/投递需真实writer的PID/创建tick/exe均匹配当前自有native；只有既有thread start/steer，不resume，不据历史或loaded单独声称所有权。预算仍通过worker的sandbox.Wrap在投递前预留。
+- 本阶段仅交付可编译、可验证的安全接入模块及显式OpenCode参数；默认运行器的App GUI完整矩阵不得被这些mock/原生隔离检查替代。未完成真实GUI模型验收前继续标BLOCKED_ADAPTER。
+- 本阶段新增运行代码407行（按新增行保守计数，含通用诊断文案替换），单文件最高200行。Python48项通过；Go sandbox/worker/bridge相关包race通过，另显式官方App内置0.160.0的原生fixture通过busy steer、owner continuation、睡眠拒绝与清理。真实私有App生产wrapper两次初始化成功、两个保护socket HTTP200，零凭据/零模型输入；这些结果不替代真实GUI thread与模型验收。
