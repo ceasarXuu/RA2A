@@ -129,6 +129,8 @@ def execute(root):
                 send(runtime, config, endpoints, kind, kind, case)
             except Exception as error:
                 case.update(status='FAIL', errorClass=type(error).__name__)
+                if isinstance(error, clients.OwnerWithdrawalTimeout):
+                    case['reason'] = error.code
             if case['status'] != 'PASS':
                 failed.add(kind)
             report['cases'].append(case)

@@ -175,3 +175,10 @@
 - 本轮启动绑定c851e87、sourceDirty=false，但sourceChangedDuringRun=true：执行期间补充错误报告/预算提示/异常清理。因此是真实功能观察，不是最终源码冻结的发布验收；最终无模型回归独立记录。matrix-005结束时Git字段也不等于其启动构建来源，原报告保留。
 - Codex官方socket tmp别名、paste Enter窗口、跨节点控制层重生message-id三项运行期经验已纳入runbook。跨节点关联改用完整source+正文首个唯一marker，存储的message-id仍采用真实接收值；ACK故障仅消费一次首marker，不能用正文引用触发。
 - 资格解释及原始公开白名单摘要留于本机.cache/sandbox-discovery/matrix-006；未提交Auth、token、环境块、headers、thinking或完整native会话。
+
+### 2026-10-12 发现问题修复阶段
+
+- 本阶段只修复已证测试门禁和诊断信息缺口，新增运行代码54行（保守按diff新增计），不延续此前1800行上限，也未扩张App适配范围。
+- CLI旧12秒撤回门禁与官方0.162.1默认60秒真实writer保持冲突；按本轮私有config动态等待并设置180秒上限，始终观察实际端点，不强行注销/停后台。零额度默认60秒/配置1秒及实际Adapter start/steer对照证明机制；真实官方TUI关闭恢复同ID、收件和final/task_complete专项PASS。
+- OpenCode唯一输入证实当前space-bunny-free服务端HTTP400/MODEL_NOT_AVAILABLE，收件confirmed/accepted。补充安全类型/状态/白名单类别诊断，不记录message/header/body/thinking；未切换provider/model。等待Owner指定可用模型再继续收费验收。
+- Python套件44项全部PASS（开启Linux运行时隔离测试），前序失败保留。专项CLI2输入，首次独立启动器缺参止步1输入另记；OC1输入。资源已回收、私有凭据移除、正式8项auth/config终点hash不变。不外推完整矩阵通过；App仍BLOCKED_ADAPTER，人工阶段未重跑。

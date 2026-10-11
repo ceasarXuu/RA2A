@@ -4,6 +4,23 @@ from pathlib import Path
 import subprocess
 import threading
 import time
+import tomllib
+
+
+class OwnerWithdrawalTimeout(RuntimeError):
+    """The prior native owner remains reachable; reopening was not attempted."""
+    code = 'NATIVE_OWNER_STILL_HELD'
+
+
+def withdrawal_timeout(kind, home):
+    if kind != 'codex':
+        return 12
+    config = tomllib.loads((Path(home)/'.codex/config.toml').read_text())
+    delay = config.get('thread_unload_delay_secs', 60)  # Official 0.162.1 default.
+    if type(delay) is not int or delay < 0:
+        raise ValueError('invalid private native thread unload delay')
+    # Poll the actual endpoint; this allowance does not force native withdrawal.
+    return min(delay + 12, 180)
 
 
 API_CODE = '''import json,sys,urllib.request,urllib.error
@@ -133,10 +150,11 @@ def endpoint(runtime, kind, timeout=35):
 
 
 def resume(runtime, kind, env, bins, home, session, old):
+    allowance = withdrawal_timeout(kind, home)
     old.stop()
     # Require the old attachment to withdraw before accepting the same ID again.
     # A published ID alone cannot prove that the reopened TUI owns it.
-    deadline = time.monotonic()+12
+    deadline = time.monotonic()+allowance
     while True:
         rows = api(runtime, kind, '/v1/targets')['body']
         if isinstance(rows, dict):
@@ -144,7 +162,7 @@ def resume(runtime, kind, env, bins, home, session, old):
         if not any(s.get('id') == session for n in rows for s in n.get('sessions', [])):
             break
         if time.monotonic() >= deadline:
-            raise RuntimeError('old native attachment did not withdraw; resume not attempted')
+            raise OwnerWithdrawalTimeout('old native attachment did not withdraw; resume not attempted')
         time.sleep(.5)
     if kind == 'codex':
         argv = [bins[kind], 'resume', session, '--no-alt-screen']

@@ -52,6 +52,38 @@ class ResumeTests(unittest.TestCase):
         old.stop.assert_called_once()
         runtime.spawn.assert_not_called()
 
+    def test_codex_waits_past_twelve_seconds_but_observes_withdrawal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            (home/'.codex').mkdir()
+            (home/'.codex/config.toml').write_text('thread_unload_delay_secs = 60\n')
+            rows = {'body': [{'sessions': [{'id': 'same'}]}]}
+            runtime, old = MagicMock(), MagicMock()
+            with patch.object(clients, 'api', side_effect=[rows, rows, {'body': []}]), \
+                 patch.object(clients.time, 'monotonic', side_effect=[0, 13, 61]), \
+                 patch.object(clients.time, 'sleep'), patch.object(clients, 'terminal'):
+                clients.resume(runtime, 'codex', {}, {'codex': '/native/codex'}, home, 'same', old)
+            self.assertEqual(runtime.spawn.call_args.args[1],
+                             ['/native/codex', 'resume', 'same', '--no-alt-screen'])
+            old.stop.assert_called_once()
+
+    def test_codex_config_delay_is_bounded_and_invalid_config_does_not_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            (home/'.codex').mkdir()
+            config = home/'.codex/config.toml'
+            config.write_text('')
+            self.assertEqual(clients.withdrawal_timeout('codex', home), 72)
+            config.write_text('thread_unload_delay_secs = 1')
+            self.assertEqual(clients.withdrawal_timeout('codex', home), 13)
+            config.write_text('thread_unload_delay_secs = 900')
+            self.assertEqual(clients.withdrawal_timeout('codex', home), 180)
+            config.write_text('thread_unload_delay_secs = -1')
+            old = MagicMock()
+            with self.assertRaises(ValueError):
+                clients.resume(MagicMock(), 'codex', {}, {}, home, 'same', old)
+            old.stop.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

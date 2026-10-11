@@ -32,3 +32,8 @@
 - 关闭恢复必须先观察旧attachment从发现结果撤回，再接受相同原生ID的新端点；sessionsStale=true不算ready。超时止步，不能靠历史ID冒充新TUI所有权。
 
 - control.Coordinator.Send跨节点重新生成message-id；调用方自填ID不等于线上ID。测试正文首token放唯一R2S marker，按完整source+首token关联并保存真实envelope ID；不要用引用ACK文本的substring匹配。ACK损失钩子只消费一次首token，已通过真实Pi接收唯一完成且发送UNKNOWN验证。
+
+## 失败分类与恢复门禁（2026-10-12已验证）
+
+- OpenCode模型异常应保存固定类型、HTTP状态、是否可重试及白名单类别；不保留错误原文、响应headers/body或thinking。收件成功但模型被拒绝，应分别报告，禁止以更换模型或自动重试填PASS。本机唯一输入确证`opencode-go/space-bunny-free`返回HTTP400/MODEL_NOT_AVAILABLE；模型可用性需要Owner选择。
+- 官方Codex0.162.1默认`thread_unload_delay_secs=60`。隔离对照证明断开创建者后约60秒仍持真实writer，配置1秒后约1秒释放；实际RA2A start/steer不使其永久订阅。关闭恢复等待须从本轮私有配置派生，继续观察端点撤回；180秒上限内未撤回报告`NATIVE_OWNER_STILL_HELD`，禁止强制注销、unsubscribe或停daemon来制造睡眠。Pi/OpenCode租约型端仍使用原短观察期。
