@@ -96,6 +96,7 @@ def start(runtime, kind, env, bins, home, ledger, source, configured=False):
     if not configured:
         configure(home, kind, source, bins)
     if kind == 'codex':
+        existing = set((Path(home)/'.codex/sessions').rglob('*.jsonl'))
         daemon = runtime.spawn(kind, [bins['codex'], 'app-server', 'daemon', 'start'], env)
         daemon.process.wait(timeout=30)
         if daemon.poll() != 0:
@@ -111,6 +112,8 @@ def start(runtime, kind, env, bins, home, ledger, source, configured=False):
         for _ in range(40):
             paths = list((Path(home)/'.codex/sessions').rglob('*.jsonl'))
             for path in paths:
+                if path in existing:
+                    continue
                 for line in path.read_text().splitlines():
                     row = json.loads(line)
                     if row.get('type') == 'session_meta':

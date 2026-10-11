@@ -84,3 +84,10 @@
 - Source: .cache/sandbox-discovery/app-runtime-probe16/result.json；probe15失败诊断保留。
 - Matched signal: 本轮guard ACK PID13严格对应main，无--type；两CDP FD所有open模式拒绝。清空前Agent通过精确main proc/root读取一次性cookie并完成真实X11 setup认证；只清空App专属副本后cookieBytes0，无cookiesetup首字节0/长度8拒绝。既有App CDP/body/screenshot正常，停止后由原hostauth新复制的App也可打开。
 - Interpretation: 支持候选最小修正；probe15诊断误清原Xephyr auth导致服务器不再要求cookie，不能当产品根因。必须保留controller独占的显示服务原auth，仅清空每App客户端副本，不能用文件可读、socket connect替代实际认证结论。零模型，无额外X11 ACL修改。
+
+## Evidence E-008: 冻结真实矩阵007未通过
+- Related hypotheses: H-001, H-002, H-005, H-006
+- Direction: neutral
+- Source: .cache/sandbox-discovery/matrix-007/summary.json、ledger.jsonl；source239852f，dirty=false/sourceChanged=false。
+- Matched signal: App与CLI真实bootstrap均出现原生task_complete，但均BLOCKED_ADAPTER/RuntimeError且未发布端点；保护源8文件SHA256终点不变、自有资源REAPED、临时凭证副本清理。App1/CLI1/OC7/Pi6，各limit10，未自动重发。OC/Pi四个基本格、工具回信、恢复及ACK丢失原生完成通过；OCBASE活跃输入未找到独立parent final而FOLLOWUP已完成。
+- Interpretation: 整体INCOMPLETE，不能因UI输入或其他Agent通过升级App接入成功。App第一拒绝门禁未保存，清理后无法补现场归属。CLI源码枚举共享HOME全部历史首meta存在错误选择；本轮actual registeredUUID未持久保存，不能伪造已证误登记。后续须只登记TUI启动后新文件，并以零收费插桩定位App首拒绝门禁，保持安全检查不放宽。

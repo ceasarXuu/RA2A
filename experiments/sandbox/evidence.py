@@ -55,7 +55,7 @@ def native(home, kind, marker, ack, from_address, oc_messages=None):
                 errors.append('NATIVE_MODEL_ERROR')
                 diagnostics.append(model_error(info['error']))
             if info['role'] == 'assistant' and text in accepted and info.get('time', {}).get('completed'):
-                finals.append({'id': info['id'], 'parent': info['parentID']})
+                finals.append({'id': info['id'], 'parent': info['parentID'], 'ack': text})
         finals = [r for r in finals if any(r['parent'] == u['id'] for u in users)]
     else:
         base = Path(home)/('.codex/sessions' if kind == 'codex' else '.pi/agent/sessions')
