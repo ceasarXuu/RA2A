@@ -210,3 +210,5 @@
 - Owner批准独立新轮，matrix008冻结3ed3e89/dirty=false/changed=false。14/16基础格PASS；CLI/OC/Pi busy及恢复PASS。App工具回信pending致两项ring失败并停止App依赖；App忙时/恢复/holder交接未执行。整体INCOMPLETE，人工未执行。
 - CLI ACK-loss选中同node App，绕过真实LAN丢ACK钩子，故accepted是测试sender选择错误；按实际node且非failed筛选修正，相关7项运行器回归PASS。旧CLI ACK-loss不改判，CLI10/10不追加验证输入。
 - 本轮预算CLI10/App4/OC9/Pi8，正式认证配置终点hash不变，owned资源reap且私有copies回收。App挂起仅只读保存安全投影，原因仍待透明MCP stdio唯一新标记补证；不自动开新轮、不重试旧标记。当前阶段保守新增生产900/900，后续若需扩张先据证据说明并取得授权。
+
+- 透明MCP诊断累计追加App三条bootstrap，均保留计数：006误继承App环境导致Pi worker未启动；007零输入API/握手通过但12秒诊断就绪窗口不足；008纯零输入真实GUI/guard/MCP初始化通过；009采用生产90秒窗口，bootstrap原生task_complete已保存但没有ready端点，未发control，tools/call为0。不得将这些证据认定为原嵌套send根因或修复通过。当前累计CLI10/App7/OC9/Pi8；停止付费重复，原矩阵INCOMPLETE与失败项保留。

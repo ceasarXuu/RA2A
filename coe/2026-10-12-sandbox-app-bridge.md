@@ -121,3 +121,19 @@
 - Source: .cache/sandbox-discovery/matrix-008/summary.json、report.md、ledger.jsonl；3ed3e89源码冻结dirty=false/changed=false，整体INCOMPLETE。14个basic PASS，Pi→App包含工具控制输入无final，App self依赖未跑；两项工具回信FAIL。CLI/OC/Pi busy+resume PASS，OC组合完成模式明确；CLI ACK-loss收到accepted，OC/Pi UNKNOWN+原生唯一完成PASS。
 - Matched signal: 四类预算CLI10/App4/OC9/Pi8，没有重试。runtime REAPED/私有凭据清理/正式8项hash一致。App挂起的exec包含实际mcp__ra2a__send_message且显式正确from/to，MCP及code-mode-host存在、命令可执行，未关联到工具错误或modelerror，根因待透明stdio诊断；guest_load_failed不当作RA2A故障因果。
 - Interpretation: ACK-loss从endpoints插入顺序选了App→CLI，但两者共享Codex节点；control.AdapterCoordinator同node分支直接registry.Deliver，不走lannode handler的withhold。这与accepted吻合，是已证测试路径缺陷。修正按实际address节点选择不同且未失败的sender；同节点/失败节点排除测试PASS。完整CLI真实ACK故障旧项未计通过，额度已满不重试。当前阶段生产新增900/900；后续仅取证，不擅自扩张修复代码。
+
+## Evidence E-014: 透明MCP诊断的启动器环境失败
+
+- Source: .cache/sandbox-discovery/app-mcp-proxy-006/result.json、summary.json；仅测试副本，生产源码未改。
+- Matched signal: App已提交一个bootstrap；Pi环境误继承App专属socket目录，worker拒绝启动，无Pi端点，控制消息及嵌套MCP调用均未执行。正式认证配置终点hash相同，自有资源和凭据副本回收。
+- Interpretation: 属于诊断启动器问题，不能归为产品投递失败。新增App输入仍计入matrix008累计4→5/10，Pi8/10、CLI10/10、OC9/10不变；不重放旧marker、不自动开新轮。后续先零输入核验独立环境、worker和透明代理握手，通过后才使用剩余额度。
+
+- Follow-up source: .cache/sandbox-discovery/app-mcp-proxy-007/result.json。独立Pi环境、两worker API及透明MCP initialize/tools-list预检通过；测试代理日志目录须在预检前创建。随后唯一新bootstrap已提交，App累计6/10，其他类别不变；未发送control/reply。
+- Follow-up limitation: 诊断端点门禁仅12秒，短于生产默认35秒及矩阵90秒；只证明该窗口内未ready。失败前没有保存native完成/代理快照，清理后不能补证。不得据此宣布产品回归或MCP导致失败；后续先零输入核验代理启动，使用生产窗口且异常清理前保存安全投影。
+
+## Evidence E-015: 透明代理零输入通过但有界App启动未发布
+
+- Source: .cache/sandbox-discovery/app-mcp-zero-008/result.json、app-mcp-proxy-009/result.json。008抑制自动bootstrap：真实GUI body/editor、guard和进程可用，App自身initialize/tools-list返回非error，输入0；不以UI代替bridge ready/writer归属证明。
+- Matched signal: 009沿生产90秒窗口，只提交一个全新bootstrap。native ID 01a12d28-19f1-7662-a756-e2c1edadb04c，originator Codex Desktop，同turn task_started/task_complete存在；该窗口未发现ready App端点。透明代理initialize/tools-list均返回非error，tools/call为0。控制输入与Pi回信未执行；清理前保存安全native计数和代理元数据。
+- Interpretation: 尚未进入原pending嵌套send路径，不能宣布其根因、修复或通过。累计App7/10、Pi8/10、CLI10/10、OC9/10，未提交的App第8条/Pi第9条不算消耗。正式Auth/config终点hash相同，自有资源与私有副本回收。停止付费重复，只读对照诊断与原矩阵启动差异；原matrix008整体INCOMPLETE保持。
+- Static comparison: 009/summary.json记录生产bridge/adapter/main及app_client/runtime/clients六文件hash与当前源一致。诊断改变MCP command为透明代理，并在App启动前额外预检；初次endpoint要求ready=True，而原matrix初次默认False。未保存实际targets投影、thread/read capability或kernel writer PID/exe/ticks，因此不能据筛选差异认定其为未发布的根因；下一取证须先覆盖这些门禁信号，不能再仅保存异常字符串。
