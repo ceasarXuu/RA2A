@@ -162,6 +162,7 @@ func (b *Bridge) fromNative(ctx context.Context, payload []byte) error {
 	delete(b.requests, id)
 	if found && p.method == "initialize" && len(frame["result"]) > 0 && string(frame["result"]) != "null" && (len(frame["error"]) == 0 || string(frame["error"]) == "null") {
 		b.initialized = true
+		b.ready = true // Desktop backends may omit the optional initialized notification.
 	}
 	b.mu.Unlock()
 	if found && p.reply != nil {

@@ -264,3 +264,38 @@ func TestCancellationWhileNativeWriteIsBlocked(t *testing.T) {
 		t.Fatal("canceled queued write reached native")
 	}
 }
+
+func TestOriginalInitializeResponseWithoutNotification(t *testing.T) {
+	f := newFixture(t)
+	for _, success := range []bool{false, true} {
+		send(t, f.app, map[string]any{"id": 7, "method": "initialize", "params": map[string]any{}})
+		init := frame(t, f.nativeFrames)
+		response := map[string]any{"id": init["id"]}
+		if success {
+			response["result"] = map[string]any{"codexHome": "fixture"}
+		} else {
+			response["error"] = map[string]any{"code": -32600, "message": "fixture rejection"}
+		}
+		send(t, f.native, response)
+		_ = frame(t, f.appFrames)
+		if !success {
+			if _, err := f.b.Call(context.Background(), "thread/loaded/list", nil); !errors.Is(err, ErrNotReady) {
+				t.Fatalf("failed initialization enabled bridge: %v", err)
+			}
+			continue
+		}
+		result := make(chan error, 1)
+		go func() {
+			_, err := f.b.Call(context.Background(), "thread/loaded/list", map[string]any{})
+			result <- err
+		}()
+		query := frame(t, f.nativeFrames)
+		if string(query["method"]) != `"thread/loaded/list"` {
+			t.Fatal("unexpected method")
+		}
+		send(t, f.native, map[string]any{"id": query["id"], "result": map[string]any{"data": []string{}}})
+		if err := <-result; err != nil {
+			t.Fatal(err)
+		}
+	}
+}

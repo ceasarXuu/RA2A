@@ -99,7 +99,7 @@ func TestNativeStdioBridgeReceiptAndOwnerContinuation(t *testing.T) {
 	if json.Unmarshal(init, &initialized) != nil || !sameStdioFixtureDirectory(initialized.CodexHome, home) {
 		t.Fatalf("native home escaped fixture: %s; stderr=%s", init, stderr.String())
 	}
-	client.write(t, map[string]any{"method": "initialized", "params": map[string]any{}})
+	// Match Desktop: successful initialize alone; no initialized notification.
 	started := client.call(t, ctx, "thread/start", map[string]any{"cwd": home, "approvalPolicy": "never", "sandbox": "danger-full-access"})
 	var created struct {
 		Thread struct {

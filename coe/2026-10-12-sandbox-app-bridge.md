@@ -97,3 +97,15 @@
 - Source: .cache/sandbox-repair/opencode-working-002/result.json；真实1.18.34/openai gpt-6.1-sol low，两条新输入继承matrix007原账本7→9/10。
 - Matched signal: BASE/FOLLOWUP各唯一user，busy gate通过，四次list_targets唯一callID均完成；第1次parent为BASE，后3次及唯一final parent为FOLLOWUP。最终精确两个ACK换行、finish=stop/completed存在；没有两个独立final。
 - Interpretation: 原匹配仅BASE parent会漏判这一原生合并完成；修正明确指令和组合关联，保留BASE.native=PENDING及ONE_COMBINED_NATIVE_FINAL说明，不伪造第二final。单ACK、无关parent、重复输入的拒绝回归通过。matrix007旧结果不回写升级。正式8项hash相同，原账本不改写，资源与私有凭据回收。
+
+## Evidence E-010: CLI真实新会话选择补证
+
+- Source: .cache/sandbox-discovery/cli-history-fix-001/result.json；绑定2b4e7fc、dirty=true（根工作树当时有已知OC修复），临时测试仅替换新的bootstrap预算ID，不将该诊断当冻结完整矩阵。
+- Matched signal: 预置App历史hash不变，实际codex-tui创建新ID并发布codex-cli，READY_SANDBOX final/task_complete同turn匹配。gpt-6.1-sol low，继承原CLI1→2/10，只有1条新输入。
+- Interpretation: 支持启动前历史排除的局部修复；source=vscode仍不能识别终端。正式8项hash相同，私有资源及凭据回收；未采正式PID集合，不外推其全过程无变化。
+
+## Evidence E-011: App成功initialize后遗漏通知导致桥永久未就绪
+
+- Source: .cache/sandbox-discovery/app-gate-real-003/gate-safe.json、app-gate-zero-004/gate-safe.json；独立诊断只固定布尔/enum，不记录协议正文或凭据。
+- Matched signal: 真实App多backend原initialize成功且experimentalApi=true；protected worker peer/ticks通过。首个loaded查询明确errors.Is(ErrNotReady)=true、ErrClosed=false；只有首backend发initialized，其余未发，但原App请求继续工作。收费唯一第2条继承原预算；后续精确对照零输入。
+- Interpretation: 原桥把initialized通知设为必需门禁，是可证根因。以唯一原App成功initialize响应设ready，不二次initialize、不改原参数，仍拒绝初始化失败、resume/thread-start及无writer投递。单元race通过失败初始化拒绝+成功响应无通知可查询；真实App内置官方0.160.0 fixture移除通知后收件、owner continuation、睡眠拒绝均PASS（自有child取消后signal killed/reaped）。该fixture仍不是完整真实GUI矩阵。
