@@ -47,3 +47,9 @@
 - 模型控制指令与基础矩阵格共享一次接收输入；工具业务回信独立核验、独立占接收Agent额度。额度按kind合并所有会话，不能用新session规避10条。人工阶段达到上限时明确不执行，不能为补人工验证自动开新轮。
 
 - dumpable保护不等于整个proc/root文件系统封闭。实际Agent可经App main root读取X11 cookie并认证，故每App只挂新客户端auth副本；界面连接后controller清空该副本inode。显示服务器原auth必须保留且不挂给App，清空它会让服务器重新允许无cookie，已有失败诊断已证。修正后实际无cookieX11 setup首字节0拒绝，原界面和从新副本重开的界面均可用。
+
+## 真实客户端的初始化与完成语义
+
+- Linux Desktop实际启动多个backend，其中部分成功initialize之后不会发initialized通知。stdio桥应以原App成功initialize响应确认就绪；不得补发二次初始化。失败响应保持拒绝。真实App0.160.0无通知native对照和GUI收件/关闭撤回已通过，不能根据首个backend行为假定全部一致。
+- OpenCode1.18.34忙时追加输入后，后续原工作工具和final的parentID可能切到新用户输入。保留两个原生user和四次工具的实际关联；只有唯一final精确双ACK才记一个组合完成，不伪造BASE独立final、不借用Codex同turn概念。单ACK、无关parent或重复输入保持不通过。
+- 共享CODEX_HOME的新CLI启动前先记录已有rollout；新启动注册只接受后来新增的会话，避免App历史被误认。native source=vscode不能替代实际终端归属证明。

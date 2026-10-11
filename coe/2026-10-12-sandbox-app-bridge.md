@@ -109,3 +109,9 @@
 - Source: .cache/sandbox-discovery/app-gate-real-003/gate-safe.json、app-gate-zero-004/gate-safe.json；独立诊断只固定布尔/enum，不记录协议正文或凭据。
 - Matched signal: 真实App多backend原initialize成功且experimentalApi=true；protected worker peer/ticks通过。首个loaded查询明确errors.Is(ErrNotReady)=true、ErrClosed=false；只有首backend发initialized，其余未发，但原App请求继续工作。收费唯一第2条继承原预算；后续精确对照零输入。
 - Interpretation: 原桥把initialized通知设为必需门禁，是可证根因。以唯一原App成功initialize响应设ready，不二次initialize、不改原参数，仍拒绝初始化失败、resume/thread-start及无writer投递。单元race通过失败初始化拒绝+成功响应无通知可查询；真实App内置官方0.160.0 fixture移除通知后收件、owner continuation、睡眠拒绝均PASS（自有child取消后signal killed/reaped）。该fixture仍不是完整真实GUI矩阵。
+
+## Evidence E-012: 修复后真实GUI收件与关闭撤回
+
+- Source: .cache/sandbox-discovery/app-reverify-005/summary.json、result.json、app-ui.png；绑定7817058 archive，生产没有诊断插桩，测试仅新的bootstrap预算ID/文本。
+- Matched signal: gpt-6.1-sol low，原App2→4/10；bootstrap native task_complete；真实codex-app ready端点发布。唯一RA2A自投accepted，原始user/final各1、精确ACK和task_complete同turn，实际截图中独立assistant ACK回复行可见。窗口关闭后端点撤回；writer/canAccept检查原样保留。
+- Interpretation: 已证App初始化修复的真实GUI专项通过，正式Auth/config终点hash相同，自有资源和私有副本清理。不是完整16格矩阵、App忙时/恢复/CLI持有者交接或人工验收通过；旧matrix007仍INCOMPLETE。累计各类CLI2/App4/OC9/Pi6；已请求新的独立全量轮额度批准，未自动清零执行。

@@ -31,7 +31,7 @@ RA2A_TEST_LINUX_RUNTIME=1 python3 -m unittest discover -s experiments/sandbox -p
 GOPROXY=off go test -race ./internal/sandbox ./cmd/ra2a-sandbox-node -count=1 -timeout=60s
 ```
 
-最新冻结源码真实报告matrix-007：OpenCode/Pi四个基础格、工具回信、两者恢复和ACK丢失不重放取得原生通过证据；Pi忙时追加通过。CLI/App启动后未发布端点，OpenCode忙时BASE未取得对应最终完成，整体INCOMPLETE，人工未执行。预算CLI1/App1/OC7/Pi6，不自动新开一轮清零。CLI共享历史目录误选风险已修正并有回归测试，尚未计作现场复验通过；App首个拒绝门禁仍在零收费诊断。正式认证配置终点哈希不变，自有资源与凭据副本已回收。matrix-006旧失败及运行期间源码变化记录保留，不作为冻结发布验收。
+最新冻结源码真实报告matrix-007：OpenCode/Pi四个基础格、工具回信、两者恢复和ACK丢失不重放取得原生通过证据；Pi忙时追加通过。CLI/App启动后未发布端点，OpenCode忙时BASE未取得对应最终完成，整体INCOMPLETE，人工未执行。预算CLI1/App1/OC7/Pi6，不自动新开一轮清零。CLI共享历史目录误选已修正且真实TUI专项PASS；OC原生parent切换导致漏判已修正并有真实双ACK组合完成证据。App缺initialized通知导致桥未就绪已修正、官方native回归PASS，真实GUI收件/final可见及关闭端点撤回专项PASS。正式认证配置终点哈希不变，自有资源与凭据副本已回收。matrix-006旧失败及运行期间源码变化记录保留，不作为冻结发布验收。
 
 ---
 
@@ -105,3 +105,9 @@ python3 experiments/sandbox/run.py --output .cache/sandbox-discovery/matrix-new 
 参数只写本轮私有配置，报告记录`sandbox-explicit-override`；不改变正式默认，不自动切换模型，不自动重试失败输入。未知provider/model或未经核验的端点保持BLOCKED_AUTH。固定1.18.34内置OpenAI OAuth会将请求重写到ChatGPT，沙盒仅复制该认证并放行已核域名；不会把所有缺少api的供应商视为可用。
 
 本轮选择Codex CLI/App与OpenCode为gpt-6.1-sol、low（本机原生轻量档位）。Pi当前只有其他provider凭据，保留原生模型并在报告列明，不自动生成OpenAI配置或复制不兼容认证。
+
+### 最新修复专项结论
+
+修复已推送：CLI新启动误选App历史、OpenCode忙时parent切换漏判、App遗漏initialized通知导致桥未就绪。58项Python测试、桥/适配器race及官方App内置0.160.0 native fixture通过。真实CLI新会话专项PASS、真实OpenCode一个双ACK组合完成已证、真实App GUI收件/最终回复可见/关闭撤回PASS。
+
+这些专项不代替完整矩阵。继承matrix007累计CLI2/App4/OC9/Pi6，每类上限10保持；全量复验需要用户批准新独立轮，不能自动清零规避。没有修改正式认证配置，临时凭据随自有资源回收。人工操作仍留在全自动阶段之后。

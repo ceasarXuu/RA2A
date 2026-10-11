@@ -202,3 +202,5 @@
 - 当前本阶段手写生产新增按保守差异计877/900；测试与证据不计入。正常运行后的临时凭据副本已随自有资源回收；正式8项认证配置终点hash相同，不扩张为全过程无变化证明。
 
 - 有界补证：CLI历史选择真TUI PASS（原账本1→2）；OC native parent切换与一个精确双ACK final确证（7→9），组合匹配修正后10项证据回归通过，完整Python58项PASS。App真实初始化遗漏initialized通知导致ErrNotReady已确证；只新增1行成功响应ready，失败初始化仍拒绝，官方0.160.0无通知fixture race通过。当前阶段生产894/900，完整GUI补证待执行。
+
+- 修复后7817058真实App GUI专项PASS：unique bootstrap和自投两输入继承App2→4/10；真实writer/canAccept门禁、原生收件/final/task_complete、独立回复行可见及关闭撤回通过。累计CLI2/App4/OC9/Pi6，旧矩阵INCOMPLETE原样保留；新的全量轮额度已向Owner请求，未把等待视为批准。
