@@ -45,3 +45,5 @@
 - 本机bwrap0.9.0不支持preserve-fds；CDP使用标准输入/输出穿过内部launcher，再映射真实App fd3/4。不启动debug TCP端口。独立D-Bus的地址走另一条pipe、服务stdout/stderr走私有日志，不能污染CDP framing。
 - 额外user namespace和cap-drop ALL不足：实际同节点Agent仍可重开App fd3/4。PR_SET_DUMPABLE0若在ELF constructor立即执行，真实Electron报No usable sandbox。因此采用renderer body初始化后，可信controller触发只保护browser的guard，再逐次实际验证同节点Agent两FD均PermissionError；没有ACK/拒绝证据则不发GUI模型输入。正式App不加载此guard，真实Electron sandbox保持开启。
 - 模型控制指令与基础矩阵格共享一次接收输入；工具业务回信独立核验、独立占接收Agent额度。额度按kind合并所有会话，不能用新session规避10条。人工阶段达到上限时明确不执行，不能为补人工验证自动开新轮。
+
+- dumpable保护不等于整个proc/root文件系统封闭。实际Agent可经App main root读取X11 cookie并认证，故每App只挂新客户端auth副本；界面连接后controller清空该副本inode。显示服务器原auth必须保留且不挂给App，清空它会让服务器重新允许无cookie，已有失败诊断已证。修正后实际无cookieX11 setup首字节0拒绝，原界面和从新副本重开的界面均可用。

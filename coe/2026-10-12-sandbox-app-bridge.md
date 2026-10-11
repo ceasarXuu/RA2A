@@ -65,3 +65,22 @@
 - Source: .cache/sandbox-discovery/app-runtime-probe12/、app-auth-probe-001/result.json与脱敏截图。
 - Matched signal: 真实Electron sandbox正常、document.body初始化；激活后mainPID14 ACK，同节点真实cap0 Agent两FD均PermissionError，controller CDP继续可用，App stdio initialize成功。私有正式认证副本下editorAvailable/protected均true，界面显示GPT-6.1 Sol Light；bootstrapSubmitted=false、budgetReserved0，worker ready/stale=false且尚无会话。
 - Interpretation: 支持此保护时机与最小认证投影；未提交模型、不将编辑栏或空端点当完整矩阵通过。正式auth/config终点SHA256相同，临时副本已清理。
+
+## Evidence E-006: 额外显示凭证路径仍暴露
+- Related hypotheses: H-005
+- Direction: neutral
+- Source: .cache/sandbox-discovery/app-runtime-probe13/result.json。
+- Matched signal: 同节点cap0 Agent重开CDP fd被拒绝，但可经某App相关PID的proc/root读取display.auth及控制文件；自己的/tmp显示socket不能连接。
+- Interpretation: CDP门禁通过不证明全部GUI输入边界封闭，暂停收费矩阵。需精确区分PID及实际X11认证连接，不能仅socket connect或cookie文件可读就宣布有真实模型输入。
+
+## Hypothesis H-006: 已连接GUI无需长期保留可读取的显示cookie文件
+- Status: confirmed
+- Claim: 每次App只mount专属auth副本，真实X11连接初始化后controller清空该inode；原显示auth仅hostcontroller持有，后续App重开复制新副本。既有真实界面继续可用，Agent不能再经任何App进程root取得cookie发起新的认证X11连接。
+- Diagnostic evidence plan: 对照清空前后实际X11 setup认证结果，精确PID/root路径；清空后CDP截图/界面仍可用及重开新App可认证，零模型。不依赖固定延时或关闭X11认证。
+
+## Evidence E-007: 每App独立显示cookie副本清空后实际认证拒绝
+- Related hypotheses: H-006
+- Direction: supports
+- Source: .cache/sandbox-discovery/app-runtime-probe16/result.json；probe15失败诊断保留。
+- Matched signal: 本轮guard ACK PID13严格对应main，无--type；两CDP FD所有open模式拒绝。清空前Agent通过精确main proc/root读取一次性cookie并完成真实X11 setup认证；只清空App专属副本后cookieBytes0，无cookiesetup首字节0/长度8拒绝。既有App CDP/body/screenshot正常，停止后由原hostauth新复制的App也可打开。
+- Interpretation: 支持候选最小修正；probe15诊断误清原Xephyr auth导致服务器不再要求cookie，不能当产品根因。必须保留controller独占的显示服务原auth，仅清空每App客户端副本，不能用文件可读、socket connect替代实际认证结论。零模型，无额外X11 ACL修改。

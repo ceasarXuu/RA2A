@@ -60,6 +60,14 @@ def host_display(root):
         os.close(read)
 
 
+def auth_copy(directory, original):
+    path = directory/'display.auth'
+    with path.open('xb') as stream:
+        os.fchmod(stream.fileno(), 0o600)
+        stream.write(Path(original).read_bytes())
+    return path
+
+
 class AppProcess:
     def __init__(self, owned, send, receive, ledger):
         self.owned, self.send, self.receive, self.ledger = owned, send, receive, ledger
@@ -184,10 +192,11 @@ def start(runtime, env, bins, home, ledger, display_config, session_id=None):
     group.write_text('sandbox:x:1000:\n')
     control = runtime.root/('app-control-'+secrets.token_hex(5))
     control.mkdir(mode=0o700)
+    auth = auth_copy(control, display_config['auth'])
     mounts = [(str(control), '/run/app-control', False),
               (bins['app_guard'], '/run/app_guard.so', True),
               (str(passwd), '/etc/passwd', True), (str(group), '/etc/group', True),
-              (display_config['auth'], '/run/display.auth', True),
+              (str(auth), '/run/display.auth', True),
               (display_config['socket'], display_config['socket'], True)]
     launch = """import os,sys,fcntl,subprocess
 r=fcntl.fcntl(0,fcntl.F_DUPFD,10); w=fcntl.fcntl(1,fcntl.F_DUPFD,10)
@@ -224,6 +233,9 @@ os.close(r); os.close(w); os.environ['LD_PRELOAD']='/run/app_guard.so'; os.execv
             if app.poll() is not None or time.monotonic() > deadline:
                 raise RuntimeError('private App guard activation failed')
             time.sleep(.05)
+        auth.write_bytes(b'')  # Existing X11 clients retain their authenticated connection.
+        if auth.stat().st_size:
+            raise RuntimeError('private App display authorization withdrawal failed')
         app_pid = int((control/'protected').read_text())
         probe = '''import os,sys
 from pathlib import Path

@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from app_client import AppProcess
+from app_client import AppProcess, auth_copy
 from budget import Ledger
 
 
@@ -17,6 +17,25 @@ class Owned:
 
 
 class AppInputTest(unittest.TestCase):
+    def test_authorization_copy_withdrawal_preserves_host_and_restart(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            original = root/'host.auth'
+            original.write_bytes(b'disposable display authorization')
+            first, second = root/'first', root/'second'
+            first.mkdir(mode=0o700)
+            second.mkdir(mode=0o700)
+            copied = auth_copy(first, original)
+            self.assertEqual(copied.stat().st_mode & 0o777, 0o600)
+            copied.write_bytes(b'')
+            self.assertEqual(copied.read_bytes(), b'')
+            self.assertEqual(original.read_bytes(), b'disposable display authorization')
+            restarted = auth_copy(second, original)
+            self.assertNotEqual(copied, restarted)
+            self.assertEqual(restarted.read_bytes(), original.read_bytes())
+            with self.assertRaises(FileExistsError):
+                auth_copy(first, original)
+
     def test_missing_editor_does_not_reserve(self):
         with tempfile.TemporaryDirectory() as root:
             ledger = Ledger(Path(root)/'ledger')
