@@ -177,7 +177,7 @@ def execute(root):
             if transfer:
                 report['cases'].append(transfer)
         for receiver in (k for k in endpoints if k not in failed):
-            sources = [k for k in endpoints if k != receiver]
+            sources = lan_senders(endpoints, receiver, failed)
             case = {'case': 'native-postwrite-ack-loss-'+receiver, 'receiver': receiver}
             if not sources:
                 case.update(status='NOT_RUN', reason='requires a distinct real LAN sender')
@@ -221,6 +221,11 @@ def execute(root):
         rows += ['', '人工：'+report['manual'], '资源：'+report.get('ownedResources', 'UNKNOWN')]
         (root/'report.md').write_text('\n'.join(rows)+'\n')
     return report
+
+
+def lan_senders(endpoints, receiver, failed):
+    target = endpoints[receiver]['address'].rsplit('/', 1)[0]
+    return [k for k, v in endpoints.items() if k not in failed and v['address'].rsplit('/', 1)[0] != target]
 
 
 def send(runtime, config, endpoints, sender, receiver, case, extra='', wait=True, ack_loss=False, alternate=None):

@@ -204,3 +204,9 @@
 - 有界补证：CLI历史选择真TUI PASS（原账本1→2）；OC native parent切换与一个精确双ACK final确证（7→9），组合匹配修正后10项证据回归通过，完整Python58项PASS。App真实初始化遗漏initialized通知导致ErrNotReady已确证；只新增1行成功响应ready，失败初始化仍拒绝，官方0.160.0无通知fixture race通过。当前阶段生产894/900，完整GUI补证待执行。
 
 - 修复后7817058真实App GUI专项PASS：unique bootstrap和自投两输入继承App2→4/10；真实writer/canAccept门禁、原生收件/final/task_complete、独立回复行可见及关闭撤回通过。累计CLI2/App4/OC9/Pi6，旧矩阵INCOMPLETE原样保留；新的全量轮额度已向Owner请求，未把等待视为批准。
+
+### 2026-10-12 Owner批准新轮额度后的冻结验收
+
+- Owner批准独立新轮，matrix008冻结3ed3e89/dirty=false/changed=false。14/16基础格PASS；CLI/OC/Pi busy及恢复PASS。App工具回信pending致两项ring失败并停止App依赖；App忙时/恢复/holder交接未执行。整体INCOMPLETE，人工未执行。
+- CLI ACK-loss选中同node App，绕过真实LAN丢ACK钩子，故accepted是测试sender选择错误；按实际node且非failed筛选修正，相关7项运行器回归PASS。旧CLI ACK-loss不改判，CLI10/10不追加验证输入。
+- 本轮预算CLI10/App4/OC9/Pi8，正式认证配置终点hash不变，owned资源reap且私有copies回收。App挂起仅只读保存安全投影，原因仍待透明MCP stdio唯一新标记补证；不自动开新轮、不重试旧标记。当前阶段保守新增生产900/900，后续若需扩张先据证据说明并取得授权。

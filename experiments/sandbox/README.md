@@ -111,3 +111,7 @@ python3 experiments/sandbox/run.py --output .cache/sandbox-discovery/matrix-new 
 修复已推送：CLI新启动误选App历史、OpenCode忙时parent切换漏判、App遗漏initialized通知导致桥未就绪。58项Python测试、桥/适配器race及官方App内置0.160.0 native fixture通过。真实CLI新会话专项PASS、真实OpenCode一个双ACK组合完成已证、真实App GUI收件/最终回复可见/关闭撤回PASS。
 
 这些专项不代替完整矩阵。继承matrix007累计CLI2/App4/OC9/Pi6，每类上限10保持；全量复验需要用户批准新独立轮，不能自动清零规避。没有修改正式认证配置，临时凭据随自有资源回收。人工操作仍留在全自动阶段之后。
+
+### 最新冻结全矩阵matrix008
+
+用户批准新轮额度后，3ed3e89冻结运行：14/16基础格通过，CLI/OpenCode/Pi忙时追加与恢复通过；App工具回信未最终完成导致依赖停止，整体INCOMPLETE。预算CLI10/App4/OC9/Pi8，正式认证终点hash不变，资源与私有凭据回收。CLI丢ACK项选错同节点sender已修正、旧项不算通过；OpenCode/Pi跨节点UNKNOWN且原生唯一完成通过。App忙时/恢复/交接与人工仍未验收，禁止以专项PASS替代。

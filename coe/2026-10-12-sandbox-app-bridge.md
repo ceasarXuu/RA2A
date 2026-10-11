@@ -115,3 +115,9 @@
 - Source: .cache/sandbox-discovery/app-reverify-005/summary.json、result.json、app-ui.png；绑定7817058 archive，生产没有诊断插桩，测试仅新的bootstrap预算ID/文本。
 - Matched signal: gpt-6.1-sol low，原App2→4/10；bootstrap native task_complete；真实codex-app ready端点发布。唯一RA2A自投accepted，原始user/final各1、精确ACK和task_complete同turn，实际截图中独立assistant ACK回复行可见。窗口关闭后端点撤回；writer/canAccept检查原样保留。
 - Interpretation: 已证App初始化修复的真实GUI专项通过，正式Auth/config终点hash相同，自有资源和私有副本清理。不是完整16格矩阵、App忙时/恢复/CLI持有者交接或人工验收通过；旧matrix007仍INCOMPLETE。累计各类CLI2/App4/OC9/Pi6；已请求新的独立全量轮额度批准，未自动清零执行。
+
+## Evidence E-013: 新轮matrix008与ACK故障sender节点误选
+
+- Source: .cache/sandbox-discovery/matrix-008/summary.json、report.md、ledger.jsonl；3ed3e89源码冻结dirty=false/changed=false，整体INCOMPLETE。14个basic PASS，Pi→App包含工具控制输入无final，App self依赖未跑；两项工具回信FAIL。CLI/OC/Pi busy+resume PASS，OC组合完成模式明确；CLI ACK-loss收到accepted，OC/Pi UNKNOWN+原生唯一完成PASS。
+- Matched signal: 四类预算CLI10/App4/OC9/Pi8，没有重试。runtime REAPED/私有凭据清理/正式8项hash一致。App挂起的exec包含实际mcp__ra2a__send_message且显式正确from/to，MCP及code-mode-host存在、命令可执行，未关联到工具错误或modelerror，根因待透明stdio诊断；guest_load_failed不当作RA2A故障因果。
+- Interpretation: ACK-loss从endpoints插入顺序选了App→CLI，但两者共享Codex节点；control.AdapterCoordinator同node分支直接registry.Deliver，不走lannode handler的withhold。这与accepted吻合，是已证测试路径缺陷。修正按实际address节点选择不同且未失败的sender；同节点/失败节点排除测试PASS。完整CLI真实ACK故障旧项未计通过，额度已满不重试。当前阶段生产新增900/900；后续仅取证，不擅自扩张修复代码。

@@ -12,6 +12,14 @@ import budget
 
 
 class RunnerTests(unittest.TestCase):
+    def test_ack_loss_requires_another_live_lan_node(self):
+        endpoints = {'app': {'address': 'ra2a://sandbox-codex/app-id'},
+                     'codex': {'address': 'ra2a://sandbox-codex/cli-id'},
+                     'opencode': {'address': 'ra2a://sandbox-oc/oc-id'},
+                     'pi': {'address': 'ra2a://sandbox-pi/pi-id'}}
+        self.assertEqual(runner.lan_senders(endpoints, 'codex', {'pi'}), ['opencode'])
+        self.assertEqual(runner.lan_senders(endpoints, 'app', {'opencode', 'pi'}), [])
+
     def setUp(self):
         self.config = {'nodes': {'pi': {'home': '/private/pi'}}}
         self.endpoints = {'opencode': {'address': 'ra2a://sandbox-oc/ses_a', 'id': 'ses_a'},
