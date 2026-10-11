@@ -30,7 +30,7 @@ class ProfileTests(unittest.TestCase):
 
     def test_codex_copy_minimal_and_no_writeback(self):
         self.binary('codex')
-        self.write('.codex/config.toml', 'model="selected"\n[mcp_servers.unsafe]\ncommand="host-command"\n')
+        self.write('.codex/config.toml', 'model="selected"\nmodel_reasoning_effort="low"\n[mcp_servers.unsafe]\ncommand="host-command"\n')
         original = self.write('.codex/auth.json', {'auth_mode': 'chatgpt', 'tokens': {
             'access_token': 'secret-a', 'refresh_token': 'secret-r', 'id_token': 'secret-i'}})
         before = original.read_bytes()
@@ -39,6 +39,8 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(result['manifest']['codex']['status'], 'READY')
         self.assertNotIn('secret', json.dumps(result['manifest']))
         self.assertNotIn('mcp_servers', (target / '.codex/config.toml').read_text())
+        self.assertIn('model_reasoning_effort = "low"', (target / '.codex/config.toml').read_text())
+        self.assertEqual(result['manifest']['codex']['reasoning_effort'], 'low')
         self.assertEqual((target / '.codex/auth.json').stat().st_mode & 0o777, 0o600)
         self.assertEqual(target.stat().st_mode & 0o777, 0o700)
         (target / '.codex/auth.json').write_text('{}')
@@ -87,7 +89,8 @@ class ProfileTests(unittest.TestCase):
         recent = self.write('.local/state/opencode/model.json', {'recent': [{'providerID': 'a', 'modelID': 'old'}]})
         auth = self.write('.local/share/opencode/auth.json', {'a': {'type': 'api', 'key': 'secret'}})
         self.write('.cache/opencode/models.json', {'a': {'api': 'https://api.example.test/v1',
-                                                       'models': {'old': {}, 'new': {}}}})
+                                                       'models': {'old': {}, 'new': {
+                                                           'reasoning_options': [{'type': 'effort', 'values': ['low', 'high']}]}}}})
         return {p: p.read_bytes() for p in (config, recent, auth)}
 
     def test_opencode_override_is_private_and_explicit(self):
@@ -109,6 +112,23 @@ class ProfileTests(unittest.TestCase):
     def test_opencode_override_unknown_model_refused_without_fallback(self):
         self.opencode_override_fixture()
         result = profiles.prepare(self.base/'run', ['opencode'], self.host, opencode_model='a/missing')
+        self.assertEqual(result['manifest']['opencode']['status'], 'BLOCKED_AUTH')
+        self.assertNotIn('opencode', result['nodes'])
+
+    def test_opencode_effort_uses_native_model_options_privately(self):
+        originals = self.opencode_override_fixture()
+        result = profiles.prepare(self.base/'run', ['opencode'], self.host,
+                                  opencode_model='a/new', opencode_effort='low')
+        private = Path(result['nodes']['opencode']['home'])/'.config/opencode/opencode.json'
+        self.assertEqual(json.loads(private.read_text())['provider']['a']['models']['new']['options'],
+                         {'reasoningEffort': 'low'})
+        self.assertEqual(result['manifest']['opencode']['reasoning_effort'], 'low')
+        self.assertTrue(all(p.read_bytes() == raw for p, raw in originals.items()))
+
+    def test_opencode_effort_rejects_unmapped_light(self):
+        self.opencode_override_fixture()
+        result = profiles.prepare(self.base/'run', ['opencode'], self.host,
+                                  opencode_model='a/new', opencode_effort='light')
         self.assertEqual(result['manifest']['opencode']['status'], 'BLOCKED_AUTH')
         self.assertNotIn('opencode', result['nodes'])
 

@@ -87,13 +87,17 @@ def _codex(home, target, snapshots, private_env):
     else:
         raise BlockedAuth('Codex authentication mode is unsupported')
     _write(target / '.codex/auth.json', auth)
+    effort = config.get('model_reasoning_effort')
+    if effort is not None and effort not in ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'):
+        raise BlockedAuth('Codex reasoning effort is unsupported')
     _write(target / '.codex/config.toml', 'model = ' + json.dumps(model) + '\n'
+           + ('model_reasoning_effort = '+json.dumps(effort)+'\n' if effort is not None else '') +
            'approval_policy = "never"\nsandbox_mode = "workspace-write"\n[features]\nplugins = false\n')
     return {'provider': provider, 'model': model,
-            'hosts': ['chatgpt.com', 'auth.openai.com', 'api.openai.com']}
+            'reasoning_effort': effort, 'hosts': ['chatgpt.com', 'auth.openai.com', 'api.openai.com']}
 
 
-def _opencode(home, target, snapshots, private_env, model_override=None):
+def _opencode(home, target, snapshots, private_env, model_override=None, effort_override=None):
     config = _read(home / '.config/opencode/opencode.json', snapshots)
     if model_override is not None and (not isinstance(model_override, str) or
             len(model_override) > 200 or '/' not in model_override or
@@ -118,11 +122,19 @@ def _opencode(home, target, snapshots, private_env, model_override=None):
         raise BlockedAuth('custom OpenCode provider projection requires an explicit safe schema')
     auth = _read(home / '.local/share/opencode/auth.json', snapshots)
     credential = _credential(auth.get(provider))
-    _write(target / '.local/share/opencode/auth.json', {provider: credential})
-    _write(target / '.config/opencode/opencode.json', {'model': selected, 'mcp': {},
-                                                     'permission': {'*': 'deny'}})
     catalog = catalog or _read(home / '.cache/opencode/models.json', snapshots)
     description = catalog.get(provider, {})
+    selected_model = description.get('models', {}).get(model, {})
+    if effort_override is not None:
+        efforts = [v for item in selected_model.get('reasoning_options', [])
+                   if item.get('type') == 'effort' for v in item.get('values', [])]
+        if effort_override not in efforts:
+            raise BlockedAuth('explicit OpenCode reasoning effort is unsupported by the selected model')
+    private_config = {'model': selected, 'mcp': {}, 'permission': {'*': 'deny'}}
+    if effort_override is not None:
+        private_config['provider'] = {provider: {'models': {model: {'options': {'reasoningEffort': effort_override}}}}}
+    _write(target / '.local/share/opencode/auth.json', {provider: credential})
+    _write(target / '.config/opencode/opencode.json', private_config)
     hostname = urlsplit(description.get('api', '')).hostname
     # Fixed 1.18.34 bundled OpenAI OAuth plugin rewrites SDK requests to
     # chatgpt.com and refreshes only this private auth copy at auth.openai.com.
@@ -134,7 +146,8 @@ def _opencode(home, target, snapshots, private_env, model_override=None):
     _write(target / '.cache/opencode/models.json', {provider: {
         **{k: description[k] for k in ('id', 'env', 'npm', 'api', 'name', 'doc') if k in description},
         'models': {model: description['models'][model]}}})
-    return {'provider': provider, 'model': model, 'selection_source': provenance, 'hosts': hosts}
+    return {'provider': provider, 'model': model, 'selection_source': provenance,
+            'reasoning_effort': effort_override, 'hosts': hosts}
 
 
 def _pi(home, target, snapshots, private_env):
@@ -162,7 +175,7 @@ def _pi(home, target, snapshots, private_env):
     return {'provider': provider, 'model': model, 'hosts': [hostname, 'pi.dev']}
 
 
-def prepare(root: Path, selected: list[str], host_home: Path, *, opencode_model=None) -> dict:
+def prepare(root: Path, selected: list[str], host_home: Path, *, opencode_model=None, opencode_effort=None) -> dict:
     """Return public manifest, nodes/bins, and per-kind PRIVATE env; no model calls.
 
     BLOCKED_AUTH is per kind. Consumers must skip blocked nodes, never choose a
@@ -187,7 +200,7 @@ def prepare(root: Path, selected: list[str], host_home: Path, *, opencode_model=
         private_env = {}
         try:
             binary = _bin(host_home, kind)
-            choice = (_opencode(host_home, target, snapshots, private_env, opencode_model)
+            choice = (_opencode(host_home, target, snapshots, private_env, opencode_model, opencode_effort)
                       if kind == 'opencode' else
                       globals()['_' + kind](host_home, target, snapshots, private_env))
             result['manifest'][kind] = {'status': 'READY', **choice}

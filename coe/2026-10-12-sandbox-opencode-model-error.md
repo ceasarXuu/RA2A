@@ -54,3 +54,10 @@
 - Source: 固定官方 https://raw.githubusercontent.com/anomalyco/opencode/v1.18.34/packages/opencode/src/plugin/openai/codex.ts；本机auth字段名与catalog只读核验；test_profiles.py。
 - Matched signal: 当前openai凭据type=oauth，catalog.npm=@ai-sdk/openai/api缺省；原生插件将/v1/responses或/chat/completions重写chatgpt.com/backend-api/codex/responses，刷新auth.openai.com，gpt-6-sol在固定允许集合。不修改原生插件，仅投影最小凭据副本与三项明确域名。
 - Outcome: 新增--opencode-model显式沙盒参数，无自动回退；未知provider/model拒绝。内置OAuth投影九项相关测试通过，正式配置/认证不变。Owner是否选用openai/gpt-6-sol待答复，未新增收费输入；参数可运行不等于真实上游验收通过。
+
+## Evidence E-004: Owner模型批准及轻量档投影
+- Related hypotheses: H-001,H-003
+- Direction: supports
+- Source: Owner明确「批准，模型用6.1-sol light」；本机模型声明与固定OpenCode1.18.34 provider transform/config schema；11项profiles测试。
+- Matched signal: openai目录已有gpt-6.1-sol；supported reasoning effort包含low且说明为lighter reasoning，无literal light。本机Codex准确配置为gpt-6.1-sol/low。显式OpenCode私有模型options.reasoningEffort=low；Codex私有配置保留low；正式认证/config hash投影前后相同。
+- Interpretation: 批准已落实，无收费输入；真实模型最终完成待本轮矩阵验证。Pi本机只有opencode-go认证且目录无6.1-sol，本轮沿用其已有原生配置，不能宣称四类统一同模型。
