@@ -2,12 +2,12 @@
 
 - Product Authority：[PRD Confirmed Product Decisions](prd.md#confirmed-product-decisions)。
 - Applicable Decisions：PD1、PD2、PD3；Codex 所有权语义引用既有 PD36/PD37。
-- 状态：设计 drafted；实现 not-started；有效性 valid-with-qualifications。
+- 状态：隔离预检查可运行；完整矩阵实现 pending 产品边界/代码限额确认；有效性 valid-with-qualifications。
 - 更新：2026-10-12。基础设施主题独立于版本目录，不自行指定发布版本。
 
 ## Execution Contract
 
-产品权威仅限用户直接确认行，Agent 不自批准。当前工程证据可修订方案，不能改变产品权威；新增核心规则列入待决。每个实现阶段前按实际实现 rebase，pending/blocked-on-plan-approval 不执行；重大方向/范围变化记录 Plan Delta 并取得批准。阶段后仅审计本阶段 Product Decision Delta。当前授权是设计，不复制认证、不启动环境、不安装或部署。
+产品权威仅限用户直接确认行，Agent 不自批准。当前工程证据可修订方案，不能改变产品权威；新增核心规则列入待决。每个实现阶段前按实际实现 rebase，pending/blocked-on-plan-approval 不执行；重大方向/范围变化记录 Plan Delta 并取得批准。阶段后仅审计本阶段 Product Decision Delta。Owner「继续，把沙盒做完」授权继续实施。Q1/Q2 尚未确认；当前先实施独立无凭据预检查，不复制认证、不启动付费输入或正式服务。
 
 ## 1. 已核实的实现基础
 
@@ -108,7 +108,7 @@
 ### Phase A：隔离与入口Discovery
 
 - Pre-Phase Plan Rebase Gate：ready（仅D1/D2无凭据验证）；material delta=none；approval=user-approved-plan-direct：Owner「先验证」。依据当前库存与代码复用，仅做namespace/bwrap/display/DBus探针，D3及实现仍未授权。
-- 执行verified（本次无Agent基础探针范围）；D1真实三节点LAN、D2显示/DBus/bwrap原语通过，D2真实App与单实例验收尚not-started，不能整体声明GUI已兼容。预算桶/写回规则确认后才D3。
+- 执行verified（本次无Agent基础探针范围）；D1真实三节点LAN、D2显示/DBus/bwrap原语通过，D2真实 App 私有窗口已观察；无网络时停在组织设置加载门禁，backend/IPC 与单实例完整验收仍未通过，不能整体声明GUI已兼容。预算桶/写回规则确认后才D3。
 - 建议阶段生产新增≤250行；主要一次性诊断脚本/报告，不把阶段验证扩成完整部署工具。依赖安装、特权常驻服务或VM变更另行评审。
 - 2026-10-12本机实际结果：[复现与证据摘要](../../experiments/sandbox/README.md)。214行一次性探针，无新增依赖；unprivileged namespace可建私有bridge/3个net，真实mDNS+DTLS/CoAP环形投递通过；bwrap隔离HOME/运行目录与私有passwd支持D-Bus，Xephyr单socket/new-cookie下xdpyinfo通过。正式Agent、Auth与模型未运行，收费消息0；原语方向direction-supported，不等同完整App/预算实现。
 
@@ -141,3 +141,10 @@
 ## Plan Delta
 
 首次设计，无旧沙盒实现计划需要替换。后续隔离运行时、真实认证能力或收件入口证据否定本方案时，在此记录变更及批准，不修改产品权威来迁就实现。
+
+### 2026-10-12 继续实施的范围核验
+
+- 已形成 `experiments/sandbox/preflight.py` 一条命令：现有工具检查、构建绑定探针、三节点真实私有 LAN、私有显示/DBus、可选真实 App 窗口观察及中文报告。无认证/收费输入；不称完整矩阵。
+- D2 实际网络禁用时组织设置无法加载，已保存窗口截图与 namespace/进程观察；下一阶段需受控出口及凭据副本，不能通过扩大宿主挂载绕过。
+- 完整 W1–W4 预计需 1,200–1,800 行手写生产代码，超过 AGENTS.md 当前阶段500行限制。已请求将本次实现上限扩大到1,800行，各文件仍≤500；未获批准前不扩张到依赖该上限的完整运行器。不把脚本或运行逻辑藏进测试文件规避统计。
+- Q1/Q2 已同时提供可选精确定义供 Owner 确认；不以通用继续指令替代额度桶/退款/认证写回的明确确认。

@@ -1,4 +1,4 @@
-"""No Agent, credentials or model: nested X display + private bwrap/D-Bus."""
+"""Private display probe; optional real App startup without credentials/network."""
 import json
 import os
 from pathlib import Path
@@ -21,11 +21,11 @@ def main():
     readfd, writefd = os.pipe()
     with (root / 'xephyr.log').open('w') as log:
         server = subprocess.Popen(['Xephyr', '-displayfd', str(writefd), '-screen', '800x600',
-                                   '-nolisten', 'tcp', '-noreset', '-auth', str(auth)],
+                                   '-nolisten', 'tcp', '-noreset', '-extension', 'MIT-SHM', '-auth', str(auth)],
                                   pass_fds=(writefd,), stdout=log, stderr=log)
         os.close(writefd)
         client = None
-        result = {'agentStarted': False, 'modelCalls': 0}
+        result = {'realAppProbe': '--app' in sys.argv[2:], 'credentialsImported': False, 'modelCalls': 0}
         try:
             selector = selectors.DefaultSelector()
             selector.register(readfd, selectors.EVENT_READ)
@@ -56,10 +56,40 @@ def main():
                      'dbus-run-session -- sh -c \'xdpyinfo >/dev/null && '
                      'test -n "$DBUS_SESSION_BUS_ADDRESS" && '
                      'echo nested-display-and-private-dbus-pass\'']
+            if '--app' in sys.argv[2:]:
+                (root / 'home').mkdir(mode=0o700)
+                args = args[:-3] + [
+                    '--bind', str(root/'home'), '/home/test',
+                    '--ro-bind', '/etc/fonts', '/etc/fonts',
+                    '--ro-bind', '/etc/os-release', '/etc/os-release',
+                    '--chdir', '/home/test',
+                    '--setenv', 'CODEX_HOME', '/home/test/.codex',
+                    '--setenv', 'CODEX_ELECTRON_USER_DATA_PATH', '/home/test/app',
+                    '--setenv', 'CODEX_APP_SERVER_FORCE_CLI', '1',
+                    '--setenv', 'CODEX_CLI_PATH', '/usr/lib/chatgpt/resources/codex',
+                    '--setenv', 'CODEX_SPARKLE_ENABLED', 'false',
+                    '--setenv', 'XDG_CONFIG_HOME', '/home/test/config',
+                    '--setenv', 'XDG_CACHE_HOME', '/home/test/cache',
+                    '--setenv', 'XDG_DATA_HOME', '/home/test/data',
+                    '/bin/sh', '-c', 'mkdir -m700 /run/private; '
+                    'dbus-run-session -- sh -c \' '
+                    '/usr/lib/chatgpt/ChatGPT --ozone-platform=x11 --password-store=basic & app=$!; '
+                    'trap "kill $app 2>/dev/null; wait $app" EXIT; '
+                    'sleep 8; kill -0 $app || exit 10; '
+                    'xwininfo -root -tree; /usr/bin/import-im6.q16 -window root /home/test/window.png; '
+                    'find /home/test/.codex -type s -print; '
+                    'ps -eo pid,ppid,args; '
+                    'readlink /proc/$app/ns/net /proc/$app/ns/ipc; '
+                    'echo app-probe-observed\'']
             client = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             out, err = client.communicate(timeout=15)
             result = {'display': display, 'exit': client.returncode, 'stdout': out, 'stderr': err,
-                      'agentStarted': False, 'modelCalls': 0}
+                      'realAppProbe': '--app' in sys.argv[2:], 'credentialsImported': False, 'modelCalls': 0}
+            if result['realAppProbe']:
+                result['windowObserved'] = '("ChatGPT" "ChatGPT")' in out
+                result['backendIPCObserved'] = '/home/test/.codex/ipc/' in out
+                result['matrixStatus'] = 'NOT_RUN_NO_CREDENTIALS_OR_NETWORK'
+                result['screenshot'] = 'home/window.png' if (root/'home/window.png').exists() else None
             (root/'result.json').write_text(json.dumps(result, indent=2))
             print(json.dumps(result))
             if client.returncode:
