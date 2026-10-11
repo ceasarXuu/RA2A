@@ -66,6 +66,8 @@ def terminal(process):
 
 def submit(process, text):
     """Caller reserves one input first; separate paste from submit without retry."""
+    if callable(getattr(process, 'submit', None)):
+        return process.submit(text)
     process.write(text)
     time.sleep(.5)  # Codex 0.162.1 Enter paste suppression lasts 120 ms.
     process.write('\r')
@@ -90,8 +92,9 @@ def configure(home, kind, source, bins):
             stream.write('\n[projects."/home/sandbox/work"]\ntrust_level = "trusted"\n[mcp_servers.ra2a]\ncommand = '+json.dumps(bins['ra2a'])+'\nargs = ["mcp"]\n')
 
 
-def start(runtime, kind, env, bins, home, ledger, source):
-    configure(home, kind, source, bins)
+def start(runtime, kind, env, bins, home, ledger, source, configured=False):
+    if not configured:
+        configure(home, kind, source, bins)
     if kind == 'codex':
         daemon = runtime.spawn(kind, [bins['codex'], 'app-server', 'daemon', 'start'], env)
         daemon.process.wait(timeout=30)
@@ -128,7 +131,7 @@ def start(runtime, kind, env, bins, home, ledger, source):
     return process
 
 
-def endpoint(runtime, kind, timeout=35):
+def endpoint(runtime, kind, timeout=35, identity=None, ready=False):
     stop = time.monotonic()+timeout
     while time.monotonic() < stop:
         try:
@@ -140,8 +143,11 @@ def endpoint(runtime, kind, timeout=35):
                     continue
                 for session in node.get('sessions', []):
                     if session.get('address', '').startswith('ra2a://sandbox-'):
-                        wanted = 'codex-cli' if kind == 'codex' else kind
-                        if session.get('agent') == wanted and node['id'].endswith('-'+kind):
+                        wanted = {'codex': 'codex-cli', 'app': 'codex-app'}.get(kind, kind)
+                        node_kind = 'codex' if kind == 'app' else kind
+                        if (session.get('agent') == wanted and node['id'].endswith('-'+node_kind)
+                                and (identity is None or session.get('id') == identity)
+                                and (not ready or session.get('status') == 'ready')):
                             return session
         except (RuntimeError, ValueError, subprocess.TimeoutExpired):
             pass
@@ -149,7 +155,7 @@ def endpoint(runtime, kind, timeout=35):
     raise RuntimeError('real attached endpoint not published')
 
 
-def resume(runtime, kind, env, bins, home, session, old):
+def resume(runtime, kind, env, bins, home, session, old, launch=True):
     allowance = withdrawal_timeout(kind, home)
     old.stop()
     # Require the old attachment to withdraw before accepting the same ID again.
@@ -164,6 +170,8 @@ def resume(runtime, kind, env, bins, home, session, old):
         if time.monotonic() >= deadline:
             raise OwnerWithdrawalTimeout('old native attachment did not withdraw; resume not attempted')
         time.sleep(.5)
+    if not launch:
+        return None
     if kind == 'codex':
         argv = [bins[kind], 'resume', session, '--no-alt-screen']
     elif kind == 'opencode':

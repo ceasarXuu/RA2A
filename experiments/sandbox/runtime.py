@@ -198,6 +198,7 @@ class Runtime:
         return self.children[kind].pid
 
     def _prefix(self, kind):
+        kind = 'codex' if kind == 'app' else kind
         return ['nsenter', '-t', str(self.namespace_pid(kind)), '-n']
 
     def add_mount(self, kind, source, target, readonly=True):

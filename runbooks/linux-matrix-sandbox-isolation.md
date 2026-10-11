@@ -39,3 +39,9 @@
 
 - OpenCode模型异常应保存固定类型、HTTP状态、是否可重试及白名单类别；不保留错误原文、响应headers/body或thinking。收件成功但模型被拒绝，应分别报告，禁止以更换模型或自动重试填PASS。本机唯一输入确证`opencode-go/space-bunny-free`返回HTTP400/MODEL_NOT_AVAILABLE；模型可用性需要Owner选择。
 - 官方Codex0.162.1默认`thread_unload_delay_secs=60`。隔离对照证明断开创建者后约60秒仍持真实writer，配置1秒后约1秒释放；实际RA2A start/steer不使其永久订阅。关闭恢复等待须从本轮私有配置派生，继续观察端点撤回；180秒上限内未撤回报告`NATIVE_OWNER_STILL_HELD`，禁止强制注销、unsubscribe或停daemon来制造睡眠。Pi/OpenCode租约型端仍使用原短观察期。
+
+## 私有App界面驱动的已证边界
+
+- 本机bwrap0.9.0不支持preserve-fds；CDP使用标准输入/输出穿过内部launcher，再映射真实App fd3/4。不启动debug TCP端口。独立D-Bus的地址走另一条pipe、服务stdout/stderr走私有日志，不能污染CDP framing。
+- 额外user namespace和cap-drop ALL不足：实际同节点Agent仍可重开App fd3/4。PR_SET_DUMPABLE0若在ELF constructor立即执行，真实Electron报No usable sandbox。因此采用renderer body初始化后，可信controller触发只保护browser的guard，再逐次实际验证同节点Agent两FD均PermissionError；没有ACK/拒绝证据则不发GUI模型输入。正式App不加载此guard，真实Electron sandbox保持开启。
+- 模型控制指令与基础矩阵格共享一次接收输入；工具业务回信独立核验、独立占接收Agent额度。额度按kind合并所有会话，不能用新session规避10条。人工阶段达到上限时明确不执行，不能为补人工验证自动开新轮。

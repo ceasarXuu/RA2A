@@ -20,7 +20,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 def provenance():
     files = subprocess.check_output(['git', 'ls-files', '-z', '*.go', 'go.mod', 'go.sum',
-                                     'experiments/sandbox/*.py', '*.mjs'], cwd=PROJECT).split(b'\0')
+                                     'experiments/sandbox/*.py', 'experiments/sandbox/*.c', '*.mjs'], cwd=PROJECT).split(b'\0')
     digest = hashlib.sha256()
     for name in sorted(n for n in files if n):
         digest.update(name+b'\0'+(PROJECT/os.fsdecode(name)).read_bytes())
@@ -62,6 +62,7 @@ def main():
     if True:
         root = Path(temporary)
         server = None
+        display_owner = None
         try:
             prepared = profiles.prepare(root/'profiles', ['codex', 'opencode', 'pi'], home,
                                         opencode_model=options.opencode_model, opencode_effort=options.opencode_effort)
@@ -70,11 +71,28 @@ def main():
             env.pop('LD_PRELOAD', None)
             env.update(GOPROXY='off', GOTOOLCHAIN='local')
             go = shutil.which('go') or str(home/'sdk/go/bin/go')
-            for name, package in [('worker', 'ra2a-sandbox-node'), ('ra2a', 'ra2a'), ('ocwrapper', 'oc-wrapper')]:
+            for name, package in [('worker', 'ra2a-sandbox-node'), ('ra2a', 'ra2a'),
+                                  ('ocwrapper', 'oc-wrapper'), ('appbridge', 'ra2a-sandbox-app-bridge')]:
                 target = root/name
                 subprocess.run([go, 'build', '-o', str(target), './cmd/'+package], cwd=PROJECT,
                                env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 bins[name] = str(target)
+            target = root/'app_guard.so'
+            subprocess.run(['cc', '-shared', '-fPIC', '-pthread', '-Wall', '-Werror', '-o', str(target),
+                            str(PROJECT/'experiments/sandbox/app_guard.c')], env=env, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            bins['app_guard'] = str(target)
+            display = None
+            prepared['manifest']['app'] = {'status': 'BLOCKED_ADAPTER', 'reason': 'private App display unavailable'}
+            if prepared['manifest']['codex']['status'] == 'READY':
+                import app_client
+                bins.update(app='/usr/lib/chatgpt/ChatGPT', app_native='/usr/lib/chatgpt/resources/codex')
+                if all(Path(bins[k]).is_file() for k in ('app', 'app_native')):
+                    display, display_owner = app_client.host_display(root/'display')
+                    prepared['manifest']['app'] = dict(prepared['manifest']['codex'])
+                    prepared['manifest']['app']['nativeVersion'] = subprocess.check_output(
+                        [bins['app_native'], '--version'], env=env, text=True, timeout=10).strip()
+                    prepared['nodes']['app'] = prepared['nodes']['codex']
             domains = {'models.dev'}
             for choice in prepared['manifest'].values():
                 if isinstance(choice, dict):
@@ -85,7 +103,8 @@ def main():
                 for k, v in bins.items() if Path(v).is_file()}
             run_id = secrets.token_hex(4)
             config = {**prepared, 'runId': run_id, 'pin': secrets.token_hex(3).upper(),
-                      'hostNetns': os.readlink('/proc/self/ns/net'), 'source': str(PROJECT), 'manual': options.manual}
+                      'hostNetns': os.readlink('/proc/self/ns/net'), 'source': str(PROJECT),
+                      'manual': options.manual, 'display': display}
             private = root/'private.json'
             with private.open('x') as stream:
                 os.fchmod(stream.fileno(), 0o600)
@@ -105,6 +124,8 @@ def main():
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as error:
             report.update(errorClass=type(error).__name__, matrixStatus='NOT_RUN')
         finally:
+            if display_owner:
+                display_owner.close()
             if server:
                 server.shutdown()
                 server.server_close()

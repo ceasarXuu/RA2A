@@ -42,6 +42,7 @@ def model_error(error):
 
 
 def native(home, kind, marker, ack, from_address, oc_messages=None):
+    kind = 'codex' if kind == 'app' else kind
     accepted = [ack] if isinstance(ack, str) else ack
     users, finals, errors, diagnostics = [], [], [], []
     if kind == 'opencode':

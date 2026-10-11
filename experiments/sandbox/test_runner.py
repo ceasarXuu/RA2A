@@ -2,11 +2,13 @@
 import sys
 from pathlib import Path
 import unittest
+import tempfile
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 import runner
+import budget
 
 
 class RunnerTests(unittest.TestCase):
@@ -58,3 +60,31 @@ class RunnerTests(unittest.TestCase):
         process.write.assert_not_called()
         self.assertEqual(report['manual'], 'INCOMPLETE')
         self.assertEqual(report['manualObservations']['pi']['status'], 'BLOCKED_ADAPTER')
+
+    def test_manual_app_budget_full_never_submits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = budget.Ledger(Path(directory)/'ledger', limit=0)
+            self.addCleanup(ledger.close)
+            app = MagicMock(); app.poll.return_value = None
+            report = {}
+            with patch('builtins.input', return_value=''), patch.object(runner.os, 'killpg'):
+                runner.manual(None, {}, {'app': {}}, {'app': app}, ledger, report)
+            app.submit.assert_not_called()
+            self.assertEqual(report['manualObservations']['app']['status'], 'NOT_RUN_BUDGET')
+            self.assertEqual(ledger.summary()['codex-app']['reserved'], 0)
+
+    def test_manual_app_has_one_controller_reservation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = budget.Ledger(Path(directory)/'ledger', limit=1)
+            self.addCleanup(ledger.close)
+            app = MagicMock(); app.poll.return_value = None
+            def submit(text):
+                self.assertIn('ACK_MANUAL_', text)
+                result = ledger.call('/reserve', {'kind': 'codex-app', 'id': 'app-submit'})
+                self.assertTrue(result['allow'])
+            app.submit.side_effect = submit
+            report = {}
+            with patch('builtins.input', side_effect=['', 'PASS']), patch.object(runner.os, 'killpg'):
+                runner.manual(None, {}, {'app': {}}, {'app': app}, ledger, report)
+            self.assertEqual(report['manual'], 'PASS')
+            self.assertEqual(ledger.summary()['codex-app']['reserved'], 1)

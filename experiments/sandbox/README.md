@@ -5,16 +5,17 @@
 ## 真实矩阵
 
 ```sh
-python3 experiments/sandbox/run.py --output .cache/sandbox/matrix-new
+python3 experiments/sandbox/run.py --output .cache/sandbox/matrix-new \
+  --opencode-model openai/gpt-6.1-sol --opencode-effort low
 # 人工操作留在自动阶段之后：
 python3 experiments/sandbox/run.py --output .cache/sandbox/matrix-manual-new --manual
 ```
 
-目录必须不存在。已有Python3/Go、unshare/nsenter/ip/bwrap以及官方CLI/OpenCode/Pi；不会安装软件或改正式服务。启动器构建本次源码的测试node/RA2A/OC wrapper，创建三类独立namespace、短私有HOME、PTY和真实LAN。退出码0仅整体PASS；失败、阻塞或依赖未运行均非0。`summary.json`、`report.md`、`ledger.jsonl`可核对，每条收件与native最终完成分别记录。
+目录必须不存在。已有Python3/Go/cc、unshare/nsenter/ip/bwrap、Xephyr/xauth以及官方CLI/App/OpenCode/Pi；不会安装软件或改正式服务。启动器构建本次源码的测试node/RA2A/OC wrapper，创建三类独立namespace、短私有HOME、PTY和真实LAN。退出码0仅整体PASS；失败、阻塞或依赖未运行均非0。`summary.json`、`report.md`、`ledger.jsonl`可核对，每条收件与native最终完成分别记录。
 
 `--manual`最后逐类显示私有PTY，按控制器提示确认、提交一次固定标记、观察输入出现/回复出现/输入栏可继续，填写PASS。预算先预留，满额时解释并拒绝输入。此步骤不操作正式终端；不要绕过控制器键入模型提示。未执行则MANUAL_PENDING。
 
-目前App安全actual-owner入口未接入，App格与holder交接为BLOCKED_ADAPTER。同类self格仅单会话回送；不表示两会话隔离。预检查可以另行观察真实App启动窗，不能把它当完整App矩阵或GUI通过。当前实际运行仍暴露模型/客户端问题，整体INCOMPLETE是有效失败报告，不能称所有Agent兼容验收通过。
+App使用新私有窗口和独立显示，真实UI创建/选择原生会话；投递走新stdio桥与内核writer门禁，关闭后保持睡眠，不使用有自动resume回退的Desktop IPC。GUI调试pipe经过动态进程保护和实际Agent拒绝门禁才可输入；缺显示、认证、门禁或端点时保持BLOCKED_ADAPTER。矩阵还核验CLI→App→CLI持有者交接。同类self格仅单会话回送；不表示两会话隔离。模块/隔离探针通过不等于完整收费矩阵通过；实际结论以每轮报告为准。
 
 ## 认证与出口边界
 
@@ -101,3 +102,5 @@ python3 experiments/sandbox/run.py --output .cache/sandbox-discovery/matrix-new 
 ```
 
 参数只写本轮私有配置，报告记录`sandbox-explicit-override`；不改变正式默认，不自动切换模型，不自动重试失败输入。未知provider/model或未经核验的端点保持BLOCKED_AUTH。固定1.18.34内置OpenAI OAuth会将请求重写到ChatGPT，沙盒仅复制该认证并放行已核域名；不会把所有缺少api的供应商视为可用。
+
+本轮选择Codex CLI/App与OpenCode为gpt-6.1-sol、low（本机原生轻量档位）。Pi当前只有其他provider凭据，保留原生模型并在报告列明，不自动生成OpenAI配置或复制不兼容认证。

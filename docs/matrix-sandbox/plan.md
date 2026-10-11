@@ -190,3 +190,6 @@
 - 最小接入新增Linux-only沙盒wrapper与App适配器；Unix SO_PEERCRED核对保护worker的namespace PID与创建tick，wrapper/worker设dumpable0。发现/投递需真实writer的PID/创建tick/exe均匹配当前自有native；只有既有thread start/steer，不resume，不据历史或loaded单独声称所有权。预算仍通过worker的sandbox.Wrap在投递前预留。
 - 本阶段仅交付可编译、可验证的安全接入模块及显式OpenCode参数；默认运行器的App GUI完整矩阵不得被这些mock/原生隔离检查替代。未完成真实GUI模型验收前继续标BLOCKED_ADAPTER。
 - 本阶段新增运行代码407行（按新增行保守计数，含通用诊断文案替换），单文件最高200行。Python48项通过；Go sandbox/worker/bridge相关包race通过，另显式官方App内置0.160.0的原生fixture通过busy steer、owner continuation、睡眠拒绝与清理。真实私有App生产wrapper两次初始化成功、两个保护socket HTTP200，零凭据/零模型输入；这些结果不替代真实GUI thread与模型验收。
+
+- Owner已明确批准本阶段累计900行上限及6.1-sol light模型。按本机模型声明，准确标识为gpt-6.1-sol、轻量推理low；OpenCode显式选择openai/gpt-6.1-sol/low，Codex/App私有配置保留对应low。正式配置不改，Pi保留现有选定provider/model。
+- 四类矩阵工具环与对应basic边复用同一次真实输入，另独立核验工具回信，避免重复付费；各类最大10输入仍由接收端预算硬限制，耗尽后人工项明确拦截说明，不能自动开新run规避。

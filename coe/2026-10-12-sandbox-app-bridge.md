@@ -1,7 +1,7 @@
 # Problem P-001: Linux矩阵缺真实App安全接入
 - Status: open
 - Objective: 补齐真实私有Linux App接入，按实际writer选择stdio桥，无人持有保持睡眠；不修改正式App或使用自动resume的IPC投递。
-- Known facts: matrix-006 App项BLOCKED_ADAPTER；原stdio桥仅允许既有thread方法，未经真实App接入；用户要求「修完」。本阶段默认500行，900行扩展待批准。
+- Known facts: matrix-006 App项BLOCKED_ADAPTER；原stdio桥仅允许既有thread方法，未经真实App接入；用户要求「修完」。Owner随后明确批准本阶段累计900行及6.1-sol light模型（本机准确档位low）。
 - Fix criteria: 真实App原始初始化、独立GUI、实际writer到bridge匹配、预算先预留、原生收件/完成及关闭恢复；不能以mock或窗口存活判完整矩阵通过。
 - Resolution basis: 尚未满足。
 
@@ -29,3 +29,39 @@
 - Source: .cache/sandbox-discovery/app-bridge-probe-001/final-summary.json；internal/sandbox/app_linux_test.go、app_native_linux_test.go。
 - Matched signal: 真实私有App通过新生产wrapper完成两次stdio初始化，保护controller访问两个socket均HTTP200，零模型输入，全部自有资源回收。race测试通过；显式官方App内置0.160.0后端验证实际writer、忙时steer相同turn、原owner独立继续、释放后睡眠拒绝且无新增mock调用。不同进程peer被403拒绝。
 - Interpretation: 安全接入模块已验证；原生fixture使用mock provider，不证明真实GUI消息渲染或收费模型完成。默认运行器仍BLOCKED_ADAPTER，不能升级完整验收状态。
+
+## Hypothesis H-003: GUI控制pipe在独立user namespace中可阻止Agent绕预算
+- Status: refuted
+- Claim: 实际App使用无TCP的CDP pipe，额外隔离App user namespace；无CAP_SYS_PTRACE的同节点Agent不能重开App/proc/fd，可信controller仍能驱动界面。
+- Diagnostic evidence plan: 通过现有Runtime._command的cap-drop ALL路径启动同节点进程，对实际App的fd3/fd4仅尝试重开，不读写pipe内容；同时核对namespace与cap字段。若可重开则反驳并停止收费GUI输入，不能由controller自身可读外推Agent可读或不可读。
+
+## Evidence E-003: 实际Agent重开CDP pipe
+- Related hypotheses: H-003
+- Direction: refutes
+- Source: .cache/sandbox-discovery/app-runtime-probe10/result.json。
+- Matched signal: 现有Runtime._command启动的同节点Agent，CapEff=0、不同user namespace，仍可重开真实App fd3/fd4，拒绝结果为false/false。
+- Interpretation: 仅额外user namespace不足，停止收费GUI输入；不能据controller访问权限证明Agent隔离。
+
+## Hypothesis H-004: 专属Electron进程dumpable保护能封闭调试pipe
+- Status: refuted
+- Claim: 仅新沙盒App通过可信readonly guard加载，真实ChatGPT ELF启动时设置PR_SET_DUMPABLE=0；native backend不设置，保留actual writer exe身份读取。调用者仍不能设置loader override。
+- Diagnostic evidence plan: 实际同kind无cap Agent仅重开App fd3/4需拒绝，可信controller仍能完成CDP，worker仍可匹配真实native writer；如Chromium恢复dumpable或持有者门禁失败则反驳，禁止进入收费验收。
+
+## Evidence E-004: constructor提前保护阻止Electron sandbox初始化
+- Related hypotheses: H-004
+- Direction: refutes
+- Source: .cache/sandbox-discovery/app-runtime-probe11。
+- Matched signal: 加载立即PR_SET_DUMPABLE0的guard后真实App FATAL No usable sandbox，CDP closed；同uid1000无guard路径此前可初始化。
+- Interpretation: 当前保护时机不可用；未证具体uid_map拒绝机制，不关Electron sandbox、不发送模型输入。
+
+## Hypothesis H-005: renderer初始化后激活进程保护可兼顾Electron及预算
+- Status: confirmed
+- Claim: 可信controller通过真实CDP确认document.body后写专属激活文件；guard线程随后PR_SET_DUMPABLE0并回写main PID；controller经真实cap-drop Agent路径验证两FD均PermissionError且CDP仍可用，才允许任何模型输入。不是固定延时；不提供解除保护入口。
+- Diagnostic evidence plan: 真实App无模型诊断需实际初始化、激活ACK、Agent fd3/4拒绝、controller继续CDP和native writer门禁；失败止步。矩阵启动先完成App保护，再启动其他Agent模型bootstrap。
+
+## Evidence E-005: 动态保护与私有认证界面门禁通过
+- Related hypotheses: H-005
+- Direction: supports
+- Source: .cache/sandbox-discovery/app-runtime-probe12/、app-auth-probe-001/result.json与脱敏截图。
+- Matched signal: 真实Electron sandbox正常、document.body初始化；激活后mainPID14 ACK，同节点真实cap0 Agent两FD均PermissionError，controller CDP继续可用，App stdio initialize成功。私有正式认证副本下editorAvailable/protected均true，界面显示GPT-6.1 Sol Light；bootstrapSubmitted=false、budgetReserved0，worker ready/stale=false且尚无会话。
+- Interpretation: 支持此保护时机与最小认证投影；未提交模型、不将编辑栏或空端点当完整矩阵通过。正式auth/config终点SHA256相同，临时副本已清理。

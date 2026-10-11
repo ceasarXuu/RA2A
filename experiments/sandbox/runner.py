@@ -9,6 +9,7 @@ import time
 import uuid
 
 import budget
+import app_client
 import clients
 import evidence
 from runtime import Runtime
@@ -41,9 +42,15 @@ def execute(root):
                    'NO_PROXY': '127.0.0.1,localhost,198.18.0.0/24',
                    'RA2A_PI_SDK': config['bins'].get('pi_sdk', ''),
                    'RA2A_PI_NODE_ID': 'sandbox-'+config['runId']+'-'+kind,
+                   'RA2A_SANDBOX_NODE_ID': 'sandbox-'+config['runId']+'-'+kind,
                    'RA2A_SANDBOX_CODEX_BIN': config['bins'].get('codex', ''),
                    **config['private_env'].get(kind, {})}
             environments[kind] = env
+            if kind == 'codex' and config.get('display'):
+                directory = root/'app-bridges'
+                directory.mkdir(mode=0o700)
+                runtime.add_mount(kind, directory, '/run/app-bridges', readonly=False)
+                env['RA2A_SANDBOX_APP_SOCKET_DIR'] = '/run/app-bridges'
             version_args = [config['bins'][kind], '--version'] if kind != 'pi' else [config['bins']['node'], config['bins']['pi'], '--version']
             version = runtime.spawn(kind, version_args, env)
             version.process.wait(timeout=15)
@@ -53,18 +60,31 @@ def execute(root):
             else:
                 report['clients'][kind]['status'] = 'BLOCKED_VERSION'; continue
             runtime.spawn(kind, ['python3', '/suite/relay.py', '/run/model.sock'])
+            clients.configure(config['nodes'][kind]['home'], kind, Path(config['source']), config['bins'])
             runtime.start_node(kind, 'sandbox-'+config['runId']+'-'+kind,
                                config['pin'], root/'budget.sock', env)
+        if config.get('display') and 'codex' in environments:
+            try:
+                environments['app'] = environments['codex']
+                processes['app'] = app_client.start(runtime, environments['app'], config['bins'],
+                    config['nodes']['app']['home'], ledger, config['display'])
+                runtime.app_gui = processes['app']
+                endpoints['app'] = clients.endpoint(runtime, 'app')
+                report['clients']['app']['endpoint'] = endpoints['app']['address']
+            except (OSError, RuntimeError, TimeoutError, ValueError) as error:
+                report['clients']['app'].update(status='BLOCKED_ADAPTER', reason=type(error).__name__)
+        for kind, env in environments.copy().items():
+            if kind == 'app':
+                continue
             try:
                 processes[kind] = clients.start(runtime, kind, env, config['bins'],
-                                               config['nodes'][kind]['home'], ledger, Path(config['source']))
+                                               config['nodes'][kind]['home'], ledger, Path(config['source']), configured=True)
                 endpoints[kind] = clients.endpoint(runtime, kind)
                 report['clients'][kind]['endpoint'] = endpoints[kind]['address']
             except (OSError, RuntimeError, TimeoutError, ValueError) as error:
                 report['clients'][kind].update(status='BLOCKED_ADAPTER', reason=type(error).__name__)
-        # All four planned types are represented; unsupported App isn't forged.
-        report['clients']['app'] = {'status': 'BLOCKED_ADAPTER',
-                                    'reason': 'safe actual-owner App bridge not integrated'}
+        ring = {('codex', 'opencode'), ('opencode', 'pi'), ('pi', 'app'), ('app', 'codex')}
+        tool_cases = []
         for sender in (*KINDS, 'app'):
             for receiver in (*KINDS, 'app'):
                 case = {'case': f'basic-{sender}-{receiver}', 'sender': sender, 'receiver': receiver}
@@ -73,28 +93,27 @@ def execute(root):
                 elif receiver in failed:
                     case.update(status='NOT_RUN_DEPENDENCY', reason='earlier receiver failure; no further paid input')
                 else:
-                    send(runtime, config, endpoints, sender, receiver, case)
+                    clients.endpoint(runtime, receiver, identity=endpoints[receiver]['id'], ready=True, timeout=90)
+                    extra = ''
+                    reply = None
+                    if (sender, receiver) in ring:
+                        reply = 'REPLY_'+uuid.uuid4().hex
+                        extra = 'Before the final ACK call RA2A send_message exactly once to '+endpoints[sender]['address']
+                        extra += ' with text '+json.dumps(reply+' Reply only ACK_'+reply+'. Do not call tools.')
+                        extra += '. Your from address is '+endpoints[receiver]['address']+'. Never retry. '
+                    send(runtime, config, endpoints, sender, receiver, case, extra)
+                    if reply:
+                        receipt = wait_native(runtime, sender, config['nodes'][sender]['home'], endpoints[sender]['id'],
+                                              reply, 'ACK_'+reply, endpoints[receiver]['address'], 90)
+                        tool_cases.append({'case': f'tool-{sender}-{receiver}', 'sharedInputCase': case['case'],
+                                           'businessReply': receipt, 'status': 'PASS' if case['status'] == receipt['status'] == 'PASS' else 'FAIL'})
                     if case['status'] != 'PASS': failed.add(receiver)
                 report['cases'].append(case)
-        # Genuine tool ring: preserve planned edges, don't silently replace App.
-        ring = [('codex', 'opencode'), ('opencode', 'pi'), ('pi', 'app'), ('app', 'codex')]
-        for sender, receiver in ring:
-            case = {'case': f'tool-{sender}-{receiver}', 'sender': sender, 'receiver': receiver}
-            if sender not in endpoints or receiver not in endpoints or sender in failed or receiver in failed:
-                case['status'] = 'BLOCKED_ADAPTER'
-            else:
-                reply = 'REPLY_'+uuid.uuid4().hex
-                extra = 'Before the final ACK call ra2a send_message exactly once to '+endpoints[sender]['address']
-                extra += ' with text '+json.dumps(reply+' Reply only ACK_'+reply+'. Do not call tools.')
-                extra += '. Your from address is '+endpoints[receiver]['address']+'. Never retry. '
-                send(runtime, config, endpoints, sender, receiver, case, extra)
-                home = config['nodes'][sender]['home']
-                receipt = wait_native(runtime, sender, home, endpoints[sender]['id'], reply,
-                                      'ACK_'+reply, endpoints[receiver]['address'], 90)
-                case['businessReply'] = receipt
-                if receipt['status'] != 'PASS':
-                    case['status'] = 'FAIL'
-            report['cases'].append(case)
+        # A ring edge shares its original basic input; its business reply is independently audited.
+        report['cases'] += tool_cases
+        report['cases'] += [{'case': f'tool-{sender}-{receiver}', 'status': 'BLOCKED_ADAPTER'}
+                            for sender, receiver in sorted(ring)
+                            if not any(c['case'] == f'tool-{sender}-{receiver}' for c in tool_cases)]
         # Active follow-up reuses one budgeted base and immediately sends a second.
         for receiver in (k for k in endpoints if k not in failed):
             case = {'case': 'active-'+receiver, 'sender': receiver, 'receiver': receiver}
@@ -117,16 +136,35 @@ def execute(root):
             report['cases'] += [case, follow]
         for kind in (k for k in endpoints if k not in failed):
             case = {'case': 'resume-'+kind, 'sender': kind, 'receiver': kind}
+            transfer = None
             try:
                 original = endpoints[kind]['id']
                 case['originalSession'] = original
-                processes[kind] = clients.resume(runtime, kind, environments[kind], config['bins'],
-                    config['nodes'][kind]['home'], original, processes[kind])
-                endpoints[kind] = clients.endpoint(runtime, kind)
+                if kind == 'codex' and 'app' in endpoints and 'app' not in failed:
+                    transfer = {'case': 'codex-owner-transfer', 'nativeSession': original, 'status': 'FAIL'}
+                    clients.resume(runtime, kind, environments[kind], config['bins'],
+                        config['nodes'][kind]['home'], original, processes[kind], launch=False)
+                    transfer['sleepingAfterCLIClosed'] = True
+                    processes['app'].select_session(original)
+                    observed = clients.endpoint(runtime, 'app', identity=original)
+                    transfer['appHolderAddress'] = observed['address']
+                    transfer['appActualWriterGate'] = observed['agent'] == 'codex-app'
+                    processes['app'].stop()
+                if kind == 'app':
+                    processes[kind].stop()
+                    processes[kind] = app_client.start(runtime, environments[kind], config['bins'],
+                        config['nodes'][kind]['home'], ledger, config['display'], session_id=original)
+                    runtime.app_gui = processes[kind]
+                else:
+                    processes[kind] = clients.resume(runtime, kind, environments[kind], config['bins'],
+                        config['nodes'][kind]['home'], original, processes[kind])
+                endpoints[kind] = clients.endpoint(runtime, kind, identity=original)
                 case['resumedSession'] = endpoints[kind]['id']
                 if endpoints[kind]['id'] != original:
                     raise RuntimeError('resume changed native identity')
                 send(runtime, config, endpoints, kind, kind, case)
+                if transfer:
+                    transfer.update(status='PASS', cliHolderRestored=endpoints[kind]['agent'] == 'codex-cli')
             except Exception as error:
                 case.update(status='FAIL', errorClass=type(error).__name__)
                 if isinstance(error, clients.OwnerWithdrawalTimeout):
@@ -134,6 +172,8 @@ def execute(root):
             if case['status'] != 'PASS':
                 failed.add(kind)
             report['cases'].append(case)
+            if transfer:
+                report['cases'].append(transfer)
         for receiver in (k for k in endpoints if k not in failed):
             sources = [k for k in endpoints if k != receiver]
             case = {'case': 'native-postwrite-ack-loss-'+receiver, 'receiver': receiver}
@@ -148,8 +188,8 @@ def execute(root):
         report['cases'] += [{'case': phase+'-'+kind, 'status': 'NOT_RUN_DEPENDENCY'}
                             for kind in failed for phase in ('active', 'followup', 'resume', 'native-postwrite-ack-loss')
                             if not any(r['case'] == phase+'-'+kind for r in report['cases'])]
-        report['cases'].append({'case': 'codex-owner-transfer', 'status': 'BLOCKED_ADAPTER',
-                               'reason': 'actual writer App bridge integration pending'})
+        if not any(c['case'] == 'codex-owner-transfer' for c in report['cases']):
+            report['cases'].append({'case': 'codex-owner-transfer', 'status': 'NOT_RUN_DEPENDENCY'})
         if config.get('manual'):
             manual(runtime, config, endpoints, processes, ledger, report)
         else:
@@ -212,6 +252,13 @@ def send(runtime, config, endpoints, sender, receiver, case, extra='', wait=True
                                   marker, ack, endpoints[sender]['address'], 90)
             case['native'] = receipt
             case['status'] = receipt['status'] if receipt['status'] != 'PENDING' else 'FAIL'
+            if receiver == 'app' and case['status'] == 'PASS':
+                end = time.monotonic()+5
+                while time.monotonic() < end and not runtime.app_gui.visible('ACK_'+marker):
+                    time.sleep(.1)
+                case['uiFinalVisible'] = runtime.app_gui.visible('ACK_'+marker)
+                if not case['uiFinalVisible']:
+                    case.update(status='FAIL', reason='native completion not rendered in actual App')
     except Exception as error:
         case.update(status='FAIL', errorClass=type(error).__name__)
 
@@ -236,11 +283,17 @@ def manual(runtime, config, endpoints, processes, ledger, report):
             report['manualObservations'][kind] = {'status': 'BLOCKED_ADAPTER', 'reason': 'native TUI exited'}
             continue
         print('人工观察 '+kind+'：将显示沙盒终端；确认可见后按回车提交唯一标记。', flush=True)
-        process.echo = True
-        os.killpg(process.pid, signal.SIGWINCH)
+        if kind != 'app':
+            process.echo = True
+            os.killpg(process.pid, signal.SIGWINCH)
         input()
         marker = 'MANUAL_'+uuid.uuid4().hex
-        reservation = ledger.call('/reserve', {'kind': 'codex-cli' if kind == 'codex' else kind, 'id': marker})
+        if kind == 'app':
+            used = ledger.summary()['codex-app']
+            reservation = {'allow': used['reserved'] < used['limit'],
+                           'error': 'codex-app 本轮10条额度已用完；启动和工具回信均计入，人工输入已拦截。'}
+        else:
+            reservation = ledger.call('/reserve', {'kind': 'codex-cli' if kind == 'codex' else kind, 'id': marker})
         if not reservation['allow']:
             print(reservation['error'], flush=True)
             report['manualObservations'][kind] = {'status': 'NOT_RUN_BUDGET', 'reason': reservation['error']}
@@ -248,5 +301,6 @@ def manual(runtime, config, endpoints, processes, ledger, report):
             clients.submit(process, 'Reply only ACK_'+marker+'. Do not use tools.')
             answer = input('观察：输入是否出现、回复是否出现、完成后输入栏是否可继续？全满足输入 PASS：')
             report['manualObservations'][kind] = {'status': 'PASS' if answer.strip() == 'PASS' else 'FAIL'}
-        process.echo = False
+        if kind != 'app':
+            process.echo = False
     report['manual'] = 'PASS' if report['manualObservations'] and all(x['status'] == 'PASS' for x in report['manualObservations'].values()) else 'INCOMPLETE'
