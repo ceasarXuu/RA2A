@@ -190,3 +190,4 @@ GitHub Release 是正式发版流程。推送 `v*` tag 后，[Release 工作流]
 - [极简闭环设计](prd/2026-08-31-ra2a-minimal-model.md)
 - [Codex App 可行性实验](experiments/README.md)
 - [局域网发现与握手实验](experiments/network/README.md)
+- [Linux 单机矩阵沙盒设计（Draft，未实现）](docs/matrix-sandbox/plan.md)
