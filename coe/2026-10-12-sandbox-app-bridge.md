@@ -137,3 +137,58 @@
 - Matched signal: 009沿生产90秒窗口，只提交一个全新bootstrap。native ID 01a12d28-19f1-7662-a756-e2c1edadb04c，originator Codex Desktop，同turn task_started/task_complete存在；该窗口未发现ready App端点。透明代理initialize/tools-list均返回非error，tools/call为0。控制输入与Pi回信未执行；清理前保存安全native计数和代理元数据。
 - Interpretation: 尚未进入原pending嵌套send路径，不能宣布其根因、修复或通过。累计App7/10、Pi8/10、CLI10/10、OC9/10，未提交的App第8条/Pi第9条不算消耗。正式Auth/config终点hash相同，自有资源与私有副本回收。停止付费重复，只读对照诊断与原矩阵启动差异；原matrix008整体INCOMPLETE保持。
 - Static comparison: 009/summary.json记录生产bridge/adapter/main及app_client/runtime/clients六文件hash与当前源一致。诊断改变MCP command为透明代理，并在App启动前额外预检；初次endpoint要求ready=True，而原matrix初次默认False。未保存实际targets投影、thread/read capability或kernel writer PID/exe/ticks，因此不能据筛选差异认定其为未发布的根因；下一取证须先覆盖这些门禁信号，不能再仅保存异常字符串。
+
+## Hypothesis H-007: App发现拒绝发生在实时owner/capability门禁
+
+- Status: open
+- Claim: 原生bootstrap完成但端点缺失，是loaded、初始化、真实writer或canAccept中的某个实时门禁拒绝，而非模型未完成；具体门禁未知。
+- Prediction: 完成后首次拒绝的安全日志会明确loaded查询错误类别、writer PID/exe/ticks匹配或canAccept=false；若全部通过且targets包含App，则该假设降级，转查helper筛选。
+- Diagnostic evidence plan: repair010冻结85a2a01，仅测试副本插桩，原判定保留。新bootstrap后逐socket采集ready/closed安全布尔、loaded ID、kernel writer/native身份匹配、thread/read canAccept和status、实际targets安全投影；默认ready=False发现。异常前保存，禁止正文、凭据、thinking和正式锁获取。通过才执行最多一条新send控制，透明MCP仅方法/ID hash/响应元数据分离通信层与投递层。
+
+## Evidence E-016: Owner批准独立新轮修复额度
+
+- Source: Owner直接消息「再给一轮修复额度」。
+- Matched signal: 授权每类10条的新独立修复账本repair010，沿既定模型与认证保护；旧matrix008账本及失败结果不改写。先有界门禁诊断，不自动整轮矩阵。
+- Interpretation: 这是模型输入次数授权，不擅自解释为新增生产代码上限授权；当前900/900保留。第一次诊断最多App bootstrap1/control1、Pi必要bootstrap1/reply1；未到相应阶段不计提交，失败不退款、不重放。
+
+## Evidence E-017: 新轮真实工具调用未进入RA2A MCP
+
+- Source: .cache/sandbox-discovery/repair-010安全诊断（目录以实际交付为准），独立85a2a01测试archive，生产未修改。
+- Matched signal: 原生App ready端点发布，ID01a12fde-8667-7441-ad3b-2be8ab6832e6；唯一新control delivered、原生user1。第一次exec定义查询有880bytes输出，第二次嵌套send exec无output。透明代理initialize/tools-list返回非error，tools/call=0；原生完成PENDING。
+- Interpretation: 可排除本次卡住已经进入RA2A MCP/CoAP的路径，具体App委托阻塞机制未知。ready/closed及peer安全信号已保存，但loaded/writer/threadRead投影被合并日志解析漏掉，不能宣称全gate诊断完成；以实际端点与收件证据证明这次到达调用阶段。新轮App2/10、Pi0/10，正式认证终点hash相同，自有资源回收，不重试旧marker。
+
+## Hypothesis H-008: 嵌套工具调用阻塞在App customtool委托响应
+
+- Status: refuted for repair011
+- Claim: 原生backend已向App发送customtool请求，而App未返回该请求或其Code Mode委托未进入MCP；哪一个子边界未知。
+- Prediction: 卡住时能关联native→App请求ID hash、App→native响应存在性与MCP tools/call；无App响应则定位到委托处理，无native请求则降级并查backend请求之前阶段，已有MCP响应则反驳本次预MCP阻塞。
+- Diagnostic evidence plan: repair011仅测试Bridge记录固定direction/method enum/ID hash/响应存在及error布尔，独立安全单行日志、零输入验证解析。全新bootstrap+唯一list_targets控制最多两App输入，新轮累计上限4/10；不send、不回投，排除收件方依赖。清理前保存native关联与实际code-mode/MCP进程元数据；禁止payload、thinking、凭据或更改正式客户端。
+
+## Evidence E-018: 实际MCP批准请求无人响应
+
+- Related hypotheses: H-008
+- Source: .cache/sandbox-discovery/repair-011/summary.json、stdio-live.json、app-ui.png；root独立查看截图。官方固定rust-v0.160.0路径/哈希在app-code-mode-static/manifest.json，仅标签来源不声称安装binary精确绑定。
+- Matched signal: bootstrap原生已完成；唯一只读control进入后，native→App发mcpServer/elicitation/request，ID hash5feceb66ffc86f38，无App→native response；item/tool/call为0，MCP tools/call为0。真实界面显示Awaiting approval、Waiting for your answer和Allow ra2a MCP list_targets卡片。
+- Interpretation: 定位本次pending到无人处理的MCP工具批准，而非动态handler丢回复或RA2A投递网络。未代点击批准；新轮累计App4/10、其他0，正式认证hash相同，资源回收。原send挂起同属候选，但不能用这次list证据直接宣称原send已修复。
+
+## Hypothesis H-009: 私有沙盒缺少已授权RA2A工具的明确批准配置
+
+- Status: confirmed for repair011
+- Claim: 自动测试的私有Codex配置没有两项RA2A工具的approve策略，App产生需要人工回答的MCP批准请求，自动测试不回答，因而等待且未执行工具。
+- Evidence gate: E-018实际协议与界面；固定官方config/src/mcp_types.rs允许per-tool approval_mode=approve，core/mcp_tool_call.rs按原生工具名匹配且Approve不请求用户批准。当前官方配置参考https://learn.chatgpt.com/docs/config-file/config-reference也列出该per-tool字段；仍需实际本机原生验证候选生效。
+- Diagnostic evidence plan: repair012仅测试私有配置追加list_targets/send_message两项approve，不设server/global默认、不改其他工具或正式配置。原生config/read零输入校验两项有效字段，再唯一新控制先list一次/send一次；实际MCP两call返回、elicitation0、App/Pi唯一final、GUI独立回复行，验证原send症状消失。新轮累计最多App6/10、Pi1/10；900生产上限不自动扩张。
+
+## Evidence E-019: 候选配置原生读取通过，行为验证被诊断账本拦截
+
+- Related hypotheses: H-009
+- Source: .cache/sandbox-discovery/repair-012/result.json及summary.json（actual/dispatched按最终安全摘要）。
+- Matched signal: 自有native config/read实际返回list_targets/send_message两项approval_mode=approve且工具key精确；bootstrap task_complete。测试复制账本后错误机械替换旧control ID，与新ID碰撞，duplicate_unresolved拒绝，control原生user0，未进入工具；App新增bootstrap1，累计5/10，Pi0。
+- Interpretation: 配置parser/effective读取候选通过，不把未dispatch的elicitation0当行为修复PASS。实际控制尝试与投递分开计，旧记录不得更名或退款。修正仅测试继承方式：旧ledger字节不变、新UUID与旧ID不交集，先mock验证5→7预算及duplicate拒绝，再唯一有界候选。正式认证不变，自有资源回收。
+
+## Evidence E-020: 两项私有批准配置消除实际App工具等待
+
+- Related hypotheses: H-009
+- Type: candidate-fix-validation
+- Source: .cache/sandbox-discovery/repair-013/{summary.json,result.json,app-ui.png,ledger-original.jsonl,ledger-fixture.json}；root独立查看GUI截图与候选配置范围测试。
+- Matched signal: 原生config/read两项approve及精确toolKeys通过；list_targets/send_message实际MCP各唯一call及reply，21ms/67ms，error=false；elicitation0。App原生user1/final精确ACK1及同turn task_complete，Pi原生user1/final精确ACK1；GUI独立assistant ACK可见、无批准卡。只这两个工具改变，其他工具策略与全局approval_policy保留。
+- Interpretation: 支持H-009候选根因及最小私有配置修正，原工具send症状在此有界复现消失；不是完整矩阵通过。新轮累计App7/10、Pi1/10、CLI/OC0；正式认证hash相同，资源与副本回收。旧012 ledger原字节缺失，013明确以可核5条消耗重建延续，未退款或冒充旧hash；本次实际ledger已原样保存。生产仍900/900未改，4行候选diff已备好，等待Owner明确904上限授权。

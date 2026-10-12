@@ -53,3 +53,10 @@
 - Linux Desktop实际启动多个backend，其中部分成功initialize之后不会发initialized通知。stdio桥应以原App成功initialize响应确认就绪；不得补发二次初始化。失败响应保持拒绝。真实App0.160.0无通知native对照和GUI收件/关闭撤回已通过，不能根据首个backend行为假定全部一致。
 - OpenCode1.18.34忙时追加输入后，后续原工作工具和final的parentID可能切到新用户输入。保留两个原生user和四次工具的实际关联；只有唯一final精确双ACK才记一个组合完成，不伪造BASE独立final、不借用Codex同turn概念。单ACK、无关parent或重复输入保持不通过。
 - 共享CODEX_HOME的新CLI启动前先记录已有rollout；新启动注册只接受后来新增的会话，避免App历史被误认。native source=vscode不能替代实际终端归属证明。
+
+## 无人值守App的MCP工具批准
+
+- 原生工具exec长时间无output，不足以认定网络挂起。repair011实际界面显示Allow ra2a list_targets批准卡；stdio有未回答的mcpServer/elicitation/request，MCP tools/call为0。先分辨用户批准等待与真实工具执行，不能仅据MCP/Code Mode进程存在宣称已调用。
+- 仅沙盒专属Codex配置可为用户已授权测试的list_targets、send_message分别设置`mcp_servers.ra2a.tools.<原生工具名>.approval_mode = "approve"`。不是`never`，也不是带`mcp__ra2a__`前缀的键；不设置server/global默认，不修改其他工具或正式权限。字段见[官方配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。固定0.160 schema和本机config/read已核对，但不能据磁盘值推定已有thread有效策略。
+- repair013原生config/read两项值为approve，实际两MCP调用各一次返回、elicitation0、App/Pi唯一原生final和App GUI ACK可见，证明此候选消除该复现的批准等待。该专项不替代完整矩阵；生产生成器是否已落地须另核当前提交。
+- 诊断清理前原样保存账本和hash。若历史原文件已丢失，明确记录重建边界，并保守延续已证消耗，不伪造原字节/hash、不退款、不改旧ID；新随机ID与已知旧ID分离，先零模型fixture检查计数和duplicate拒绝。

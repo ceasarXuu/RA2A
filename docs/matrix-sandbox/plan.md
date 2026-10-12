@@ -212,3 +212,10 @@
 - 本轮预算CLI10/App4/OC9/Pi8，正式认证配置终点hash不变，owned资源reap且私有copies回收。App挂起仅只读保存安全投影，原因仍待透明MCP stdio唯一新标记补证；不自动开新轮、不重试旧标记。当前阶段保守新增生产900/900，后续若需扩张先据证据说明并取得授权。
 
 - 透明MCP诊断累计追加App三条bootstrap，均保留计数：006误继承App环境导致Pi worker未启动；007零输入API/握手通过但12秒诊断就绪窗口不足；008纯零输入真实GUI/guard/MCP初始化通过；009采用生产90秒窗口，bootstrap原生task_complete已保存但没有ready端点，未发control，tools/call为0。不得将这些证据认定为原嵌套send根因或修复通过。当前累计CLI10/App7/OC9/Pi8；停止付费重复，原矩阵INCOMPLETE与失败项保留。
+
+### 2026-10-12 独立修复额度与App批准等待定位
+
+- Owner「再给一轮修复额度」授权各类独立10条。repair010真实App收到控制但MCP tools/call0；repair011协议及GUI确证无人处理mcpServer/elicitation/request，界面要求允许ra2a list_targets，不能归为网络或动态工具回复丢失。
+- 固定官方0.160 schema及本机config/read核准per-tool approval_mode=approve。repair012被诊断账本旧ID碰撞拦住控制，已消耗bootstrap保留；013以明确reconstructed的5条旧消耗延续，不退款、不伪造旧ledger原字节/哈希，零输入fixture验证新UUID、5→7及duplicate拒绝。
+- repair013仅测试私有配置两项approve，list_targets/send_message各调用返回一次、批准请求0、App/Pi精确原生final及App GUI回复可见，候选修正专项PASS。当前新轮App7/Pi1/CLI0/OC0，正式认证终点hash不变，资源回收，本次ledger原样持久化。
+- 生产生成器尚未修改，4行最小候选已准备；当前阶段900行上限仍遵守，已请求仅904行扩展。完整矩阵和人工项没有据此改判通过，后续按剩余额度验证已授权范围，不自动再开轮。
