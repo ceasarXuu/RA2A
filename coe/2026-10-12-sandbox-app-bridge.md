@@ -192,3 +192,11 @@
 - Source: .cache/sandbox-discovery/repair-013/{summary.json,result.json,app-ui.png,ledger-original.jsonl,ledger-fixture.json}；root独立查看GUI截图与候选配置范围测试。
 - Matched signal: 原生config/read两项approve及精确toolKeys通过；list_targets/send_message实际MCP各唯一call及reply，21ms/67ms，error=false；elicitation0。App原生user1/final精确ACK1及同turn task_complete，Pi原生user1/final精确ACK1；GUI独立assistant ACK可见、无批准卡。只这两个工具改变，其他工具策略与全局approval_policy保留。
 - Interpretation: 支持H-009候选根因及最小私有配置修正，原工具send症状在此有界复现消失；不是完整矩阵通过。新轮累计App7/10、Pi1/10、CLI/OC0；正式认证hash相同，资源与副本回收。旧012 ledger原字节缺失，013明确以可核5条消耗重建延续，未退款或冒充旧hash；本次实际ledger已原样保存。生产仍900/900未改，4行候选diff已备好，等待Owner明确904上限授权。
+
+## Evidence E-021: 最小修正落入沙盒配置生成器
+
+- Related hypotheses: H-009
+- Type: repair-validation
+- Source: experiments/sandbox/clients.py、test_clients.py；python3 -m unittest test_clients test_clients_resume -v。
+- Matched signal: Owner确认继续，904行扩展；生成器增加4行，仅codex/app私有配置的list_targets/send_message为approve。7项测试PASS，包括保留其他MCP prompt策略、全局approval_policy及无server默认批准。
+- Interpretation: 已落地专项验证过的最小修正，阶段904/904；无新模型输入，预算仍App7/Pi1/CLI0/OC0。P-001完整矩阵验收条件仍未满足，继续按剩余额度检验关键路径。

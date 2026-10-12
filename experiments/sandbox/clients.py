@@ -90,6 +90,10 @@ def configure(home, kind, source, bins):
         path = home/'.codex/config.toml'
         with path.open('a') as stream:
             stream.write('\n[projects."/home/sandbox/work"]\ntrust_level = "trusted"\n[mcp_servers.ra2a]\ncommand = '+json.dumps(bins['ra2a'])+'\nargs = ["mcp"]\n')
+            # Only the two sandbox messaging tools are preapproved.
+            for tool in ("list_targets", "send_message"):
+                stream.write(f'\n[mcp_servers.ra2a.tools.{tool}]\napproval_mode = "approve"\n')
+
 
 
 def start(runtime, kind, env, bins, home, ledger, source, configured=False):

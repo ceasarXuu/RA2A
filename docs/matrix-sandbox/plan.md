@@ -219,3 +219,5 @@
 - 固定官方0.160 schema及本机config/read核准per-tool approval_mode=approve。repair012被诊断账本旧ID碰撞拦住控制，已消耗bootstrap保留；013以明确reconstructed的5条旧消耗延续，不退款、不伪造旧ledger原字节/哈希，零输入fixture验证新UUID、5→7及duplicate拒绝。
 - repair013仅测试私有配置两项approve，list_targets/send_message各调用返回一次、批准请求0、App/Pi精确原生final及App GUI回复可见，候选修正专项PASS。当前新轮App7/Pi1/CLI0/OC0，正式认证终点hash不变，资源回收，本次ledger原样持久化。
 - 生产生成器尚未修改，4行最小候选已准备；当前阶段900行上限仍遵守，已请求仅904行扩展。完整矩阵和人工项没有据此改判通过，后续按剩余额度验证已授权范围，不自动再开轮。
+
+- Owner「批注，继续验收」确认落地候选并继续，阶段上限扩展至904行。生产生成器已仅增加4行私有RA2A两工具批准配置；codex/app边界回归及恢复相关共7项PASS，其他MCP工具及全局策略不变。完整矩阵仍待后续验收，本轮剩App3/Pi9/CLI10/OC10，不自动重置。

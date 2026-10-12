@@ -1,9 +1,32 @@
 import json
 from pathlib import Path
 import tempfile
+import tomllib
 from unittest import TestCase, mock
 
 import clients
+
+
+class SandboxApprovalTest(TestCase):
+    def test_only_messaging_tools_are_preapproved_in_private_codex_profiles(self):
+        for kind in ('codex', 'app'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                home = Path(directory)
+                (home/'.codex').mkdir()
+                config = home/'.codex/config.toml'
+                config.write_text('approval_policy = "never"\n'
+                                  '[mcp_servers.other.tools.risky]\n'
+                                  'approval_mode = "prompt"\n')
+                clients.configure(home, kind, home, {'ra2a': '/private/ra2a'})
+                parsed = tomllib.loads(config.read_text())
+                self.assertEqual(parsed['approval_policy'], 'never')
+                self.assertEqual(parsed['mcp_servers']['other']['tools']['risky'],
+                                 {'approval_mode': 'prompt'})
+                ra2a = parsed['mcp_servers']['ra2a']
+                self.assertEqual(ra2a['tools'], {
+                    tool: {'approval_mode': 'approve'}
+                    for tool in ('list_targets', 'send_message')})
+                self.assertNotIn('default_tools_approval_mode', ra2a)
 
 
 class StartupSelectionTest(TestCase):
