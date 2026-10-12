@@ -200,3 +200,24 @@
 - Source: experiments/sandbox/clients.py、test_clients.py；python3 -m unittest test_clients test_clients_resume -v。
 - Matched signal: Owner确认继续，904行扩展；生成器增加4行，仅codex/app私有配置的list_targets/send_message为approve。7项测试PASS，包括保留其他MCP prompt策略、全局approval_policy及无server默认批准。
 - Interpretation: 已落地专项验证过的最小修正，阶段904/904；无新模型输入，预算仍App7/Pi1/CLI0/OC0。P-001完整矩阵验收条件仍未满足，继续按剩余额度检验关键路径。
+
+## Evidence E-022: 落地版本App忙时收件与关闭撤回通过，恢复UI阻塞
+
+- Related hypotheses: H-007、H-009
+- Type: bounded-live-validation
+- Source: .cache/sandbox-discovery/repair-014/{summary.json,manifest.json,result.json,app-ui.png,ledger-original.jsonl}；root独立验图。
+- Matched signal: 绑定10cfdf6，继承013原ledger前缀逐字相同。GUI BASE与RA2A FOLLOWUP两输入同turn 01a13007-eba3-7091-9d3a-1b1fccdc6eb4；实际busy且首MCP结果返回后才派发FOLLOWUP；四次list_targets call/reply无error，精确combined final及task_complete，GUI可见。GUI还保留较早单独BASE ACK，不宣称全过程只有一个assistant文本。关闭后端点撤回、只读内核查询error=false/ownerPresent=false；未发睡眠业务输入。
+- Interpretation: 忙时专项PASS、关闭归属撤回PASS；真实UI同ID恢复报PRIVATE_APP_SESSION_LINK_NOT_RENDERED，恢复业务未派发，不改判通过、不重试。新增App2条，累计App9/Pi1/CLI0/OC0；正式auth/config终点hash相同，owned资源和临时凭据目录回收；完整矩阵仍INCOMPLETE。实际ledger SHA256=4d3ca0359184d64cdab82d85cd756d0623781fac51232b33f863df31dd410f38已在清理前原样持久化。
+
+## Hypothesis H-010: 重开App的可见会话选择链路尚未满足恢复门禁
+
+- Status: open
+- Claim: 真实select_session未找到带nativeID的渲染链接；原因尚未归属，不能据此推断RA2A恢复失败或改用后台thread/resume绕过UI。
+- Diagnostic evidence plan: 后续先补零模型恢复界面的脱敏DOM链接类型、目标ID匹配、实际history路径及固定错误分类；不得读取thinking/凭据，不为取证重发旧标记，达到证据门禁后才拟定最小修复。
+
+## Evidence E-023: 恢复失败的现有证据边界
+
+- Related hypotheses: H-010
+- Source: repair014 summary.resumeStaticReview、app_client.py真实select_session；安全stdio投影。
+- Matched signal: 重开使用同Runtime/home/CODEX_HOME/App userdata/cwd，未证路径被重新配置；实际history数据库路径、失败界面DOM/截图均未保存。安全帧仅method/哈希/hasError且未标backend，不能把166个error响应精确归为某thread/read或恢复操作。
+- Interpretation: 当前仅确认UI选择门禁失败，根因未证；不猜a/button差异、数据库缺失或协议异常。恢复探针未消耗，本轮App剩1条；生产904行上限已满，不擅自扩张修复。

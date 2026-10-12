@@ -221,3 +221,5 @@
 - 生产生成器尚未修改，4行最小候选已准备；当前阶段900行上限仍遵守，已请求仅904行扩展。完整矩阵和人工项没有据此改判通过，后续按剩余额度验证已授权范围，不自动再开轮。
 
 - Owner「批注，继续验收」确认落地候选并继续，阶段上限扩展至904行。生产生成器已仅增加4行私有RA2A两工具批准配置；codex/app边界回归及恢复相关共7项PASS，其他MCP工具及全局策略不变。完整矩阵仍待后续验收，本轮剩App3/Pi9/CLI10/OC10，不自动重置。
+
+- 落地10cfdf6后repair014唯一有界实测：App GUI BASE与RA2A FOLLOWUP同turn，四次list_targets真实返回、精确combined final/task_complete及GUI可见，忙时PASS；关闭后端点撤回且内核无人持锁，睡眠仅查询未派发。真实UI恢复原ID报会话链接未渲染，恢复probe未发，根因未证（失败DOM/截图/history路径缺证）。本轮App9/Pi1/CLI0/OC0，原账本继承及清理前持久化已证，正式auth/config终点hash不变；恢复/holder交接/完整矩阵/人工项仍未通过，不将专项PASS升级完整PASS。
