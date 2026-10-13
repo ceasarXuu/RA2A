@@ -303,3 +303,10 @@
 - Source: cycle-002-cli-fixed/{summary.json,ledger.jsonl}，绑定fe98cc8/源码输入冻结；第2轮账本原字节继承。诊断范围明确仅CLI，App10已满禁止启动/输入，OC源认证阻塞且不执行，Pi未增加输入。
 - Matched signal: 官方CLI0.162.1真实TUI register200，端点01a135ae-5bf8-7e61-aea5-32a54ffd4cad发布；basic self、active（busyAtFollowup=true）、followup原生完成均PASS。关闭后恢复originalSession=resumedSession，恢复新投递原生完成PASS。不含App持有者切换、跨节点ACK损失、OC或人工界面观察。
 - Interpretation: Issue4启动错误登记修复有针对性迟到App零模型fixture与真实CLI业务回归；关闭该具体缺陷，不改判全矩阵或Issue2生产症状。完整矩阵仍INCOMPLETE，等待本机OpenCode重新登录后完成余项；本轮CLI9/App10/OC0/Pi7，无退款/重放。正式8认证配置hash相同，owned REAPED/凭据副本REMOVED。
+
+
+## Evidence E-034: 第3轮真实三端矩阵与编排/界面缺口
+
+- Source: cycle-003/{summary.json,ledger.jsonl}；绑定1213e55、输入SHA冻结。OC认证BLOCKED_AUTH/0输入。三端9格basic、Pi→App和App→CLI工具回信、三端BASE原生完成及CLI/Pi FOLLOWUP均PASS；App FOLLOWUP原生唯一combined final/task_complete PASS，但GUI false，实际截图停旧消息位置且有向下跳转按钮。仅假设虚拟化/滚动，未据截图证明点击后可见。App原IDresume新投递PASS；CLI→睡眠→App真实writer gate→CLI恢复PASS；Pi同IDresume及CLI/Pi distinctLAN丢ACK不重放PASS。
+- Matched failure: resume循环按endpoints插入顺序先App再CLI。CLI持有者切换会stop App，之后ACK-loss仍向旧App endpoint派发；App预算维持8（该条未预留），native users/finals0而超时。真实循环抽取零模型回归原版FAIL“handoff stopped App without restoring it”；原地调整App恢复最后执行后PASS，16项相关测试PASS，生产文件总行数不增加。
+- Interpretation: 此编排缺口不是App接收后丢ACK故障，不重放原unknown。真实修复回归待后续运行；App FOLLOWUP GUI失败另行零模型渲染/滚动取证，不改判完整矩阵。第3轮CLI8/App8/OC0/Pi8，资源REAPED/私有凭据REMOVED/正式8认证配置hash相同。

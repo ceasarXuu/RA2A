@@ -136,7 +136,7 @@ def execute(root):
             if receiver == 'opencode' and evidence.combined_completion(case, follow):
                 case.update(status='PASS', completionMode='ONE_COMBINED_NATIVE_FINAL', combinedFinal=follow['native']['finals'][0])
             report['cases'] += [case, follow]
-        for kind in (k for k in endpoints if k not in failed):
+        for kind in sorted((k for k in endpoints if k not in failed), key=lambda k: k == 'app'):
             case = {'case': 'resume-'+kind, 'sender': kind, 'receiver': kind}
             transfer = None
             try:

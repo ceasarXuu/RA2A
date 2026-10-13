@@ -242,3 +242,4 @@
 - 同轮CLI有界唯一新标记诊断：start returned/register200/new codex-tui rollout但not_loaded，尚未证明embedded fallback或其他backend归属根因。初始诊断控制器错误/重复bootstrap拒绝均0新模型输入，保留原证据；最新账本CLI2/App8/OC0/Pi7，正式hash相同、资源/私有凭据回收。
 - 同轮diag5成功、diag6再次失败并取得错误登记证据：延迟落盘App文件被当成CLI，实际CLI在官方loaded/list；修复以唯一bootstrap原生user文本关联native ID。8项相关零模型测试通过，生产行数不增加；待真实修复回归。当前CLI4/App10/OC0/Pi7，App本轮输入已停止，不重置账本。
 - Issue4修复fe98cc8的真实CLI0.162.1专项启动、自投递、busy/followup、关闭恢复同nativeID后的新投递均PASS；迟到App/assistant/substring零模型负例通过。App达到10已停输入，未测holder transfer/LAN/人工，全矩阵仍INCOMPLETE。最新第2轮CLI9/App10/OC0/Pi7，资源和凭据副本回收，正式认证配置hash不变。OpenCode源认证仍过期，等待Owner重新登录。
+- 第3轮1213e55：三端9格基础及两个工具环PASS，真实CLI→睡眠→App writer→CLI切换PASS，App/CLI/Pi同IDresume PASS。App FOLLOWUP native final/task_complete PASS而GUI false；截图旧滚动位置不能证明通知丢失。原编排先恢复App再关闭它做CLI交接，导致App ACK-loss发往旧端点、0预算/0native输入超时；原地将App恢复置最后，真实循环零模型红→绿，16项相关测试PASS，真实回归待执行。第3轮CLI8/App8/OC0/Pi8，全矩阵INCOMPLETE、正式hash不变/资源回收。

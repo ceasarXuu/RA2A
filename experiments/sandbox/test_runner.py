@@ -96,3 +96,41 @@ class RunnerTests(unittest.TestCase):
                 runner.manual(None, {}, {'app': {}}, {'app': app}, ledger, report)
             self.assertEqual(report['manual'], 'PASS')
             self.assertEqual(ledger.summary()['codex-app']['reserved'], 1)
+
+    def test_transfer_restores_app_before_later_app_delivery(self):
+        # Exercise the real lifecycle loop, excluding unrelated namespace setup.
+        import ast
+        import copy
+        tree = ast.parse(Path(runner.__file__).read_text())
+        loop = next(node for node in ast.walk(tree) if isinstance(node, ast.For)
+                    and any(isinstance(child, ast.Constant) and child.value == 'resume-'
+                            for child in ast.walk(node)))
+        code = compile(ast.fix_missing_locations(ast.Module(body=[copy.deepcopy(loop)], type_ignores=[])),
+                       '<real-runner-resume-loop>', 'exec')
+        class Client:
+            def __init__(self): self.closed = False
+            def stop(self): self.closed = True
+            def select_session(self, identity):
+                if self.closed: raise RuntimeError('closed App cannot select')
+        endpoints = {kind: {'id': kind+'-id', 'agent': 'codex-app' if kind == 'app' else 'codex-cli',
+                            'address': 'ra2a://sandbox-codex/'+kind+'-id'} for kind in ('app', 'codex')}
+        processes = {kind: Client() for kind in endpoints}
+        cli, app, events = MagicMock(), MagicMock(), []
+        def resume(runtime, kind, env, bins, home, identity, old, launch=True):
+            old.stop()
+            if launch: events.append('cli-reopened'); return Client()
+        cli.resume.side_effect = resume
+        cli.endpoint.side_effect = lambda runtime, kind, identity=None: {**endpoints[kind], 'id': identity}
+        def reopen(*args, **kwargs): events.append('app-reopened'); return Client()
+        app.start.side_effect = reopen
+        def send(runtime, config, targets, sender, receiver, case):
+            case['status'] = 'PASS' if not processes[receiver].closed else 'FAIL'
+        report = {'cases': []}
+        scope = {'endpoints': endpoints, 'processes': processes, 'failed': set(), 'clients': cli,
+                 'app_client': app, 'runtime': MagicMock(), 'environments': {'app': {}, 'codex': {}},
+                 'config': {'bins': {}, 'nodes': {k: {'home': '/private/'+k} for k in endpoints}, 'display': ':private'},
+                 'ledger': None, 'send': send, 'report': report}
+        exec(code, scope)
+        self.assertFalse(processes['app'].closed, 'handoff stopped App without restoring it')
+        self.assertLess(events.index('cli-reopened'), events.index('app-reopened'))
+        self.assertTrue(all(case['status'] == 'PASS' for case in report['cases']))
