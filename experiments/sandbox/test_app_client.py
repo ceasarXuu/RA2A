@@ -114,16 +114,41 @@ class ExactFinalVisibilityTest(unittest.TestCase):
         app.visible('ACK_TEST')
         script = r"""
 const request='[RA2A message] Reply only ACK_TEST. Do not call tools.';
-global.document={body:{innerText:request},querySelectorAll(){return [
+global.innerHeight=820;
+global.document={body:{innerText:request},querySelectorAll(selector){if(selector!=='p')return [];return [
  {innerText:request,getClientRects(){return [{}]}},
  {innerText:'ACK_TEST',getClientRects(){return []}}
 ]}};
 if(eval(process.argv[1])!==false)process.exit(1);
-document.querySelectorAll=()=>[{innerText:'ACK_TEST',getClientRects(){return [{}]}}];
+document.querySelectorAll=()=>[{innerText:'ACK_TEST',getClientRects(){return [{}]},getBoundingClientRect(){return {top:400,bottom:430}}}];
 if(eval(process.argv[1])!==true)process.exit(2);
 """
         result=subprocess.run([node,'-e',script,expression[0]],capture_output=True,timeout=5)
         self.assertEqual(result.returncode,0,'input substring/hidden reply mistaken for rendered final')
+
+    def test_offscreen_final_uses_only_unique_visible_native_button(self):
+        import shutil
+        import subprocess
+        app = AppProcess.__new__(AppProcess)
+        expressions=[];app.evaluate=lambda value: expressions.append(value) or False
+        app.visible('ACK_TEST')
+        script = r"""
+global.innerHeight=820;
+let top=1600, clicks=0, buttons=[];
+const final={innerText:'ACK_TEST',getClientRects(){return [{}]},getBoundingClientRect(){return {top,bottom:top+45}}};
+const button={getAttribute(){return 'false'},getClientRects(){return [{}]},click(){clicks++;top=580}};
+global.document={querySelectorAll(selector){return selector==='p'?[final]:buttons}};
+if(eval(process.argv[1])!==false||clicks!==0)process.exit(1);
+buttons=[button,button];
+if(eval(process.argv[1])!==false||clicks!==0)process.exit(2);
+buttons=[{...button,getAttribute(){return 'true'}}];
+if(eval(process.argv[1])!==false||clicks!==0)process.exit(3);
+buttons=[button];
+if(eval(process.argv[1])!==false||clicks!==1)process.exit(4);
+if(eval(process.argv[1])!==true||clicks!==1)process.exit(5);
+"""
+        result=subprocess.run([shutil.which('node'),'-e',script,expressions[0]],capture_output=True,timeout=5)
+        self.assertEqual(result.returncode,0,result.stderr.decode())
 
     def test_combined_native_final_and_auth_marker(self):
         app = AppProcess.__new__(AppProcess)

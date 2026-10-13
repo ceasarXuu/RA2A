@@ -132,7 +132,7 @@ class AppProcess:
         raise TimeoutError('private App window unavailable')
 
     def visible(self, marker):
-        return bool(self.evaluate('[...document.querySelectorAll("p")].some(e=>e.getClientRects().length&&e.innerText.trim()==='+json.dumps(marker)+')' if marker.startswith('ACK_') else '!!document.body && document.body.innerText.includes('+json.dumps(marker)+')'))
+        return bool(self.evaluate('(() => {const ack='+json.dumps(marker)+';if([...document.querySelectorAll("p")].some(e=>e.getClientRects().length&&e.innerText.trim()===ack&&e.getBoundingClientRect().top>=0&&e.getBoundingClientRect().bottom<=innerHeight))return true;const buttons=[...document.querySelectorAll(\'button[aria-label="Scroll to bottom"]\')].filter(e=>e.getAttribute("aria-hidden")!=="true"&&e.getClientRects().length);if(buttons.length===1)buttons[0].click();return false})()' if marker.startswith('ACK_') else '!!document.body && document.body.innerText.includes('+json.dumps(marker)+')'))
 
     def screenshot(self, destination):
         data = self.rpc('Page.captureScreenshot', {'format': 'png'}, True)['data']

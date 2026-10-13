@@ -245,3 +245,7 @@
 - 第3轮1213e55：三端9格基础及两个工具环PASS，真实CLI→睡眠→App writer→CLI切换PASS，App/CLI/Pi同IDresume PASS。App FOLLOWUP native final/task_complete PASS而GUI false；截图旧滚动位置不能证明通知丢失。原编排先恢复App再关闭它做CLI交接，导致App ACK-loss发往旧端点、0预算/0native输入超时；原地将App恢复置最后，真实循环零模型红→绿，16项相关测试PASS，真实回归待执行。第3轮CLI8/App8/OC0/Pi8，全矩阵INCOMPLETE、正式hash不变/资源回收。
 - [Issue5](https://github.com/ceasarXuu/RA2A/issues/5)编排修复edb936a等待真实CLI交接后App ACK-loss回归；[Issue6](https://github.com/ceasarXuu/RA2A/issues/6)长序列GUI false仍未根治。同轮两输入诊断短会话busy/unknown后唯一native final与精确P段落渲染PASS，无可滚动历史，因此不能反证原失败。账本CLI8/App10/OC0/Pi8冻结App额度。
 - GUI判据另有确定假阳性：用户请求含ACK即可让旧substring返回true。原地检查native完整final的精确已渲染段落，combined final不再只检查FOLLOWUP token；真实JS负例红→绿，23项相关测试PASS，生产行数不增加。该修复不取消Issue6原失败，完整新判据回归待执行，人工留最后。
+
+- 第4轮d2154bc真实回归：三端9格basic、两工具环、同ID恢复、CLI/App实际holder切换及三端distinct-LAN丢ACK不重放PASS。Issue5已关闭；App长序列GUI false保留，完整矩阵INCOMPLETE。CLI8/App9/OC0/Pi8，保护/清理通过。
+- 第5轮App6输入专项：完整final在视口外，点击一次真实Scroll to bottom按钮后同ID/完整两ACK进入视口；截图独立核验，无后台刷新或模型新增。原检查器把视口外算可见的假阳性已原地修正；现以唯一可见原生导航控件显示回复，下一采样检查精确完整P及视口范围，24相关测试PASS，生产行数不增。Issue6真实修复回归待执行，自动跟随与导航后可见分开，人工仍待。
+- Owner已将OpenCode模型路径改为OpenCode Go订阅；本机Go API凭据存在且本地catalog包含kimi-k3，下一轮私有显式选择该模型，CLI/App仍6.1-sol low，Pi现有kimi-k3；正式配置不修改。

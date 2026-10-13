@@ -323,3 +323,18 @@
 - Source: ExactFinalVisibilityTest零模型真实JS DOM fixture及AppProcess.visible/runner.send调用链；cycle003-app-scroll已实证完整combined final渲染为P段落。
 - Matched signal: 只有用户请求“Reply only ACK_TEST”与display:none回复时，旧body.innerText.includes判据返回true，fixture FAIL；原地改ACK检查为完整精确段落+getClientRects，runner使用native finals实际ack（含combined完整内容），fixture转PASS。认证界面等非ACK判断保留。23项相关测试PASS，生产文件行数未增加。
 - Interpretation: 这是测试判据假阳性修复，不解释旧GUI false，也不改变原失败结论；完整真实矩阵新判据回归待执行，人工实际可见/继续输入仍未通过。不能把DOM渲染自动升级为人工观察。
+
+
+## Evidence E-037: 第4轮真实交接后App丢ACK回归通过
+
+- Source: cycle-004/{summary.json,ledger.jsonl}，冻结d2154bc/sourceChanged=false。CLI/App/Pi三端9格basic和两工具环PASS；同ID恢复、CLI→睡眠→App实际writer→CLI恢复PASS；App恢复置最后后，三端distinct-LAN postwrite ACK损失/cancel unknown/不重放及native完成均PASS。Issue5具体编排缺陷已关闭，不外推Issue2生产竞争。
+- UI: App FOLLOWUP原生完成PASS，原自动GUI false保留。裸DOM scroll后完整exact P出现但top979/bottom1025、inViewport=false；原会话composer ID始终相同。支持旧滚动/虚拟化方向，不证明视口可见或数据丢失。
+- Budget/protection: CLI8/App9/OC0/Pi8；OC仍认证阻塞。资源REAPED/私有copies REMOVED/正式8认证配置hash相同，完整矩阵INCOMPLETE。
+
+## Evidence E-038: 原生下跳按钮使长会话完整final进入视口
+
+- Source: cycle-005/summary.json，cycle-005-gui/before.png、after-button.png；绑定d2154bc/frozen source。独立Pi真实发送端0模型输入，App bootstrap+三历史+BASE/FOLLOWUP共6输入；忙时FOLLOWUP原生精确combined final完成。
+- Matched signal: 导航前exact P top1641.5/bottom1687、inViewport=false，同会话composer true；唯一可见原生Scroll to bottom button点击一次后top580.5/bottom626、inViewport=true，scrollTop -1061→0。root独立查看截图确认完整两ACK与输入栏同屏。不曾backend history/resume/reload或新增模型输入；无需Latest response备用focus。
+- Static binding: thread-layout eccd85e6…b2 的按钮回调更新跟随/scroll controller或responseSpacer；与裸DOM scrollHeight不同。app-initial a9f4a1a8…720确认真实button及隐藏态无onClick。
+- Interpretation: 检查器将视口外P也算可见是第二个确定假阳性。原地更新ACK判据：精确完整段落须在视口；若不在，点击唯一可见原生下跳按钮，返回false，下一采样独立检查；隐藏/多个按钮不操作。这是显式GUI导航后的可见性验收，不声称App自动跟随无需操作；旧失败不改判，人工仍留最后。24项相关零模型测试通过，生产文件行数不增加，阶段仍904。真实修复回归待执行。
+- Budget/protection: 第5轮App6/其他0；源未变/正式8认证配置hash相同/owned回收/私有copies移除。随后Owner明确要求OpenCode使用Go订阅，下一轮以现有Go凭据私有投影和kimi-k3执行，不改正式配置。
