@@ -45,7 +45,8 @@ class StartupSelectionTest(TestCase):
 
             def create_session(_process, _text):
                 (sessions/'new-cli.jsonl').write_text(json.dumps({
-                    'type': 'session_meta', 'payload': {'id': 'new-cli'}})+'\n')
+                    'type': 'session_meta', 'payload': {'id': 'new-cli'}})+'\n'+json.dumps({
+                    'type': 'response_item', 'payload': {'role': 'user', 'content': [{'type': 'input_text', 'text': _text}]}})+'\n')
 
             runtime, ledger = mock.Mock(), mock.Mock()
             runtime.spawn.side_effect = [daemon, process]
@@ -57,3 +58,30 @@ class StartupSelectionTest(TestCase):
                                        ledger, home, configured=True)
             self.assertIs(result, process)
             api.assert_called_once_with(runtime, 'codex', '/sandbox/register', {'id': 'new-cli'})
+
+    def test_delayed_app_rollout_with_same_originator_cannot_win_cli_registration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            sessions = home/'.codex/sessions'
+            sessions.mkdir(parents=True)
+            process, daemon, runtime, ledger = (mock.Mock() for _ in range(4))
+            process.poll.return_value = None
+            daemon.poll.return_value = 0
+            runtime.spawn.side_effect = [daemon, process]
+            ledger.call.return_value = {'allow': True, 'duplicate': False}
+            def rollout(name, identity, text, role='user'):
+                records = [{'type': 'session_meta', 'payload': {'id': identity, 'originator': 'codex-tui'}},
+                           {'type': 'response_item', 'payload': {'role': role, 'content': [{'type': 'input_text', 'text': text}]}}]
+                (sessions/name).write_text('\n'.join(json.dumps(row) for row in records)+'\n')
+            def submit(_process, text):
+                # App creates its file only after the old snapshot point. Metadata
+                # alone is deliberately indistinguishable from the CLI file.
+                rollout('a-app.jsonl', 'wrong-app', 'Reply only READY_SANDBOX_APP.')
+                rollout('b-assistant.jsonl', 'wrong-assistant', text, 'assistant')
+                rollout('c-substring.jsonl', 'wrong-substring', text+' extra')
+                rollout('d-cli.jsonl', 'real-cli', text)
+            with mock.patch.object(clients, 'terminal'), mock.patch.object(clients.time, 'sleep'), \
+                    mock.patch.object(clients, 'submit', side_effect=submit), \
+                    mock.patch.object(clients, 'api') as api:
+                clients.start(runtime, 'codex', {}, {'codex': '/native'}, home, ledger, home, configured=True)
+            api.assert_called_once_with(runtime, 'codex', '/sandbox/register', {'id': 'real-cli'})

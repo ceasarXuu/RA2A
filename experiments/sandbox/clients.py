@@ -1,5 +1,7 @@
 """Real TUI startup; all model-driving bootstrap inputs reserve a slot."""
 import json
+import secrets
+from evidence import texts
 from pathlib import Path
 import subprocess
 import threading
@@ -100,7 +102,7 @@ def start(runtime, kind, env, bins, home, ledger, source, configured=False):
     if not configured:
         configure(home, kind, source, bins)
     if kind == 'codex':
-        existing = set((Path(home)/'.codex/sessions').rglob('*.jsonl'))
+        bootstrap = 'Reply only READY_SANDBOX_'+secrets.token_hex(8)+'. Do not call any tools.'
         daemon = runtime.spawn(kind, [bins['codex'], 'app-server', 'daemon', 'start'], env)
         daemon.process.wait(timeout=30)
         if daemon.poll() != 0:
@@ -112,15 +114,13 @@ def start(runtime, kind, env, bins, home, ledger, source, configured=False):
         record = ledger.call('/reserve', {'kind': 'codex-cli', 'id': 'bootstrap-codex'})
         if not record['allow'] or record['duplicate']:
             raise RuntimeError('bootstrap budget unavailable; not replayed')
-        submit(process, 'Reply only READY_SANDBOX. Do not call any tools.')
+        submit(process, bootstrap)
         for _ in range(40):
             paths = list((Path(home)/'.codex/sessions').rglob('*.jsonl'))
             for path in paths:
-                if path in existing:
-                    continue
-                for line in path.read_text().splitlines():
-                    row = json.loads(line)
-                    if row.get('type') == 'session_meta':
+                for row in (rows := [json.loads(line) for line in path.read_text().splitlines()]):
+                    if row.get('type') == 'session_meta' and any(r.get('type') == 'response_item' and
+                            r['payload'].get('role') == 'user' and texts(r['payload'].get('content')) == bootstrap for r in rows):
                         identity = row['payload']['id']
                         api(runtime, kind, '/sandbox/register', {'id': identity})
                         return process

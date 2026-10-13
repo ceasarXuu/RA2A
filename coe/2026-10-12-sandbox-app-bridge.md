@@ -276,3 +276,23 @@
 - Source: repair018/result.json、selected-ui.png、ledger-original.jsonl，App选择代码绑定1a2bdaf；root独立查看截图。
 - Matched signal: 唯一bootstrap原生exact final/task_complete PASS，真实关闭后重开；可见控件local键精确匹配点击成功，live endpoint sameNativeID=true，resumedHistoryACKVisible=true。恢复阶段0新业务输入，不能据此升级恢复投递通过。App9→10，CLI9/OC3/Pi9不变；正式Codex auth/config终点hash一致，自有Runtime退出与私有临时树清理完成。
 - Interpretation: UI选择/历史恢复缺陷有真实现场回归证据；Issue3仍开放待恢复后的新投递完整验证。第1轮基础矩阵原失败不改判，新轮等待OpenCode源认证更新后执行；不重置当前账本。017复制的诊断源码已另存为独立018，014的app_client.py恢复至原10cfdf6原字节；016实际使用39dfeb0时的来源另列，禁止以现已恢复014源码重跑016或改写旧结果。
+
+
+## Evidence E-030: 第2轮App恢复后的新投递与跨节点ACK损失通过
+
+- Source: cycle-002-reverify/{summary.json,ledger.jsonl}；e182827/dirty=false/input SHA冻结，独立诊断控制器显式将OC设认证阻塞（0输入）。
+- Matched signal: App self GUI、Pi→App工具回信、App/Pi busy+followup、两者resume及distinct-node ACK-loss/no replay均PASS。resume-app原ID=恢复ID01a13590-d66b-75c3-982f-e458f1c542d5，新user/final各1、精确GUI ACK可见。CLI BLOCKED_ADAPTER，故holder transfer未运行；完整矩阵INCOMPLETE。账本CLI1/App7/OC0/Pi7，正式8认证配置hash相同，owned REAPED/copies REMOVED。
+- Interpretation: Issue3原恢复缺陷真实新投递回归已满足并关闭；App cycle1 self显示失败不抹除，cycle2序列少OC/CLI，不能据单次通过宣称偶发显示问题根治。第2轮余额继续CLI独立定位，不重置预算。
+
+## Evidence E-031: 启动诊断保护挡住重复bootstrap，随后唯一新标记证实not_loaded
+
+- Source: cycle-002-cli-diag、cycle-002-cli-diag2/3/4；原账本继承，固定字面异常投影及唯一ID零模型fixture。
+- Matched signal: 初始自组控制器APP_START失败，仅固定RuntimeError、paid0，不归于产品；改回原runner setup后明确bootstrap budget unavailable/not replayed。原因是既有bootstrap ID重复，账本正常拦截；其余失败机制不猜。新随机ID fixture验证旧ID/原字节保留及duplicate拒绝，唯一实际诊断4 CLI start returned、register HTTP200、codex-tui新rollout1，但endpoint未发布，cli_ownership_unknown/not_loaded28；三种TUI embedded fallback固定日志均0，无TRACE证据不能排除。
+- Interpretation: 不扩大生产适配器或猜半写/认证/模型错误，下一门禁比较实际daemon/TUI/backend thread-loaded归属。App7→8、CLI1→2、OC0/Pi7不变；所有诊断owned REAPED/凭据副本REMOVED/正式hash相同。重复ID零输入不是模型失败或退款。
+
+
+## Evidence E-032: CLI启动选择误认延迟落盘的App会话
+
+- Source: cycle-002-cli-diag5/6/summary.json；原账本前缀继承。diag5登记CLI元数据ID、端点与独立官方loaded/list均一致，PASS但不能改判此前失败。diag6复现register200/not_loaded28，登记01a135a9-c8ff-75e2-97d4-e5e12c662084的native metadata实际为Codex Desktop；真正codex-tui ID01a135a9-d3b7-7280-ac45-3082cb54609c存在于独立loaded/list中。官方socket前后dev/inode相同，peerPID1079、版本0.162.1；不凭相同路径推定全部历史generation未变。
+- Interpretation: 本次具体失败来自沙盒clients.start选择第一个“snapshot后新文件”，App文件可能晚于snapshot落盘；不是已证后端分流或生产owner gate失效。固定originator/source不能证明持有者。启动器改为随机唯一bootstrap文本与原生user精确匹配后才登记，拒绝assistant/substring/App文本，不修改生产owner判定、不cold resume。生产文件总行数未增加，仍在904新增行批准范围；8项相关零模型测试通过。真实修复回归另列，完整矩阵仍INCOMPLETE。
+- Budget/protection: diag5/6各新增CLI1/App1，累计CLI4/App10/OC0/Pi7；App达到10后本轮不得继续App输入。两次owned REAPED/私有凭据REMOVED/正式8认证配置hash一致；OpenCode源认证仍过期，不再付费重试。

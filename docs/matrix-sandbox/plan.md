@@ -237,3 +237,7 @@
 - 同轮OC唯一专项：收件正常但OAuth刷新错误族导致原生final0；私有凭据投影完整且源已过期，刷新HTTP状态/拒绝方尚未证。不改正式auth、不反复付费重试，已请求Owner本机OpenCode重新登录。累计CLI9/App9/OC3/Pi9；完整矩阵仍INCOMPLETE。
 
 - 1a2bdaf后repair018真实App关闭/重开、侧栏点击恢复同nativeID、历史ACK界面可见均通过；恢复阶段0新投递，不升级业务恢复PASS。第1轮累计CLI9/App10/OC3/Pi9，账本冻结，完整矩阵仍INCOMPLETE。等待Owner更新本机OpenCode OAuth后新轮验收；正式认证配置保护保持，人工项仍在自动阶段之后。
+
+- 第2轮e182827：OC明确认证阻塞且0输入；App/Pi self、工具回信、busy、同IDresume新投递、distinct-LAN丢ACK不重放实证通过，Issue3原会话恢复已关闭。CLI启动未发布端点，holder transfer未运行、全矩阵INCOMPLETE，人工仍待自动阶段完成。
+- 同轮CLI有界唯一新标记诊断：start returned/register200/new codex-tui rollout但not_loaded，尚未证明embedded fallback或其他backend归属根因。初始诊断控制器错误/重复bootstrap拒绝均0新模型输入，保留原证据；最新账本CLI2/App8/OC0/Pi7，正式hash相同、资源/私有凭据回收。
+- 同轮diag5成功、diag6再次失败并取得错误登记证据：延迟落盘App文件被当成CLI，实际CLI在官方loaded/list；修复以唯一bootstrap原生user文本关联native ID。8项相关零模型测试通过，生产行数不增加；待真实修复回归。当前CLI4/App10/OC0/Pi7，App本轮输入已停止，不重置账本。

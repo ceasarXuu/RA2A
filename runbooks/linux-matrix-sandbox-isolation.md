@@ -60,3 +60,12 @@
 - 仅沙盒专属Codex配置可为用户已授权测试的list_targets、send_message分别设置`mcp_servers.ra2a.tools.<原生工具名>.approval_mode = "approve"`。不是`never`，也不是带`mcp__ra2a__`前缀的键；不设置server/global默认，不修改其他工具或正式权限。字段见[官方配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。固定0.160 schema和本机config/read已核对，但不能据磁盘值推定已有thread有效策略。
 - repair013原生config/read两项值为approve，实际两MCP调用各一次返回、elicitation0、App/Pi唯一原生final和App GUI ACK可见，证明此候选消除该复现的批准等待。该专项不替代完整矩阵；生产生成器是否已落地须另核当前提交。
 - 诊断清理前原样保存账本和hash。若历史原文件已丢失，明确记录重建边界，并保守延续已证消耗，不伪造原字节/hash、不退款、不改旧ID；新随机ID与已知旧ID分离，先零模型fixture检查计数和duplicate拒绝。
+
+
+## 真实App侧栏恢复键（2026-10-13已验证）
+
+- 当前固定App backend0.162.0-alpha.17.2的可见侧栏控件是DIV role=button，属性data-app-action-sidebar-thread-id使用local:<nativeID>，不是a[href]或bare nativeID。固定包M4编码与现场DOM共同证明；只匹配准确键且可见的控件再真实click，不用标题/substring或后台thread/resume绕过UI。其他版本须重新核验，不能外推属性恒定。
+- 初次DOM记录只保存“属性包含ID”，不能据此推定“属性等于ID”。repair017反驳bareID假设后，repair018界面恢复同ID和历史可见通过；cycle-002-reverify进一步用新投递证明native final/task_complete与GUI ACK。保留原失败记录，不据专项通过升级全矩阵。
+- App回复列表虚拟化；body.innerText找不到ACK不能单独判定通知丢失。先保存目标/当前编辑器关系、滚动状态与实际失败截图，区分焦点、虚拟化和通知；不自动加等待或后台刷新制造通过。cycle001自投显示失败而cycle002子矩阵通过，原偶发症状仍待完整序列回归。
+- 源OpenCode OAuth过期且真实刷新失败时，先确认私有凭据投影完整；不改RA2A投递/模型、不反复发送新付费标记。固定插件在refresh成功前不发模型请求；仅聚合CONNECT日志不能证明刷新HTTP状态或拒绝方。需要Owner更新正式认证时明确说明依据，任务自身不改正式auth。
+- CLI与App共享沙盒CODEX_HOME时，文件出现顺序不代表创建/持有顺序；已有文件集合也挡不住App延迟落盘。CLI启动注册必须用本次随机唯一bootstrap与原生user精确匹配关联session_meta ID，不依赖originator/source或首个新文件。cycle-002-cli-diag6实证错误登记App而真实CLI已loaded；回归包含迟到App、assistant误匹配、substring误匹配。
