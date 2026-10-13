@@ -241,3 +241,4 @@
 - 第2轮e182827：OC明确认证阻塞且0输入；App/Pi self、工具回信、busy、同IDresume新投递、distinct-LAN丢ACK不重放实证通过，Issue3原会话恢复已关闭。CLI启动未发布端点，holder transfer未运行、全矩阵INCOMPLETE，人工仍待自动阶段完成。
 - 同轮CLI有界唯一新标记诊断：start returned/register200/new codex-tui rollout但not_loaded，尚未证明embedded fallback或其他backend归属根因。初始诊断控制器错误/重复bootstrap拒绝均0新模型输入，保留原证据；最新账本CLI2/App8/OC0/Pi7，正式hash相同、资源/私有凭据回收。
 - 同轮diag5成功、diag6再次失败并取得错误登记证据：延迟落盘App文件被当成CLI，实际CLI在官方loaded/list；修复以唯一bootstrap原生user文本关联native ID。8项相关零模型测试通过，生产行数不增加；待真实修复回归。当前CLI4/App10/OC0/Pi7，App本轮输入已停止，不重置账本。
+- Issue4修复fe98cc8的真实CLI0.162.1专项启动、自投递、busy/followup、关闭恢复同nativeID后的新投递均PASS；迟到App/assistant/substring零模型负例通过。App达到10已停输入，未测holder transfer/LAN/人工，全矩阵仍INCOMPLETE。最新第2轮CLI9/App10/OC0/Pi7，资源和凭据副本回收，正式认证配置hash不变。OpenCode源认证仍过期，等待Owner重新登录。

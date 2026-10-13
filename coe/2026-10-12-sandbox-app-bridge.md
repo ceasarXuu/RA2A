@@ -296,3 +296,10 @@
 - Source: cycle-002-cli-diag5/6/summary.json；原账本前缀继承。diag5登记CLI元数据ID、端点与独立官方loaded/list均一致，PASS但不能改判此前失败。diag6复现register200/not_loaded28，登记01a135a9-c8ff-75e2-97d4-e5e12c662084的native metadata实际为Codex Desktop；真正codex-tui ID01a135a9-d3b7-7280-ac45-3082cb54609c存在于独立loaded/list中。官方socket前后dev/inode相同，peerPID1079、版本0.162.1；不凭相同路径推定全部历史generation未变。
 - Interpretation: 本次具体失败来自沙盒clients.start选择第一个“snapshot后新文件”，App文件可能晚于snapshot落盘；不是已证后端分流或生产owner gate失效。固定originator/source不能证明持有者。启动器改为随机唯一bootstrap文本与原生user精确匹配后才登记，拒绝assistant/substring/App文本，不修改生产owner判定、不cold resume。生产文件总行数未增加，仍在904新增行批准范围；8项相关零模型测试通过。真实修复回归另列，完整矩阵仍INCOMPLETE。
 - Budget/protection: diag5/6各新增CLI1/App1，累计CLI4/App10/OC0/Pi7；App达到10后本轮不得继续App输入。两次owned REAPED/私有凭据REMOVED/正式8认证配置hash一致；OpenCode源认证仍过期，不再付费重试。
+
+
+## Evidence E-033: 唯一输入登记修复后的官方CLI真实回归
+
+- Source: cycle-002-cli-fixed/{summary.json,ledger.jsonl}，绑定fe98cc8/源码输入冻结；第2轮账本原字节继承。诊断范围明确仅CLI，App10已满禁止启动/输入，OC源认证阻塞且不执行，Pi未增加输入。
+- Matched signal: 官方CLI0.162.1真实TUI register200，端点01a135ae-5bf8-7e61-aea5-32a54ffd4cad发布；basic self、active（busyAtFollowup=true）、followup原生完成均PASS。关闭后恢复originalSession=resumedSession，恢复新投递原生完成PASS。不含App持有者切换、跨节点ACK损失、OC或人工界面观察。
+- Interpretation: Issue4启动错误登记修复有针对性迟到App零模型fixture与真实CLI业务回归；关闭该具体缺陷，不改判全矩阵或Issue2生产症状。完整矩阵仍INCOMPLETE，等待本机OpenCode重新登录后完成余项；本轮CLI9/App10/OC0/Pi7，无退款/重放。正式8认证配置hash相同，owned REAPED/凭据副本REMOVED。
