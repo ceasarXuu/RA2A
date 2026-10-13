@@ -143,7 +143,7 @@ class AppProcess:
 
     def select_session(self, session_id):
         # Click the rendered sidebar control; no backend RPC or internal React API.
-        expression = '''(() => { const id=%s; const link=[...document.querySelectorAll('[data-app-action-sidebar-thread-id]')]
+        expression = '''(() => { const id="local:"+%s; const link=[...document.querySelectorAll('[data-app-action-sidebar-thread-id]')]
           .find(e=>e.getAttribute('data-app-action-sidebar-thread-id')===id && e.getClientRects().length); if(!link)return false;
           link.click(); return true; })()''' % json.dumps(session_id)
         deadline = time.monotonic()+20

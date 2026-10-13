@@ -229,3 +229,7 @@
 - Owner授权持续验收、遇问题修复，最多10轮循环；每轮仍每类Agent10条，失败不退款、不重放。新循环最多10轮，明确账本/轮次，不以结束一次进程自动重置。当前准备第1轮；既有修复轮的repair015已使用最后App1条到10/10，单列冻结，不混入新轮。
 - GitHub同步：[Issue #3](https://github.com/ceasarXuu/RA2A/issues/3)，主题Linux矩阵测试套件；版本待Owner指定，原PD未将测试设施纳入发版。
 - 恢复根因直接证实：原会话在Recents可见，目标ID在DIV role=button/data-app-action-sidebar-thread-id，旧a[href]无匹配。原地替换可见精确ID控件选择器，不增加生产行数，阶段仍904；生产后续改动只有证据门禁后实施。
+
+- 第1轮39dfeb0真实矩阵INCOMPLETE：11/16基础格PASS、2FAIL、3后续未执行；App两工具环边PASS，CLI/Pi busy/resume/ACK-loss PASS。OC UnknownError及App自投递GUI不可见待定位；本轮CLI9/App6/OC2/Pi9，正式保护hash相同且资源回收。使用该轮余量串行诊断App与OC，不新增第2轮或重放。
+
+- 同轮repair016/017补证：App busy再次通过，但bare nativeID选择假设被反驳；实际侧栏属性为local:<nativeID>，静态固定App包编码与真实DOM一致。原地修正前缀、不增生产行数；恢复原生探针与完整矩阵仍待执行。App累计9/10、CLI9/OC2/Pi9，旧失败证据保留。

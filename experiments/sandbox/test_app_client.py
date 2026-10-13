@@ -86,7 +86,7 @@ class AppInputTest(unittest.TestCase):
         app.evaluate = lambda e: expressions.append(e) or True
         app.select_session('target')
         script = '''let clicks=[];
-const rows=[['target-other',true],['target',false],['target',true]];
+const rows=[['local:target-other',true],['local:target',false],['local:target',true],['target',true]];
 global.document={querySelectorAll(selector){
  if(selector!=='[data-app-action-sidebar-thread-id]')throw Error('wrong control');
  return rows.map(([id,visible],index)=>({

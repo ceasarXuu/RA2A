@@ -231,6 +231,33 @@
 
 ## Hypothesis H-011: 精确匹配渲染的sidebar thread属性即可恢复原ID
 
-- Status: confirmed
+- Status: refuted
 - Claim: 选择器应匹配已实证data-app-action-sidebar-thread-id等于nativeID的可见控件，通过真实click恢复，不能调用后台resume或模糊标题匹配。
 - Diagnostic evidence plan: DOM直接属性/角色证据与固定App代码独立对照；原地替换后独立测试准确ID、可见性及不点击其他会话。真实新轮bootstrap完成后关/开App，界面点击同ID，writer发布同ID后唯一恢复probe原生完成+GUI可见。
+
+## Evidence E-025: 第1轮完整矩阵暴露两个新阻塞
+
+- Source: .cache/sandbox-discovery/cycle-001/{summary.json,report.md,ledger.jsonl}，exec69923已真实exit1，非观察超时。
+- Matched signal: 冻结39dfeb0/dirty=false/sourceChanged=false；11个基础格PASS，App自投递native PASS但5秒内GUI不可见，OpenCode接收出现UnknownError，3个后续格因依赖未执行。App两个工具环边PASS；CLI/Pi busy/followup/resume及真实跨节点丢ACK不重放PASS。实际App后端已为0.162.0-alpha.17.2，不能外推旧0.160证据为该版本全量通过。
+- Interpretation: 本轮INCOMPLETE，App恢复/交接因UI失败未运行，不升级39dfeb0选择器真实恢复结果。预算CLI9/App6/OC2/Pi9；正式认证终点hash相同，资源REAPED/copiesREMOVED。保留同轮余额继续专项，不启动第2轮掩盖第1轮失败。
+
+## Hypothesis H-012: App自投递未显示来自实际焦点或渲染路径偏差
+
+- Status: open
+- Claim: native final已完成而GUI5秒内未见，需区分目标会话未显示、渲染延迟与原生通知/界面缓存；当前没有失败截图，不能把猜测直接修成自动切焦点。
+- Diagnostic evidence plan: 同轮余额App4，仅唯一BASE/FOLLOWUP、同IDUI重开与恢复probe、自投递各阶段保留实际截图、原生final/complete及可见conversationID属性匹配。真实修复选择器先验证同ID恢复；若自投递仍失败，再以截图和固定属性分离候选根因。所有输入新ID，不重放旧消息；其余Agent0新增。
+
+## Evidence E-026: 专项启动器引用错误在模型输入前修正
+
+- Related hypotheses: H-012
+- Source: repair016/probe.py编译门禁及exec47677。
+- Matched signal: 第一次诊断脚本querySelector Python引号产生SyntaxError，未创建子进程/提交输入；修正仅诊断脚本，compile PASS后启动唯一有界运行。继承cycle001原ledger，App6→最多10，未退款。
+- Interpretation: 启动器问题不归于产品；生产未改，正式配置保持。专项结果尚待采集。
+
+
+## Evidence E-027: 真实恢复界面与固定包源码共同证明local key编码
+
+- Related hypotheses: H-010, H-011
+- Source: repair016/result.json；repair017/dom-safe.json、resume-ui.png；固定app.asar SHA256 ce97d6ccd57e314134506b84234f65737a5ec9b55664f037a77aa95fac971d68。
+- Matched signal: 016忙时两输入原生完成且GUI可见，关闭撤回通过，但bare nativeID精确属性匹配失败。017一次bootstrap完成后真实关/开，原会话DIV role=button可见，属性值local:01a13584-3d08-7ad2-b550-40c88332f99a，equalsID=false。固定包M4将nativeID加local:前缀，sidebar使用e.key，与现场一致。
+- Interpretation: 015只证明属性包含nativeID，未证明等于；撤回H-011的bareID假设。原地把匹配键改为local:<nativeID>，保留精确/可见门禁，不用contains或后台resume。最小DOM测试覆盖相邻ID、隐藏控件、bareID拒绝；实际恢复probe仍待新轮。016/017同轮App6→8→9，其他CLI9/OC2/Pi9不变，无退款/旧标记重放；正式auth/config相同、owned资源回收。
