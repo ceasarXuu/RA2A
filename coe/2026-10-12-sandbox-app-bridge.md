@@ -261,3 +261,18 @@
 - Source: repair016/result.json；repair017/dom-safe.json、resume-ui.png；固定app.asar SHA256 ce97d6ccd57e314134506b84234f65737a5ec9b55664f037a77aa95fac971d68。
 - Matched signal: 016忙时两输入原生完成且GUI可见，关闭撤回通过，但bare nativeID精确属性匹配失败。017一次bootstrap完成后真实关/开，原会话DIV role=button可见，属性值local:01a13584-3d08-7ad2-b550-40c88332f99a，equalsID=false。固定包M4将nativeID加local:前缀，sidebar使用e.key，与现场一致。
 - Interpretation: 015只证明属性包含nativeID，未证明等于；撤回H-011的bareID假设。原地把匹配键改为local:<nativeID>，保留精确/可见门禁，不用contains或后台resume。最小DOM测试覆盖相邻ID、隐藏控件、bareID拒绝；实际恢复probe仍待新轮。016/017同轮App6→8→9，其他CLI9/OC2/Pi9不变，无退款/旧标记重放；正式auth/config相同、owned资源回收。
+
+
+## Evidence E-028: OpenCode原生失败定位到私有OAuth刷新错误族
+
+- Source: cycle-001-oc-diag/run/{result.json,projection-safe.json,auth-expiry-safe.json}；固定1.18.34 OpenAI插件刷新源码。
+- Matched signal: 收件confirmed/accepted，唯一user但final0；安全分类AUTH_EXPIRED，25bytes错误正文不保存。源OAuth过期，私有type/access/refresh/expires/accountId与源逐字段相等（仅保存布尔）；refresh存在、provider正确，auth域名已允许。固定插件先等待refresh再构造模型fetch，当前未证模型请求被拒绝；聚合tunnel1/validation1不证明刷新HTTP状态或拒绝方。
+- Interpretation: 不改RA2A投递或模型，不反复付费重试；已请求Owner重新登录本机OpenCode后再继承认证。唯一诊断OC2→3，同轮CLI9/App9/Pi9不变，前缀原字节true，正式auth/config相同，owned资源REAPED且私有副本REMOVED。完整矩阵保持INCOMPLETE。
+
+
+## Evidence E-029: 编码修复后真实界面恢复同ID及历史显示通过
+
+- Related hypotheses: H-010, H-011, H-012
+- Source: repair018/result.json、selected-ui.png、ledger-original.jsonl，App选择代码绑定1a2bdaf；root独立查看截图。
+- Matched signal: 唯一bootstrap原生exact final/task_complete PASS，真实关闭后重开；可见控件local键精确匹配点击成功，live endpoint sameNativeID=true，resumedHistoryACKVisible=true。恢复阶段0新业务输入，不能据此升级恢复投递通过。App9→10，CLI9/OC3/Pi9不变；正式Codex auth/config终点hash一致，自有Runtime退出与私有临时树清理完成。
+- Interpretation: UI选择/历史恢复缺陷有真实现场回归证据；Issue3仍开放待恢复后的新投递完整验证。第1轮基础矩阵原失败不改判，新轮等待OpenCode源认证更新后执行；不重置当前账本。017复制的诊断源码已另存为独立018，014的app_client.py恢复至原10cfdf6原字节；016实际使用39dfeb0时的来源另列，禁止以现已恢复014源码重跑016或改写旧结果。

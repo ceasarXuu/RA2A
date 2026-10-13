@@ -233,3 +233,7 @@
 - 第1轮39dfeb0真实矩阵INCOMPLETE：11/16基础格PASS、2FAIL、3后续未执行；App两工具环边PASS，CLI/Pi busy/resume/ACK-loss PASS。OC UnknownError及App自投递GUI不可见待定位；本轮CLI9/App6/OC2/Pi9，正式保护hash相同且资源回收。使用该轮余量串行诊断App与OC，不新增第2轮或重放。
 
 - 同轮repair016/017补证：App busy再次通过，但bare nativeID选择假设被反驳；实际侧栏属性为local:<nativeID>，静态固定App包编码与真实DOM一致。原地修正前缀、不增生产行数；恢复原生探针与完整矩阵仍待执行。App累计9/10、CLI9/OC2/Pi9，旧失败证据保留。
+
+- 同轮OC唯一专项：收件正常但OAuth刷新错误族导致原生final0；私有凭据投影完整且源已过期，刷新HTTP状态/拒绝方尚未证。不改正式auth、不反复付费重试，已请求Owner本机OpenCode重新登录。累计CLI9/App9/OC3/Pi9；完整矩阵仍INCOMPLETE。
+
+- 1a2bdaf后repair018真实App关闭/重开、侧栏点击恢复同nativeID、历史ACK界面可见均通过；恢复阶段0新投递，不升级业务恢复PASS。第1轮累计CLI9/App10/OC3/Pi9，账本冻结，完整矩阵仍INCOMPLETE。等待Owner更新本机OpenCode OAuth后新轮验收；正式认证配置保护保持，人工项仍在自动阶段之后。
