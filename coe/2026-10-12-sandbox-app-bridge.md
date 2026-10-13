@@ -310,3 +310,16 @@
 - Source: cycle-003/{summary.json,ledger.jsonl}；绑定1213e55、输入SHA冻结。OC认证BLOCKED_AUTH/0输入。三端9格basic、Pi→App和App→CLI工具回信、三端BASE原生完成及CLI/Pi FOLLOWUP均PASS；App FOLLOWUP原生唯一combined final/task_complete PASS，但GUI false，实际截图停旧消息位置且有向下跳转按钮。仅假设虚拟化/滚动，未据截图证明点击后可见。App原IDresume新投递PASS；CLI→睡眠→App真实writer gate→CLI恢复PASS；Pi同IDresume及CLI/Pi distinctLAN丢ACK不重放PASS。
 - Matched failure: resume循环按endpoints插入顺序先App再CLI。CLI持有者切换会stop App，之后ACK-loss仍向旧App endpoint派发；App预算维持8（该条未预留），native users/finals0而超时。真实循环抽取零模型回归原版FAIL“handoff stopped App without restoring it”；原地调整App恢复最后执行后PASS，16项相关测试PASS，生产文件总行数不增加。
 - Interpretation: 此编排缺口不是App接收后丢ACK故障，不重放原unknown。真实修复回归待后续运行；App FOLLOWUP GUI失败另行零模型渲染/滚动取证，不改判完整矩阵。第3轮CLI8/App8/OC0/Pi8，资源REAPED/私有凭据REMOVED/正式8认证配置hash相同。
+
+
+## Evidence E-035: 同轮App二输入诊断未复现旧滚动失败
+
+- Source: cycle-003-app-scroll/{summary.json,ledger.jsonl}及cycle-003-scroll-gui/before.png、after.png，绑定edb936a；原第3轮账本原字节继承。只增加App BASE UI输入1/FOLLOWUP1，Pi只启动真实TUI作为独立LAN发送端、0模型输入；CLI不启动，OC仍阻塞。
+- Matched signal: busyBeforeFollowup=true，原始send结果DELIVERY_UNKNOWN，FOLLOWUP user1/唯一combined native final/task_complete PASS。真实窗口已有精确完整final的DIV/P段落（y308.25,height45.5），inViewport=true；没有可滚动历史容器，scrollAction performed=false；前后均渲染，未点击/后台刷新/重放。
+- Interpretation: 短会话未复现cycle003旧滚动位置问题，不能根治解释长序列GUI失败，也不能替代CLI交接后App重启编排修复的真实回归。第3轮CLI8/App10/OC0/Pi8，App额度冻结；owned REAPED/凭据副本REMOVED/正式8认证配置hash一致。Issue5编排/Issue6长序列UI缺口保留。
+
+## Evidence E-036: 原body substring界面判据存在确定性假阳性
+
+- Source: ExactFinalVisibilityTest零模型真实JS DOM fixture及AppProcess.visible/runner.send调用链；cycle003-app-scroll已实证完整combined final渲染为P段落。
+- Matched signal: 只有用户请求“Reply only ACK_TEST”与display:none回复时，旧body.innerText.includes判据返回true，fixture FAIL；原地改ACK检查为完整精确段落+getClientRects，runner使用native finals实际ack（含combined完整内容），fixture转PASS。认证界面等非ACK判断保留。23项相关测试PASS，生产文件行数未增加。
+- Interpretation: 这是测试判据假阳性修复，不解释旧GUI false，也不改变原失败结论；完整真实矩阵新判据回归待执行，人工实际可见/继续输入仍未通过。不能把DOM渲染自动升级为人工观察。

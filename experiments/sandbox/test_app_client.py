@@ -101,5 +101,38 @@ if(result!==true||JSON.stringify(clicks)!=='[2]')process.exit(1);
         self.assertEqual(result.returncode, 0, 'sidebar native-ID DOM fixture failed')
 
 
+class ExactFinalVisibilityTest(unittest.TestCase):
+    def test_request_substring_is_not_a_rendered_final(self):
+        import shutil
+        import subprocess
+        from unittest import mock
+        node = shutil.which('node')
+        self.assertIsNotNone(node)
+        app = AppProcess.__new__(AppProcess)
+        expression = []
+        app.evaluate = lambda value: expression.append(value) or False
+        app.visible('ACK_TEST')
+        script = r"""
+const request='[RA2A message] Reply only ACK_TEST. Do not call tools.';
+global.document={body:{innerText:request},querySelectorAll(){return [
+ {innerText:request,getClientRects(){return [{}]}},
+ {innerText:'ACK_TEST',getClientRects(){return []}}
+]}};
+if(eval(process.argv[1])!==false)process.exit(1);
+document.querySelectorAll=()=>[{innerText:'ACK_TEST',getClientRects(){return [{}]}}];
+if(eval(process.argv[1])!==true)process.exit(2);
+"""
+        result=subprocess.run([node,'-e',script,expression[0]],capture_output=True,timeout=5)
+        self.assertEqual(result.returncode,0,'input substring/hidden reply mistaken for rendered final')
+
+    def test_combined_native_final_and_auth_marker(self):
+        app = AppProcess.__new__(AppProcess)
+        expressions=[];app.evaluate=lambda value: expressions.append(value) or True
+        self.assertTrue(app.visible('ACK_BASE\nACK_FOLLOWUP'))
+        self.assertTrue(app.visible('Sign in to ChatGPT'))
+        self.assertIn('ACK_BASE',expressions[0])
+        self.assertIn('document.body.innerText.includes',expressions[1])
+
+
 if __name__ == '__main__':
     unittest.main()

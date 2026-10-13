@@ -261,9 +261,9 @@ def send(runtime, config, endpoints, sender, receiver, case, extra='', wait=True
             case['status'] = receipt['status'] if receipt['status'] != 'PENDING' else 'FAIL'
             if receiver == 'app' and case['status'] == 'PASS':
                 end = time.monotonic()+5
-                while time.monotonic() < end and not runtime.app_gui.visible('ACK_'+marker):
+                while time.monotonic() < end and not runtime.app_gui.visible(receipt['finals'][0]['ack']):
                     time.sleep(.1)
-                case['uiFinalVisible'] = runtime.app_gui.visible('ACK_'+marker)
+                case['uiFinalVisible'] = runtime.app_gui.visible(receipt['finals'][0]['ack'])
                 if not case['uiFinalVisible']:
                     case.update(status='FAIL', reason='native completion not rendered in actual App')
     except Exception as error:

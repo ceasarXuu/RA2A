@@ -243,3 +243,5 @@
 - 同轮diag5成功、diag6再次失败并取得错误登记证据：延迟落盘App文件被当成CLI，实际CLI在官方loaded/list；修复以唯一bootstrap原生user文本关联native ID。8项相关零模型测试通过，生产行数不增加；待真实修复回归。当前CLI4/App10/OC0/Pi7，App本轮输入已停止，不重置账本。
 - Issue4修复fe98cc8的真实CLI0.162.1专项启动、自投递、busy/followup、关闭恢复同nativeID后的新投递均PASS；迟到App/assistant/substring零模型负例通过。App达到10已停输入，未测holder transfer/LAN/人工，全矩阵仍INCOMPLETE。最新第2轮CLI9/App10/OC0/Pi7，资源和凭据副本回收，正式认证配置hash不变。OpenCode源认证仍过期，等待Owner重新登录。
 - 第3轮1213e55：三端9格基础及两个工具环PASS，真实CLI→睡眠→App writer→CLI切换PASS，App/CLI/Pi同IDresume PASS。App FOLLOWUP native final/task_complete PASS而GUI false；截图旧滚动位置不能证明通知丢失。原编排先恢复App再关闭它做CLI交接，导致App ACK-loss发往旧端点、0预算/0native输入超时；原地将App恢复置最后，真实循环零模型红→绿，16项相关测试PASS，真实回归待执行。第3轮CLI8/App8/OC0/Pi8，全矩阵INCOMPLETE、正式hash不变/资源回收。
+- [Issue5](https://github.com/ceasarXuu/RA2A/issues/5)编排修复edb936a等待真实CLI交接后App ACK-loss回归；[Issue6](https://github.com/ceasarXuu/RA2A/issues/6)长序列GUI false仍未根治。同轮两输入诊断短会话busy/unknown后唯一native final与精确P段落渲染PASS，无可滚动历史，因此不能反证原失败。账本CLI8/App10/OC0/Pi8冻结App额度。
+- GUI判据另有确定假阳性：用户请求含ACK即可让旧substring返回true。原地检查native完整final的精确已渲染段落，combined final不再只检查FOLLOWUP token；真实JS负例红→绿，23项相关测试PASS，生产行数不增加。该修复不取消Issue6原失败，完整新判据回归待执行，人工留最后。
