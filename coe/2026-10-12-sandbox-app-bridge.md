@@ -347,3 +347,12 @@
 - GUI: 四App基础+FOLLOWUP+resume+ACK-loss均精确完整final在视口、composer同ID。原生导航计数累计1（basic-opencode-app时发生）；FOLLOWUP完整双ACKtop580.55/bottom626.05，root截图独立核验。恢复后新进程导航计数0。关闭Issue6具体检测/导航缺陷，不声称自动跟随无操作，不将沙盒等同正式Issue2根治。
 - Budget/protection: CLI10/App10/OC9/Pi9，原reserved不退款；owned REAPED、私有凭据copies REMOVED、正式8认证配置hash不变。matrixStatus PASS仅自动化范围；manual=MANUAL_PENDING，完整用户验收未完成。
 - Next boundary: 独立第7轮人工启动器已准备但未执行，复用真实clients.start/runner.manual，只启动四端并每端一次人工标记、不重跑矩阵；一次性轮次/输出门禁，仍每类10。零模型mock验证四端委托一次、真实人工结果正确入报告，不能当实际人工PASS。
+
+
+## Evidence E-040: Owner人工确认与失败启动器分别归档，遗留凭据恢复清理
+
+- Owner直接回报“人工全部通过”，随后确认“已完成终端流程并退出”。这是人工观察证据来源，不由模型/截图/DOM自动代填。自动化基线仍cycle006冻结631d230的37/37真实PASS。
+- 第7轮原始summary另显示NOT_RUN/RuntimeError、未产生内部summary或manualObservations，账本CLI1/App1/OC0/Pi0，仅启动输入；因此不伪造第7轮四条人工标记，不将该脚本运行改判PASS。历史监督异常究竟超时还是非零退出未记录，仍UNKNOWN。原报告与账本原样保留；Owner观察以final-owner-and-cleanup.json单列。
+- 已验证原外/内控制器PID1102788/1103778/1103779均消失；同用户进程argv/mount/fd无残留自有资源引用。不可读的5个受保护进程全部早于manual启动，不作本轮资源、不操作；诊断shell自身引用排除。先校验私有ledger与保存文件逐字节一致及sha，再仅移除已知自有/tmp/r2s-k9x744h2，复核不存在。raw summary仍保持PRESERVED原值，恢复清理结果另存，不篡改历史。正式认证配置终点hash原记录一致；没有新模型输入/轮次。
+- 修复确定诊断缺口：外层原有supervise返回pid/returncode/timed_out，但generic RuntimeError路径丢失此三值。原地将既有assignment同时写report.supervisor，生产行数未增加。实际故障边界零模型模拟timeout/nonzero/success三路保存PASS；runtime7项运行中5PASS/2明确SKIP，未升级跳过项。历史原因仍不追认。
+- 收口边界：本轮四端功能自动化验收PASS，人工观察按Owner确认PASS；第7轮脚本独立NOT_RUN保留。验收证据不是Mac/Windows完整矩阵，也不是Issue2正式竞争根治或发布批准。

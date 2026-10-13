@@ -110,7 +110,7 @@ def main():
                 os.fchmod(stream.fileno(), 0o600)
                 json.dump(config, stream)
             with (root/'controller.stdout').open('xb') as out, (root/'controller.stderr').open('xb') as err:
-                owned = supervise(['unshare', '--user', '--map-root-user', '--net', '--pid', '--fork', '--mount-proc',
+                report['supervisor'] = owned = supervise(['unshare', '--user', '--map-root-user', '--net', '--pid', '--fork', '--mount-proc',
                             sys.executable, str(Path(__file__).resolve()), '--inner', str(root)],
                            env={'PATH': '/usr/sbin:/usr/bin:/bin', 'PYTHONDONTWRITEBYTECODE': '1'},
                            timeout=1800, stdout=None if options.manual else out, stderr=err,

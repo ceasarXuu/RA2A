@@ -77,3 +77,10 @@
 - 固定英文App包真实下跳控件为button aria-label="Scroll to bottom"，隐藏态aria-hidden=true且无onClick；仅唯一可见匹配才点击。此按钮调用宿主scroll controller/response spacer并更新跟随状态，不能用裸DOM scrollHeight代替。
 - cycle005同会话的完整双ACK原top1641.5，点击一次后top580.5/bottom626实际同屏；cycle006完整矩阵有原生按钮导航计数和精确P视口证据。无backend history/resume/reload、0新增模型输入。其他语言/包版本须先核验实际标签。
 - 明确区分自动跟随、用户UI导航后可见、真正人工观察。测试套件可以执行已验证的原生UI导航以显示结果，但不能据此宣称App自动跟随没有缺陷。人工PASS只能来自Owner观察，不能用截图或DOM自动代填。
+
+
+## 人工结论与控制器恢复清理分别记账
+
+- Owner人工直接确认与脚本manualObservations是不同证据源；若脚本未完成，不把Owner回报伪造成四条脚本标记/预算，也不篡改原NOT_RUN。保留原报告/ledger，另列人工来源。
+- 外层监督失败须保留pid/returncode/timed_out三项安全信号；旧generic RuntimeError不能区分超时与非零退出，不追认历史原因。
+- 缺内部REAPED报告时保留私有凭据目录，先验证精确原控制器PID退出、进程argv/mount/fd无自有引用、账本与报告原文件一致，再仅清理已知自有临时树。已受保护且早于本轮的正式进程不能列作自有资源或擅自停止；原报告不改写，恢复清理结果另列。

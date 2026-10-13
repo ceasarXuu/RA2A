@@ -252,3 +252,10 @@
 
 - 第6轮631d230冻结真实四端矩阵自动化37/37 PASS：16基础格、4工具回信、四端忙时追加/同ID恢复/真实LAN丢ACK不重放及CLI/App持有者交接。OpenCode私有Go订阅kimi-k3成功；App完整final视口检查及原生导航后的截图实证通过，Issue6具体套件缺陷关闭。预算CLI10/App10/OC9/Pi9；正式8认证配置hash相同、owned/copies清理，源码运行期间未变。人工MANUAL_PENDING，不称整体用户验收全部结束。
 - 第7轮人工专用一次性启动器已在本机证据目录准备、未启动；只启动四端并各提交一次人工标记，不重跑矩阵、不挪用第6轮用满的CLI/App额度。复用已有manual流程，零模型委托fixture通过。Owner应在本机交互终端观察真实TUI/专属App窗口，只有实际看到输入/完整回复/输入栏可继续才输入PASS。
+
+### 2026-10-14 本轮收口
+
+- 自动化：第6轮四端37/37 PASS；人工：Owner直接确认全部通过，并确认终端退出。按两类独立证据归档，不用收件ACK/DOM替代人工结论。
+- 第7轮脚本自身原始结果NOT_RUN/RuntimeError，CLI1/App1/OC0/Pi0，没有内部人工结果；保留原始失败，不伪造manual标记或改判脚本PASS。Owner人工确认另列；原PID已退出，自有资源引用检查及账本原字节门禁后移除残留私有凭据树，恢复清理证据另存。共启7/10轮，无超额/退款/旧标记重放。
+- 监督失败诊断缺口已原地修复：report保存既有safe pid/returncode/timed_out；零模型三路故障边界PASS，runtime5PASS/2SKIP，生产总行数不增加。第7轮历史退出原因UNKNOWN，不据新诊断追认。
+- Linux本轮验收收口；Mac/Windows矩阵、真实跨设备网络验收、生产Issue2及版本发布不由此自动计作通过。
