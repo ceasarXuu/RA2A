@@ -221,3 +221,16 @@
 - Source: repair014 summary.resumeStaticReview、app_client.py真实select_session；安全stdio投影。
 - Matched signal: 重开使用同Runtime/home/CODEX_HOME/App userdata/cwd，未证路径被重新配置；实际history数据库路径、失败界面DOM/截图均未保存。安全帧仅method/哈希/hasError且未标backend，不能把166个error响应精确归为某thread/read或恢复操作。
 - Interpretation: 当前仅确认UI选择门禁失败，根因未证；不猜a/button差异、数据库缺失或协议异常。恢复探针未消耗，本轮App剩1条；生产904行上限已满，不擅自扩张修复。
+
+## Evidence E-024: 恢复失败界面直接证明选择器漏匹配
+
+- Related hypotheses: H-010
+- Source: repair015/dom-safe.json、resume-ui.png、result.json；root独立查看截图。
+- Matched signal: 原生bootstrap精确final/task_complete；重开界面Recents显示原会话。目标ID仅匹配DIV role=button的data-app-action-sidebar-thread-id属性，a[href]无ID；原选择器仍报link未渲染。正式auth/config终点hash相同，原账本继承9→10，不退款，恢复业务0输入。
+- Interpretation: 反驳“本复现历史缺失”方向，确认当前真实界面控件与a[href]假设不匹配；不能外推所有App版本。原地替换三行选择逻辑，不增加生产文件行数或阶段累计904行。
+
+## Hypothesis H-011: 精确匹配渲染的sidebar thread属性即可恢复原ID
+
+- Status: confirmed
+- Claim: 选择器应匹配已实证data-app-action-sidebar-thread-id等于nativeID的可见控件，通过真实click恢复，不能调用后台resume或模糊标题匹配。
+- Diagnostic evidence plan: DOM直接属性/角色证据与固定App代码独立对照；原地替换后独立测试准确ID、可见性及不点击其他会话。真实新轮bootstrap完成后关/开App，界面点击同ID，writer发布同ID后唯一恢复probe原生完成+GUI可见。

@@ -142,16 +142,16 @@ class AppProcess:
             output.write(base64.b64decode(data))
 
     def select_session(self, session_id):
-        # Use an actual renderer link; no native thread/resume or internal React API.
-        expression = '''(() => { const id=%s; const link=[...document.querySelectorAll('a[href]')]
-          .find(e=>e.getAttribute('href').includes(id)); if(!link)return false;
+        # Click the rendered sidebar control; no backend RPC or internal React API.
+        expression = '''(() => { const id=%s; const link=[...document.querySelectorAll('[data-app-action-sidebar-thread-id]')]
+          .find(e=>e.getAttribute('data-app-action-sidebar-thread-id')===id && e.getClientRects().length); if(!link)return false;
           link.click(); return true; })()''' % json.dumps(session_id)
         deadline = time.monotonic()+20
         while time.monotonic() < deadline:
             if self.evaluate(expression):
                 return
             time.sleep(.25)
-        raise RuntimeError('private App session link is not rendered')
+        raise RuntimeError('private App session control is not rendered')
 
     def submit(self, text, identity=None):
         if not self.protected:

@@ -223,3 +223,9 @@
 - Owner「批注，继续验收」确认落地候选并继续，阶段上限扩展至904行。生产生成器已仅增加4行私有RA2A两工具批准配置；codex/app边界回归及恢复相关共7项PASS，其他MCP工具及全局策略不变。完整矩阵仍待后续验收，本轮剩App3/Pi9/CLI10/OC10，不自动重置。
 
 - 落地10cfdf6后repair014唯一有界实测：App GUI BASE与RA2A FOLLOWUP同turn，四次list_targets真实返回、精确combined final/task_complete及GUI可见，忙时PASS；关闭后端点撤回且内核无人持锁，睡眠仅查询未派发。真实UI恢复原ID报会话链接未渲染，恢复probe未发，根因未证（失败DOM/截图/history路径缺证）。本轮App9/Pi1/CLI0/OC0，原账本继承及清理前持久化已证，正式auth/config终点hash不变；恢复/holder交接/完整矩阵/人工项仍未通过，不将专项PASS升级完整PASS。
+
+### 2026-10-13 有界连续修复验收
+
+- Owner授权持续验收、遇问题修复，最多10轮循环；每轮仍每类Agent10条，失败不退款、不重放。新循环最多10轮，明确账本/轮次，不以结束一次进程自动重置。当前准备第1轮；既有修复轮的repair015已使用最后App1条到10/10，单列冻结，不混入新轮。
+- GitHub同步：[Issue #3](https://github.com/ceasarXuu/RA2A/issues/3)，主题Linux矩阵测试套件；版本待Owner指定，原PD未将测试设施纳入发版。
+- 恢复根因直接证实：原会话在Recents可见，目标ID在DIV role=button/data-app-action-sidebar-thread-id，旧a[href]无匹配。原地替换可见精确ID控件选择器，不增加生产行数，阶段仍904；生产后续改动只有证据门禁后实施。

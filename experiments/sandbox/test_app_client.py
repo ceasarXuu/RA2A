@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import shutil
+import subprocess
 
 from app_client import AppProcess, auth_copy
 from budget import Ledger
@@ -76,6 +78,27 @@ class AppInputTest(unittest.TestCase):
         app.select_session('thread-id')
         self.assertIn('querySelectorAll', expressions[0])
         self.assertNotIn('thread/resume', expressions[0])
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for DOM selection fixture')
+    def test_sidebar_selection_clicks_only_visible_exact_native_id(self):
+        app = AppProcess(Owned(), -1, -1, None)
+        expressions = []
+        app.evaluate = lambda e: expressions.append(e) or True
+        app.select_session('target')
+        script = '''let clicks=[];
+const rows=[['target-other',true],['target',false],['target',true]];
+global.document={querySelectorAll(selector){
+ if(selector!=='[data-app-action-sidebar-thread-id]')throw Error('wrong control');
+ return rows.map(([id,visible],index)=>({
+ getAttribute(name){return name==='data-app-action-sidebar-thread-id'?id:null},
+ getClientRects(){return visible?[{}]:[]},click(){clicks.push(index)}}));
+}};
+const result=eval(process.argv[1]);
+if(result!==true||JSON.stringify(clicks)!=='[2]')process.exit(1);
+'''
+        result = subprocess.run([shutil.which('node'), '-e', script, expressions[0]],
+                                capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, 'sidebar native-ID DOM fixture failed')
 
 
 if __name__ == '__main__':
