@@ -69,3 +69,11 @@
 - App回复列表虚拟化；body.innerText找不到ACK不能单独判定通知丢失。先保存目标/当前编辑器关系、滚动状态与实际失败截图，区分焦点、虚拟化和通知；不自动加等待或后台刷新制造通过。cycle001自投显示失败而cycle002子矩阵通过，原偶发症状仍待完整序列回归。
 - 源OpenCode OAuth过期且真实刷新失败时，先确认私有凭据投影完整；不改RA2A投递/模型、不反复发送新付费标记。固定插件在refresh成功前不发模型请求；仅聚合CONNECT日志不能证明刷新HTTP状态或拒绝方。需要Owner更新正式认证时明确说明依据，任务自身不改正式auth。
 - CLI与App共享沙盒CODEX_HOME时，文件出现顺序不代表创建/持有顺序；已有文件集合也挡不住App延迟落盘。CLI启动注册必须用本次随机唯一bootstrap与原生user精确匹配关联session_meta ID，不依赖originator/source或首个新文件。cycle-002-cli-diag6实证错误登记App而真实CLI已loaded；回归包含迟到App、assistant误匹配、substring误匹配。
+
+
+## App虚拟化历史的真实UI导航（2026-10-13已验证）
+
+- 精确final的P已渲染不代表进入视口；必须保留native完成与段落位置，检查top>=0且bottom<=innerHeight。用户提示中包含ACK字符串不能算回复。
+- 固定英文App包真实下跳控件为button aria-label="Scroll to bottom"，隐藏态aria-hidden=true且无onClick；仅唯一可见匹配才点击。此按钮调用宿主scroll controller/response spacer并更新跟随状态，不能用裸DOM scrollHeight代替。
+- cycle005同会话的完整双ACK原top1641.5，点击一次后top580.5/bottom626实际同屏；cycle006完整矩阵有原生按钮导航计数和精确P视口证据。无backend history/resume/reload、0新增模型输入。其他语言/包版本须先核验实际标签。
+- 明确区分自动跟随、用户UI导航后可见、真正人工观察。测试套件可以执行已验证的原生UI导航以显示结果，但不能据此宣称App自动跟随没有缺陷。人工PASS只能来自Owner观察，不能用截图或DOM自动代填。

@@ -249,3 +249,6 @@
 - 第4轮d2154bc真实回归：三端9格basic、两工具环、同ID恢复、CLI/App实际holder切换及三端distinct-LAN丢ACK不重放PASS。Issue5已关闭；App长序列GUI false保留，完整矩阵INCOMPLETE。CLI8/App9/OC0/Pi8，保护/清理通过。
 - 第5轮App6输入专项：完整final在视口外，点击一次真实Scroll to bottom按钮后同ID/完整两ACK进入视口；截图独立核验，无后台刷新或模型新增。原检查器把视口外算可见的假阳性已原地修正；现以唯一可见原生导航控件显示回复，下一采样检查精确完整P及视口范围，24相关测试PASS，生产行数不增。Issue6真实修复回归待执行，自动跟随与导航后可见分开，人工仍待。
 - Owner已将OpenCode模型路径改为OpenCode Go订阅；本机Go API凭据存在且本地catalog包含kimi-k3，下一轮私有显式选择该模型，CLI/App仍6.1-sol low，Pi现有kimi-k3；正式配置不修改。
+
+- 第6轮631d230冻结真实四端矩阵自动化37/37 PASS：16基础格、4工具回信、四端忙时追加/同ID恢复/真实LAN丢ACK不重放及CLI/App持有者交接。OpenCode私有Go订阅kimi-k3成功；App完整final视口检查及原生导航后的截图实证通过，Issue6具体套件缺陷关闭。预算CLI10/App10/OC9/Pi9；正式8认证配置hash相同、owned/copies清理，源码运行期间未变。人工MANUAL_PENDING，不称整体用户验收全部结束。
+- 第7轮人工专用一次性启动器已在本机证据目录准备、未启动；只启动四端并各提交一次人工标记，不重跑矩阵、不挪用第6轮用满的CLI/App额度。复用已有manual流程，零模型委托fixture通过。Owner应在本机交互终端观察真实TUI/专属App窗口，只有实际看到输入/完整回复/输入栏可继续才输入PASS。

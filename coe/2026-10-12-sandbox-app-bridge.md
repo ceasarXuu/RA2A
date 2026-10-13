@@ -338,3 +338,12 @@
 - Static binding: thread-layout eccd85e6…b2 的按钮回调更新跟随/scroll controller或responseSpacer；与裸DOM scrollHeight不同。app-initial a9f4a1a8…720确认真实button及隐藏态无onClick。
 - Interpretation: 检查器将视口外P也算可见是第二个确定假阳性。原地更新ACK判据：精确完整段落须在视口；若不在，点击唯一可见原生下跳按钮，返回false，下一采样独立检查；隐藏/多个按钮不操作。这是显式GUI导航后的可见性验收，不声称App自动跟随无需操作；旧失败不改判，人工仍留最后。24项相关零模型测试通过，生产文件行数不增加，阶段仍904。真实修复回归待执行。
 - Budget/protection: 第5轮App6/其他0；源未变/正式8认证配置hash相同/owned回收/私有copies移除。随后Owner明确要求OpenCode使用Go订阅，下一轮以现有Go凭据私有投影和kimi-k3执行，不改正式配置。
+
+
+## Evidence E-039: 第6轮真实四端自动化矩阵37项通过
+
+- Source: cycle-006/{summary.json,ledger.jsonl}与cycle-006-gui/followup-app.png；冻结631d230/sourceDirty=false/sourceChanged=false。Owner指定OpenCode Go，实际私有选择opencode-go/kimi-k3；CLI/App6.1-sol low，Pi原Go kimi-k3。
+- Matched signal: 16基础格、4个独立工具回信、四端busy/FOLLOWUP、四端同IDresume、CLI→睡眠→App实际writer→CLI恢复、四端distinct-LAN postwrite ACK损失/cancel unknown/不重放共37项全部PASS。各PASS均保留真实transport与native final完成证据，未以accepted代替。
+- GUI: 四App基础+FOLLOWUP+resume+ACK-loss均精确完整final在视口、composer同ID。原生导航计数累计1（basic-opencode-app时发生）；FOLLOWUP完整双ACKtop580.55/bottom626.05，root截图独立核验。恢复后新进程导航计数0。关闭Issue6具体检测/导航缺陷，不声称自动跟随无操作，不将沙盒等同正式Issue2根治。
+- Budget/protection: CLI10/App10/OC9/Pi9，原reserved不退款；owned REAPED、私有凭据copies REMOVED、正式8认证配置hash不变。matrixStatus PASS仅自动化范围；manual=MANUAL_PENDING，完整用户验收未完成。
+- Next boundary: 独立第7轮人工启动器已准备但未执行，复用真实clients.start/runner.manual，只启动四端并每端一次人工标记、不重跑矩阵；一次性轮次/输出门禁，仍每类10。零模型mock验证四端委托一次、真实人工结果正确入报告，不能当实际人工PASS。
