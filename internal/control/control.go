@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/lannode"
+	"github.com/ceasarXuu/RA2A/internal/mailbox"
 )
 
 const DefaultEndpoint = "http://127.0.0.1:47321"
@@ -31,18 +32,22 @@ var ErrDeliveryUnknown = errors.New("DELIVERY_UNKNOWN")
 var ErrDesktopOwnerUnavailable = errors.New("DESKTOP_OWNER_UNAVAILABLE")
 
 type Target struct {
-	ID            string                 `json:"id"`
-	Name          string                 `json:"name"`
-	Status        string                 `json:"status"`
-	SessionsStale bool                   `json:"sessionsStale"`
-	Sessions      []lannode.Session      `json:"sessions"`
-	Endpoints     []lannode.EndpointView `json:"endpoints,omitempty"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Status        string            `json:"status"`
+	SessionsStale bool              `json:"sessionsStale"`
+	Sessions      []lannode.Session `json:"sessions"`
 }
 
 type SendRequest struct {
-	To              string `json:"to"`
-	Text            string `json:"text"`
-	SourceSessionID string `json:"sourceSessionId"`
+	To   string         `json:"to"`
+	Text string         `json:"text"`
+	From string         `json:"from,omitempty"`
+	Meta map[string]any `json:"meta,omitempty"`
+	// SourceSessionID is the legacy caller field. It is still accepted so an
+	// older local MCP client keeps working, but new callers send From.
+	SourceSessionID string `json:"sourceSessionId,omitempty"`
+	MessageID       string `json:"messageId,omitempty"`
 }
 
 type Backend interface {
@@ -55,7 +60,6 @@ type LAN interface {
 	Peer(string) (lannode.Peer, bool)
 	RefreshPeer(context.Context, string, string) (lannode.Peer, error)
 	ListSessions(context.Context, lannode.Peer) ([]lannode.Session, error)
-	ListEndpoints(context.Context, lannode.Peer) ([]lannode.EndpointView, error)
 	SendMessage(context.Context, lannode.Peer, lannode.Message) error
 }
 
@@ -86,11 +90,8 @@ func (coordinator *Coordinator) ListTargets(ctx context.Context) ([]Target, erro
 	defer cancel()
 	for _, peer := range peers {
 		go func(peer lannode.Peer) {
-			sessions, endpoints, err := coordinator.probePeer(probeCtx, peer)
-			results <- probeResult{peer: peer, target: Target{
-				ID: peer.ID, Name: peer.Name, Status: "ready",
-				Sessions: sessions, Endpoints: endpoints,
-			}, err: err}
+			sessions, err := coordinator.lan.ListSessions(probeCtx, peer)
+			results <- probeResult{peer: peer, target: Target{ID: peer.ID, Name: peer.Name, Status: "ready", Sessions: sessions}, err: err}
 		}(peer)
 	}
 	for range peers {
@@ -117,20 +118,6 @@ func (coordinator *Coordinator) ListTargets(ctx context.Context) ([]Target, erro
 	return sortedTargets(targets), nil
 }
 
-// probePeer fetches the session list and, when the peer supports it, the
-// agent-aware endpoint list. Legacy peers report no endpoints.
-func (coordinator *Coordinator) probePeer(ctx context.Context, peer lannode.Peer) ([]lannode.Session, []lannode.EndpointView, error) {
-	sessions, err := coordinator.lan.ListSessions(ctx, peer)
-	if err != nil {
-		return nil, nil, err
-	}
-	endpoints, err := coordinator.lan.ListEndpoints(ctx, peer)
-	if err != nil {
-		return nil, nil, err
-	}
-	return sessions, endpoints, nil
-}
-
 func (coordinator *Coordinator) unavailableTarget(peer lannode.Peer) Target {
 	coordinator.cacheMu.RLock()
 	sessions, ok := coordinator.sessions[peer.ID]
@@ -150,6 +137,11 @@ func (coordinator *Coordinator) storeSessions(id string, sessions []lannode.Sess
 func sortedTargets(byID map[string]Target) []Target {
 	targets := make([]Target, 0, len(byID))
 	for _, target := range byID {
+		for index := range target.Sessions {
+			if target.Sessions[index].Address == "" {
+				target.Sessions[index].Address = "ra2a://" + target.ID + "/" + target.Sessions[index].ID
+			}
+		}
 		targets = append(targets, target)
 	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
@@ -157,11 +149,11 @@ func sortedTargets(byID map[string]Target) []Target {
 }
 
 func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) error {
-	target, err := parseTarget(request.To)
+	nodeID, sessionID, err := parseTarget(request.To)
 	if err != nil || request.Text == "" || request.SourceSessionID == "" {
 		return ErrInvalidRequest
 	}
-	peer, ok := coordinator.lan.Peer(target.nodeID)
+	peer, ok := coordinator.lan.Peer(nodeID)
 	if !ok {
 		return ErrTargetNotFound
 	}
@@ -170,8 +162,7 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 		return fmt.Errorf("create message ID: %w", err)
 	}
 	outgoing := lannode.Message{
-		TargetSessionID: request.To,
-		TargetAgent:     target.agentType,
+		TargetSessionID: sessionID,
 		Text:            request.Text,
 		Source:          "ra2a://" + coordinator.localID + "/" + request.SourceSessionID,
 		MessageID:       messageID,
@@ -179,7 +170,7 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 	err = coordinator.lan.SendMessage(ctx, peer, outgoing)
 	if errors.Is(err, lannode.ErrPeerUnreachable) {
 		refreshCtx, cancel := context.WithTimeout(ctx, peerRefreshTimeout)
-		refreshed, refreshErr := coordinator.lan.RefreshPeer(refreshCtx, target.nodeID, peer.Address)
+		refreshed, refreshErr := coordinator.lan.RefreshPeer(refreshCtx, nodeID, peer.Address)
 		cancel()
 		if refreshErr != nil {
 			return fmt.Errorf("%w: %v", ErrTargetUnreachable, err)
@@ -188,6 +179,9 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 		if errors.Is(err, lannode.ErrPeerUnreachable) {
 			return fmt.Errorf("%w: %v", ErrTargetUnreachable, err)
 		}
+	}
+	if errors.Is(err, lannode.ErrEndpointNotFound) {
+		return fmt.Errorf("%w: %v", ErrTargetNotFound, err)
 	}
 	if err != nil && strings.Contains(err.Error(), ErrDeliveryUnknown.Error()) {
 		return fmt.Errorf("%w: %v", ErrDeliveryUnknown, err)
@@ -198,42 +192,25 @@ func (coordinator *Coordinator) Send(ctx context.Context, request SendRequest) e
 	return err
 }
 
-// DefaultAgentType is the fallback agent family for legacy two-segment
-// addresses that predate endpoint addressing.
-const DefaultAgentType = "codex-app"
-
-// parsedTarget is one decoded ra2a:// target address.
-type parsedTarget struct {
-	nodeID    string
-	agentType string
-	sessionID string
-}
-
-// parseTarget accepts both modern three-segment addresses
-// (ra2a://node/<agent>/<session>) and legacy two-segment addresses
-// (ra2a://node/<session>), which fall back to the default agent family.
-func parseTarget(target string) (parsedTarget, error) {
-	var result parsedTarget
+// parseTarget accepts two address shapes: a two-segment endpoint address, and a
+// three-segment mailbox address whose remaining path is carried verbatim so the
+// mailbox namespace survives a LAN hop. Nothing else is addressable.
+func parseTarget(target string) (string, string, error) {
 	parsed, err := url.Parse(target)
 	if err != nil || parsed.Scheme != "ra2a" || parsed.Host == "" {
-		return result, ErrInvalidRequest
+		return "", "", ErrInvalidRequest
 	}
-	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/"), "/")
-	switch len(parts) {
-	case 1:
-		if parts[0] == "" {
-			return result, ErrInvalidRequest
-		}
-		result = parsedTarget{nodeID: parsed.Host, agentType: DefaultAgentType, sessionID: parts[0]}
-	case 2:
-		if parts[0] == "" || parts[1] == "" {
-			return result, ErrInvalidRequest
-		}
-		result = parsedTarget{nodeID: parsed.Host, agentType: parts[0], sessionID: parts[1]}
-	default:
-		return result, ErrInvalidRequest
+	path := strings.TrimPrefix(parsed.Path, "/")
+	if path == "" {
+		return "", "", ErrInvalidRequest
 	}
-	return result, nil
+	if !strings.Contains(path, "/") {
+		return parsed.Host, path, nil
+	}
+	if _, recipient, ok, err := mailbox.ParseAddress(target); ok && err == nil {
+		return parsed.Host, mailbox.Segment + "/" + recipient, nil
+	}
+	return "", "", ErrInvalidRequest
 }
 
 func newMessageID() (string, error) {
@@ -244,8 +221,12 @@ func newMessageID() (string, error) {
 	return hex.EncodeToString(value), nil
 }
 
-func NewHandler(backend Backend) http.Handler {
+// NewHandler builds the loopback control plane. When a mailbox store is
+// supplied the mailbox routes are mounted alongside the endpoint routes, which
+// is what lets an un-adapted harness read its mail without an adapter.
+func NewHandler(backend Backend, store *mailbox.Store) http.Handler {
 	mux := http.NewServeMux()
+	RegisterMailboxRoutes(mux, store, nodeIDOf(backend))
 	mux.HandleFunc("GET /v1/targets", func(writer http.ResponseWriter, request *http.Request) {
 		targets, err := backend.ListTargets(request.Context())
 		if err != nil {
@@ -277,12 +258,40 @@ func NewHandler(backend Backend) http.Handler {
 			writeError(writer, status, err)
 			return
 		}
-		writeJSON(writer, http.StatusOK, map[string]string{"status": "accepted"})
+		// Local deliveries are confirmed by the adapter result before this point;
+		// LAN deliveries are only handed to the transport. Reporting the difference
+		// keeps "accepted" from reading as "delivered" for cross-node sends.
+		writeJSON(writer, http.StatusOK, map[string]string{
+			"status": "accepted", "delivery": deliveryConfirmation(backend, sendRequest.To),
+		})
 	})
 	return mux
 }
 
-func Start(ctx context.Context, address string, backend Backend) error {
+// DeliveryConfirmer is implemented by backends that know whether a success
+// response means the target confirmed the delivery, or only that the message was
+// handed to a transport.
+type DeliveryConfirmer interface {
+	DeliveryConfirmed(target string) bool
+}
+
+func deliveryConfirmation(backend Backend, target string) string {
+	if confirmer, ok := backend.(DeliveryConfirmer); ok && confirmer.DeliveryConfirmed(target) {
+		return "confirmed"
+	}
+	return "handed_to_transport"
+}
+
+// nodeIDOf lets the mailbox routes label local deliveries without the control
+// package needing to know how a backend is built.
+func nodeIDOf(backend Backend) string {
+	if provider, ok := backend.(interface{ LocalNodeID() string }); ok {
+		return provider.LocalNodeID()
+	}
+	return "local"
+}
+
+func Start(ctx context.Context, address string, backend Backend, store *mailbox.Store) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return fmt.Errorf("invalid control address: %w", err)
@@ -295,7 +304,7 @@ func Start(ctx context.Context, address string, backend Backend) error {
 	if err != nil {
 		return fmt.Errorf("listen for local MCP control: %w", err)
 	}
-	server := &http.Server{Handler: NewHandler(backend)}
+	server := &http.Server{Handler: NewHandler(backend, store)}
 	go func() { _ = server.Serve(listener) }()
 	go func() { <-ctx.Done(); _ = server.Close() }()
 	return nil

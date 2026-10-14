@@ -8,139 +8,213 @@ import (
 	"sync"
 )
 
-// Registry aggregates adapters into a deterministic endpoint address space.
-// It does not interpret host types: selection happens by opaque address only,
-// mirroring the LAN-facing contract that callers never inspect addresses.
+// ErrEndpointEnumeration marks a lookup whose absence cannot be established.
+var ErrEndpointEnumeration = errors.New("endpoint enumeration failed")
+
+// Adapter is the only host-specific surface in RA2A. Adapters never reference
+// each other; the registry is what turns a set of adapters into a routable
+// endpoint table.
+type Adapter interface {
+	Kind() AgentKind
+	ListEndpoints(context.Context) ([]Endpoint, error)
+	Deliver(context.Context, Address, MessageEnvelope) DeliveryResult
+	Health(context.Context) Health
+	Close() error
+}
+
+// Registry owns the endpoint table and the deterministic address-to-adapter
+// mapping. It contains no host type branching: routing decisions are made from
+// Endpoint and ResultCode values only.
 type Registry struct {
-	mu       sync.Mutex
-	closed   bool
-	adapters []AgentAdapter
+	nodeID   string
+	mu       sync.RWMutex
+	adapters []Adapter
+	byKind   map[AgentKind]Adapter
+	claimed  map[string]AgentKind
 }
 
-// NewRegistry returns an empty registry.
-func NewRegistry() *Registry {
-	return &Registry{}
+func NewRegistry(nodeID string) *Registry {
+	return &Registry{
+		nodeID:  nodeID,
+		byKind:  make(map[AgentKind]Adapter),
+		claimed: make(map[string]AgentKind),
+	}
 }
 
-// Register appends an adapter. Registering again with the same agent type
-// replaces the previous adapter for that type (upgrade semantics).
-func (registry *Registry) Register(adapter AgentAdapter) error {
+func (registry *Registry) NodeID() string { return registry.nodeID }
+
+func (registry *Registry) Register(adapter Adapter) error {
+	if adapter == nil {
+		return fmt.Errorf("register adapter: adapter is nil")
+	}
+	kind := adapter.Kind()
+	if !kind.Valid() {
+		return fmt.Errorf("register adapter: unknown agent kind %q", kind)
+	}
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	if registry.closed {
-		return ErrClosed
-	}
-	description := adapter.Descriptor()
-	for index, existing := range registry.adapters {
-		if existing.Descriptor().AgentType == description.AgentType {
-			registry.adapters[index] = adapter
-			return nil
-		}
+	if _, exists := registry.byKind[kind]; exists {
+		return fmt.Errorf("register adapter: agent kind %q already registered", kind)
 	}
 	registry.adapters = append(registry.adapters, adapter)
+	registry.byKind[kind] = adapter
 	return nil
 }
 
-// EndpointRef pairs an endpoint with the adapter that owns it.
-type EndpointRef struct {
-	Adapter  AgentAdapter
-	Endpoint Endpoint
+func (registry *Registry) Adapters() []Adapter {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	return append([]Adapter(nil), registry.adapters...)
 }
 
-// ListEndpoints returns every endpoint of every registered adapter with
-// stable ordering (agent type, then endpoint ID). Conflicts are surfaced in
-// order; duplicates within one adapter are kept as the adapter reports them.
-func (registry *Registry) ListEndpoints(ctx context.Context) ([]EndpointRef, error) {
+func (registry *Registry) Close() error {
 	registry.mu.Lock()
-	closed := registry.closed
-	adapters := append([]AgentAdapter(nil), registry.adapters...)
+	adapters := registry.adapters
+	registry.adapters = nil
+	registry.byKind = make(map[AgentKind]Adapter)
+	registry.claimed = make(map[string]AgentKind)
 	registry.mu.Unlock()
-	if closed {
-		return nil, ErrClosed
+	var firstErr error
+	for _, adapter := range adapters {
+		if err := adapter.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
-	var refs []EndpointRef
+	return firstErr
+}
+
+// Endpoints aggregates every adapter's endpoints into one addressable table.
+// An endpoint that fails validation is dropped rather than published, because
+// an unowned or ambiguous endpoint must never be advertised as ready.
+func (registry *Registry) Endpoints(ctx context.Context) ([]Endpoint, []error) {
+	adapters := registry.Adapters()
+	collected := make([]Endpoint, 0, len(adapters))
+	problems := make([]error, 0)
+	seen := make(map[string]AgentKind)
+
 	for _, adapter := range adapters {
 		endpoints, err := adapter.ListEndpoints(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("agentbridge: %s: %w", adapter.Descriptor().AgentType, err)
-		}
-		for _, endpoint := range endpoints {
-			refs = append(refs, EndpointRef{Adapter: adapter, Endpoint: endpoint})
-		}
-	}
-	sort.SliceStable(refs, func(i, j int) bool {
-		if refs[i].Endpoint.AgentType != refs[j].Endpoint.AgentType {
-			return refs[i].Endpoint.AgentType < refs[j].Endpoint.AgentType
-		}
-		return refs[i].Endpoint.EndpointID < refs[j].Endpoint.EndpointID
-	})
-	return refs, nil
-}
-
-// Conflicts reports endpoint IDs claimed by more than one adapter — a
-// deterministic check callers can run before publishing an endpoint list.
-func (registry *Registry) Conflicts(ctx context.Context) ([]string, error) {
-	refs, err := registry.ListEndpoints(ctx)
-	if err != nil {
-		return nil, err
-	}
-	owners := make(map[string]AgentType)
-	var conflicts []string
-	for _, ref := range refs {
-		if previous, exists := owners[ref.Endpoint.EndpointID]; exists {
-			if previous != ref.Endpoint.AgentType {
-				conflicts = append(conflicts, ref.Endpoint.EndpointID)
-			}
+			problems = append(problems, fmt.Errorf("list %s endpoints: %w", adapter.Kind(), err))
 			continue
 		}
-		owners[ref.Endpoint.EndpointID] = ref.Endpoint.AgentType
-	}
-	return conflicts, nil
-}
-
-// Resolve finds the adapter and endpoint for an opaque target address.
-// Addresses are compared as full strings; nothing inspects their format.
-func (registry *Registry) Resolve(ctx context.Context, address string) (EndpointRef, bool, error) {
-	refs, err := registry.ListEndpoints(ctx)
-	if err != nil {
-		return EndpointRef{}, false, err
-	}
-	for _, ref := range refs {
-		if ref.Endpoint.Address == address {
-			return ref, true, nil
+		for _, endpoint := range endpoints {
+			endpoint.Agent = adapter.Kind()
+			if endpoint.Address.NodeID == "" {
+				endpoint.Address.NodeID = registry.nodeID
+			}
+			if err := endpoint.Validate(); err != nil {
+				problems = append(problems, fmt.Errorf("%s endpoint rejected: %w", adapter.Kind(), err))
+				continue
+			}
+			if owner, exists := seen[endpoint.ID]; exists {
+				problems = append(problems, fmt.Errorf(
+					"endpoint %s claimed by both %s and %s", endpoint.ID, owner, adapter.Kind()))
+				continue
+			}
+			seen[endpoint.ID] = adapter.Kind()
+			collected = append(collected, endpoint)
 		}
 	}
-	return EndpointRef{}, false, nil
+	sort.Slice(collected, func(i, j int) bool { return collected[i].ID < collected[j].ID })
+	return collected, problems
 }
 
-// Deliver routes one text message to the endpoint identified by the opaque
-// address. It never inspects agent types; adapters own their native behavior.
-func (registry *Registry) Deliver(ctx context.Context, address, text string) (DeliveryResult, error) {
-	ref, found, err := registry.Resolve(ctx, address)
-	if err != nil {
-		return DeliveryResult{}, err
+// Lookup resolves an address to its endpoint and owning adapter. It is the only
+// path from an opaque address to a delivery call.
+func (registry *Registry) Lookup(ctx context.Context, address Address) (Endpoint, Adapter, error) {
+	if !address.Valid() {
+		return Endpoint{}, nil, fmt.Errorf("invalid target address")
 	}
-	if !found {
-		return DeliveryResult{Code: NotFound, Detail: "no endpoint for address"}, nil
+	if address.NodeID != registry.nodeID {
+		return Endpoint{}, nil, fmt.Errorf("target node %q is not served by this daemon", address.NodeID)
 	}
-	return ref.Adapter.Deliver(ctx, ref.Endpoint, text)
-}
-
-// Close closes every adapter and makes the registry unusable.
-func (registry *Registry) Close() error {
-	registry.mu.Lock()
-	if registry.closed {
-		registry.mu.Unlock()
-		return nil
-	}
-	registry.closed = true
-	adapters := append([]AgentAdapter(nil), registry.adapters...)
-	registry.mu.Unlock()
-	var closeErr error
-	for _, adapter := range adapters {
-		if err := adapter.Close(); err != nil {
-			closeErr = errors.Join(closeErr, err)
+	endpoints, problems := registry.Endpoints(ctx)
+	for _, endpoint := range endpoints {
+		if endpoint.Address == address {
+			registry.mu.RLock()
+			adapter := registry.byKind[endpoint.Agent]
+			registry.mu.RUnlock()
+			if adapter == nil {
+				return Endpoint{}, nil, fmt.Errorf("no adapter owns endpoint %s", endpoint.ID)
+			}
+			return endpoint, adapter, nil
 		}
 	}
-	return closeErr
+	if len(problems) > 0 {
+		return Endpoint{}, nil, fmt.Errorf("%w: %w", ErrEndpointEnumeration, errors.Join(problems...))
+	}
+	return Endpoint{}, nil, fmt.Errorf("endpoint %s not found", address.EndpointID)
+}
+
+// Deliver routes one envelope. Capability gating happens here so no adapter
+// has to re-implement it, and unknown outcomes stay unknown instead of being
+// downgraded into a retry.
+func (registry *Registry) Deliver(ctx context.Context, envelope MessageEnvelope) DeliveryResult {
+	if err := envelope.Validate(); err != nil {
+		return DeliveryResult{Code: ResultUnsupported, Detail: err.Error()}
+	}
+	address, err := parseEnvelopeTarget(envelope.TargetAddress)
+	if err != nil {
+		return DeliveryResult{Code: ResultUnsupported, Detail: err.Error()}
+	}
+	endpoint, adapter, err := registry.Lookup(ctx, address)
+	if err != nil {
+		return registry.explainMiss(ctx, address, err)
+	}
+	if !endpoint.Has(CapabilityReceiveText) {
+		return DeliveryResult{
+			Code:   ResultUnsupported,
+			Detail: fmt.Sprintf("endpoint %s cannot receive text", endpoint.ID),
+		}
+	}
+	health := adapter.Health(ctx)
+	if !health.Ready {
+		code := health.Code
+		if !code.Valid() || code == ResultDelivered {
+			code = ResultUnknown
+		}
+		return DeliveryResult{Code: code, Detail: health.Detail}
+	}
+	return adapter.Deliver(ctx, address, envelope)
+}
+
+func (registry *Registry) Health(ctx context.Context) map[AgentKind]Health {
+	report := make(map[AgentKind]Health, len(registry.Adapters()))
+	for _, adapter := range registry.Adapters() {
+		health := adapter.Health(ctx)
+		if err := health.Validate(); err != nil {
+			health = Unhealthy(ResultUnknown, err.Error())
+		}
+		report[adapter.Kind()] = health
+	}
+	return report
+}
+
+// TargetShapeChecker is implemented by adapters whose endpoint IDs live in a
+// host-specific namespace. The router uses it only to turn a lookup miss into a
+// precise answer: an ID that is malformed for some adapter is unsupported,
+// while an ID that is well formed but unpublished is simply not found.
+type TargetShapeChecker interface {
+	CheckTargetID(endpointID string) error
+}
+
+func (registry *Registry) explainMiss(ctx context.Context, address Address, lookupErr error) DeliveryResult {
+	if errors.Is(lookupErr, ErrEndpointEnumeration) {
+		return DeliveryResult{Code: ResultUnknown, NativeErrorClass: "enumeration_failed", Detail: lookupErr.Error()}
+	}
+	for _, adapter := range registry.Adapters() {
+		checker, ok := adapter.(TargetShapeChecker)
+		if !ok {
+			continue
+		}
+		if err := checker.CheckTargetID(address.EndpointID); err != nil {
+			return DeliveryResult{
+				Code: ResultUnsupported, NativeErrorClass: "malformed_target_id",
+				Detail: fmt.Sprintf("%s endpoint ids: %v", adapter.Kind(), err),
+			}
+		}
+	}
+	_ = ctx
+	return DeliveryResult{Code: ResultNotFound, Detail: lookupErr.Error()}
 }

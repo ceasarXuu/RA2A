@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ceasarXuu/RA2A/internal/agentbridge"
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
 	"github.com/ceasarXuu/RA2A/internal/control"
+	"github.com/ceasarXuu/RA2A/internal/desktopipc"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
 )
 
@@ -35,7 +35,7 @@ func TestRunVersionPrintsCurrentVersion(t *testing.T) {
 	if err := run(context.Background(), []string{"version"}, &output, fakeSourceFactory(nil)); err != nil {
 		t.Fatalf("version: %v", err)
 	}
-	if output.String() != "v0.0.14\n" {
+	if output.String() != "v0.0.18\n" {
 		t.Fatalf("version output = %q", output.String())
 	}
 }
@@ -399,10 +399,6 @@ func (source *fakeSessionSource) ListSessions(context.Context) ([]lannode.Sessio
 	return source.sessions, nil
 }
 
-func (source *fakeSessionSource) ListEndpoints(context.Context) ([]lannode.EndpointView, error) {
-	return nil, nil
-}
-
 func (source *fakeSessionSource) Close() error { return nil }
 
 func (source *fakeSessionSource) SendMessage(_ context.Context, target, prompt string) error {
@@ -419,6 +415,7 @@ func fakeSourceFactory(sessions []lannode.Session) sessionSourceFactory {
 }
 
 func TestRunSelfTestDiscoversAndCallsLocalNode(t *testing.T) {
+	isolatedOperatorHome(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var output bytes.Buffer
@@ -440,12 +437,13 @@ func TestRunSelfTestDiscoversAndCallsLocalNode(t *testing.T) {
 }
 
 func TestRunSendDiscoversPeerAndDeliversMessage(t *testing.T) {
+	isolatedOperatorHome(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var output bytes.Buffer
 	messages := make(chan deliveredMessage, 1)
 	factory := func(context.Context, string, string, io.Writer) (sessionSource, error) {
-		return &fakeSessionSource{messages: messages}, nil
+		return &fakeSessionSource{messages: messages, sessions: []lannode.Session{{ID: "thread-target", Status: "idle"}}}, nil
 	}
 
 	err := run(ctx, []string{
@@ -469,6 +467,7 @@ func TestRunSendDiscoversPeerAndDeliversMessage(t *testing.T) {
 }
 
 func TestRunServeStopsWhenContextIsCancelled(t *testing.T) {
+	isolatedOperatorHome(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var output bytes.Buffer
@@ -501,146 +500,111 @@ func TestRunMCPExposesProductionTools(t *testing.T) {
 	}
 }
 
-func TestDeliveryResultToErrorMapsCodesToControlVocabulary(t *testing.T) {
-	tests := []struct {
-		name    string
-		result  agentbridge.DeliveryResult
-		wantIs  error
-		wantErr bool
-		wantSub string
-	}{
-		{name: "delivered is nil", result: agentbridge.DeliveryResult{Code: agentbridge.Delivered}},
-		{name: "start required wraps desktop owner sentinel", result: agentbridge.DeliveryResult{Code: agentbridge.StartRequired, Detail: "start Codex Desktop and retry: x"}, wantErr: true, wantIs: control.ErrDesktopOwnerUnavailable, wantSub: "start Codex Desktop"},
-		{name: "unknown wraps delivery unknown", result: agentbridge.DeliveryResult{Code: agentbridge.DeliveryUnknown, Detail: "timeout"}, wantErr: true, wantIs: control.ErrDeliveryUnknown, wantSub: "DELIVERY_UNKNOWN"},
-		{name: "busy wraps session busy", result: agentbridge.DeliveryResult{Code: agentbridge.Busy, Detail: "active writer"}, wantErr: true, wantIs: codexhost.ErrSessionBusy, wantSub: "SESSION_BUSY"},
-		{name: "not found keeps target substring", result: agentbridge.DeliveryResult{Code: agentbridge.NotFound, Detail: "gone"}, wantErr: true, wantSub: "TARGET_NOT_FOUND"},
-		{name: "adapter failed keeps code", result: agentbridge.DeliveryResult{Code: agentbridge.AdapterFailed, Detail: "boom"}, wantErr: true, wantSub: "adapter_failed"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := deliveryResultToError(test.result, "thread-1")
-			if !test.wantErr && err != nil {
-				t.Fatalf("err = %v, want nil", err)
-			}
-			if test.wantErr && err == nil {
-				t.Fatal("err = nil, want non-nil")
-			}
-			if test.wantIs != nil && !errors.Is(err, test.wantIs) {
-				t.Fatalf("err = %v, want errors.Is %v", err, test.wantIs)
-			}
-			if test.wantSub != "" && !strings.Contains(err.Error(), test.wantSub) {
-				t.Fatalf("err = %q, want substring %q", err.Error(), test.wantSub)
-			}
-		})
+func TestSendWithDesktopPreferenceUsesDesktopOwnerFirst(t *testing.T) {
+	managedCalls := 0
+	desktopCalls := 0
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, func(context.Context, string, string) error {
+		desktopCalls++
+		return nil
+	})
+	if err != nil || desktopCalls != 1 || managedCalls != 0 {
+		t.Fatalf("err=%v desktopCalls=%d managedCalls=%d", err, desktopCalls, managedCalls)
 	}
 }
 
-func TestSessionsFromRefsProjectsNativeStatus(t *testing.T) {
-	refs := []agentbridge.EndpointRef{
-		{Endpoint: agentbridge.Endpoint{EndpointID: "t1", AgentType: "codex-app", Title: "A", NativeStatus: "idle", Status: agentbridge.StatusReady}},
-		{Endpoint: agentbridge.Endpoint{EndpointID: "t2", AgentType: "codex-app", Title: "B", NativeStatus: "working", Status: agentbridge.StatusBusy}},
-	}
-	sessions := sessionsFromRefs(refs)
-	if len(sessions) != 2 {
-		t.Fatalf("sessions = %d", len(sessions))
-	}
-	if sessions[0].ID != "t1" || sessions[0].Status != "idle" {
-		t.Fatalf("session[0] = %#v", sessions[0])
-	}
-	if sessions[1].ID != "t2" || sessions[1].Status != "working" {
-		t.Fatalf("session[1] = %#v", sessions[1])
+func TestSendWithDesktopPreferenceDoesNotUseManagedWriterWhenDesktopIsUnavailable(t *testing.T) {
+	managedCalls := 0
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, func(context.Context, string, string) error {
+		return &desktopipc.NotDeliveredError{Cause: errors.New("no Desktop owner")}
+	})
+	if err == nil || managedCalls != 0 || !strings.Contains(err.Error(), "start Codex Desktop") {
+		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
 	}
 }
 
-type fakeSourceRegistry struct {
-	refs       []agentbridge.EndpointRef
-	result     agentbridge.DeliveryResult
-	deliverErr error
-	listErr    error
-	closed     bool
-	lastAddr   string
-}
-
-func (fake *fakeSourceRegistry) ListEndpoints(context.Context) ([]agentbridge.EndpointRef, error) {
-	return fake.refs, fake.listErr
-}
-
-func (fake *fakeSourceRegistry) Deliver(_ context.Context, address, _ string) (agentbridge.DeliveryResult, error) {
-	fake.lastAddr = address
-	return fake.result, fake.deliverErr
-}
-
-func (fake *fakeSourceRegistry) Close() error {
-	fake.closed = true
-	return nil
-}
-
-func TestRegistrySessionSourceBridgesListAndDeliver(t *testing.T) {
-	ctx := context.Background()
-	fake := &fakeSourceRegistry{refs: []agentbridge.EndpointRef{
-		{Endpoint: agentbridge.Endpoint{EndpointID: "t1", AgentType: "codex-app", Title: "T", NativeStatus: "idle"}},
-	}}
-	source := &registrySessionSource{registry: fake}
-
-	sessions, err := source.ListSessions(ctx)
-	if err != nil || len(sessions) != 1 || sessions[0].ID != "t1" {
-		t.Fatalf("sessions=%#v err=%v", sessions, err)
-	}
-
-	fake.result = agentbridge.DeliveryResult{Code: agentbridge.Delivered}
-	if err := source.SendMessage(ctx, "t1", "hello"); err != nil {
-		t.Fatalf("send delivered: %v", err)
-	}
-	if fake.lastAddr != "codex-app/t1" {
-		t.Fatalf("deliver address = %q, want legacy session ID mapped to codex-app", fake.lastAddr)
-	}
-
-	fake.result = agentbridge.DeliveryResult{Code: agentbridge.StartRequired, Detail: "start Codex Desktop and retry"}
-	err = source.SendMessage(ctx, "t1", "hello")
-	if !errors.Is(err, control.ErrDesktopOwnerUnavailable) {
-		t.Fatalf("send start_required: %v", err)
-	}
-
-	if err := source.Close(); err != nil || !fake.closed {
-		t.Fatalf("close: err=%v closed=%v", err, fake.closed)
+func TestSendWithDesktopPreferenceDoesNotDuplicateUnknownDelivery(t *testing.T) {
+	managedCalls := 0
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, func(context.Context, string, string) error {
+		return &desktopipc.DeliveryUnknownError{Cause: context.DeadlineExceeded}
+	})
+	if !errors.Is(err, control.ErrDeliveryUnknown) || managedCalls != 0 {
+		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
 	}
 }
 
-func TestLocalAddressNormalizesTargets(t *testing.T) {
-	tests := []struct {
-		name   string
-		target string
-		want   string
-	}{
-		{name: "full lan address sheds node prefix", target: "ra2a://node-b/codex-app/thread-2", want: "codex-app/thread-2"},
-		{name: "explicit agent preserved", target: "ra2a://node-b/codex-cli/thread-9", want: "codex-cli/thread-9"},
-		{name: "legacy bare id falls back to codex-app", target: "thread-1", want: "codex-app/thread-1"},
-		{name: "empty stays empty", target: "", want: ""},
-		{name: "malformed url passed through", target: "ra2a://node-b/", want: "ra2a://node-b/"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := localAddress(test.target); got != test.want {
-				t.Fatalf("localAddress(%q) = %q, want %q", test.target, got, test.want)
-			}
-		})
+func TestSendWithDesktopPreferenceDoesNotFallbackOnUnclassifiedError(t *testing.T) {
+	managedCalls := 0
+	want := errors.New("unexpected Desktop failure")
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, func(context.Context, string, string) error {
+		return want
+	})
+	if !errors.Is(err, want) || managedCalls != 0 {
+		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
 	}
 }
 
-func TestEndpointViewsFromRefsCarriesAgentAndCapabilities(t *testing.T) {
-	refs := []agentbridge.EndpointRef{
-		{Endpoint: agentbridge.Endpoint{
-			EndpointID: "t1", AgentType: "codex-app",
-			Capabilities: map[agentbridge.Capability]bool{agentbridge.CapabilityReceiveText: true},
-			Address:      "codex-app/t1",
-		}},
+func TestSendWithDesktopPreferenceDoesNotExposeManagedWriterFailure(t *testing.T) {
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		return codexhost.ErrSessionBusy
+	}, func(context.Context, string, string) error {
+		return &desktopipc.NotDeliveredError{Cause: errors.New("Desktop unavailable")}
+	})
+	if !errors.Is(err, control.ErrDesktopOwnerUnavailable) || !strings.Contains(err.Error(), "Desktop unavailable") {
+		t.Fatalf("error = %v", err)
 	}
-	views := endpointViewsFromRefs(refs)
-	if len(views) != 1 {
-		t.Fatalf("views = %#v", views)
+}
+
+func TestSendWithDesktopPreferenceUsesManagedWhenDesktopIntegrationIsDisabled(t *testing.T) {
+	managedCalls := 0
+	err := sendWithDesktopPreference(context.Background(), "thread", "hello", func(context.Context, string, string) error {
+		managedCalls++
+		return nil
+	}, nil)
+	if err == nil || managedCalls != 0 || !strings.Contains(err.Error(), "start Codex Desktop") {
+		t.Fatalf("err=%v managedCalls=%d", err, managedCalls)
 	}
-	view := views[0]
-	if view.ID != "t1" || view.AgentType != "codex-app" || view.Address != "codex-app/t1" || len(view.Capabilities) != 1 {
-		t.Fatalf("view = %#v", view)
+}
+
+// Local delivery now goes through the adapter registry, so an address that the
+// node never published must be rejected instead of being forwarded blindly.
+func TestRunSendRejectsUnpublishedLocalTarget(t *testing.T) {
+	isolatedOperatorHome(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var output bytes.Buffer
+	factory := func(context.Context, string, string, io.Writer) (sessionSource, error) {
+		return &fakeSessionSource{}, nil
 	}
+
+	err := run(ctx, []string{
+		"send",
+		"--pin", "A2B3C4",
+		"--id", "cli-unpublished-node",
+		"--peer", "cli-unpublished-node",
+		"--session", "thread-not-listed",
+		"--message", "hello",
+	}, &output, factory)
+	if err == nil || !strings.Contains(err.Error(), "DELIVERY_UNKNOWN") {
+		t.Fatalf("unpublished local target must be refused, got %v", err)
+	}
+}
+
+// TestMain keeps the suite hermetic: without this the tests would adopt the
+// operator's real OpenCode sessions and depend on whether a real OpenCode server
+// happens to be running on this machine.
+func TestMain(m *testing.M) {
+	os.Setenv("RA2A_DISABLE_OPENCODE", "1")
+	os.Exit(m.Run())
 }

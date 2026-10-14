@@ -17,12 +17,9 @@ import (
 	"github.com/pion/dtls/v3"
 	dtlsnet "github.com/pion/dtls/v3/pkg/net"
 	coapdtls "github.com/plgd-dev/go-coap/v3/dtls"
-	coapserver "github.com/plgd-dev/go-coap/v3/dtls/server"
 	"github.com/plgd-dev/go-coap/v3/message"
 	"github.com/plgd-dev/go-coap/v3/message/codes"
 	"github.com/plgd-dev/go-coap/v3/mux"
-	coapnet "github.com/plgd-dev/go-coap/v3/net"
-	"github.com/plgd-dev/go-coap/v3/net/blockwise"
 	"github.com/plgd-dev/go-coap/v3/options"
 	udpClient "github.com/plgd-dev/go-coap/v3/udp/client"
 )
@@ -37,13 +34,13 @@ const (
 )
 
 var ErrPeerUnreachable = errors.New("peer unreachable before delivery")
+var ErrEndpointNotFound = errors.New("endpoint not found before delivery")
 
 type Config struct {
 	ID          string
 	Name        string
 	PIN         string
 	Sessions    func(context.Context) ([]Session, error)
-	Endpoints   func(context.Context) ([]EndpointView, error) // optional; legacy nodes omit it
 	SendMessage func(context.Context, Message) error
 }
 
@@ -53,48 +50,36 @@ type Peer struct {
 	Address string
 }
 
-// Session is one conversation exposed by a peer. AgentType is empty on
-// legacy peers that predate endpoint addressing; callers then treat the
-// session as codex-app (the only registered type at that protocol version).
+// Session is the LAN view of one endpoint. Agent and Capabilities are additive:
+// a v0.0.14 peer omits them and is read back as a legacy Codex App session, so
+// mixed-version nodes never mis-route or crash.
 type Session struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Status    string `json:"status"`
-	AgentType string `json:"agentType,omitempty"`
-}
-
-// EndpointView is the agent-aware delivery view of one endpoint on a peer.
-// Address is the opaque target string callers pass back verbatim to send
-// messages; its format is never inspected by LAN code.
-type EndpointView struct {
 	ID           string   `json:"id"`
-	AgentType    string   `json:"agentType"`
+	Address      string   `json:"address,omitempty"`
+	Title        string   `json:"title"`
+	Status       string   `json:"status"`
+	Agent        string   `json:"agent,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
-	Address      string   `json:"address"`
 }
 
-// Message is one cross-node delivery. TargetSessionID carries the full,
-// opaque target address (ra2a://node/<agent>/<session> or, from legacy
-// senders, a bare native session ID). TargetAgent is a transitive routing
-// hint only; receivers must not trust it without resolving the address.
+const ProtocolVersion = 1
+
 type Message struct {
 	TargetSessionID string `json:"targetSessionId"`
-	TargetAgent     string `json:"targetAgent,omitempty"`
 	Text            string `json:"text"`
 	Source          string `json:"source,omitempty"`
 	MessageID       string `json:"messageId,omitempty"`
 }
 
 type sessionsResponse struct {
-	Sessions  []Session      `json:"sessions"`
-	Endpoints []EndpointView `json:"endpoints,omitempty"`
+	ProtocolVersion int       `json:"protocolVersion"`
+	Sessions        []Session `json:"sessions"`
 }
 
 type Node struct {
 	config     Config
 	key        []byte
-	listener   *coapnet.DTLSListener
-	server     *coapserver.Server
+	bindings   *boundServers
 	advertiser *zeroconf.Client
 	cancel     context.CancelFunc
 	closeOnce  sync.Once
@@ -123,13 +108,14 @@ func Start(parent context.Context, config Config) (*Node, error) {
 		cancel()
 		return nil, err
 	}
-	port := n.listener.Addr().(*net.UDPAddr).Port
+	port := n.bindings.port
 	n.peers[config.ID] = Peer{ID: config.ID, Name: config.Name, Address: net.JoinHostPort("127.0.0.1", fmt.Sprint(port))}
 	serviceType := zeroconf.NewType(serviceName)
 	service := zeroconf.NewService(serviceType, config.ID, uint16(port))
 	service.Text = []string{"version=1", "id=" + config.ID, "name=" + config.Name}
 	advertiser, err := zeroconf.New().
 		Network("udp4").
+		InterfaceAddrs(n.bindings.interfaceAddrs).
 		Expiry(peerDiscoveryExpiry).
 		Publish(service).
 		Browse(n.handlePeerEvent, serviceType).
@@ -149,32 +135,18 @@ func Start(parent context.Context, config Config) (*Node, error) {
 }
 
 func (n *Node) startServer() error {
-	dtlsOptions := coapnet.NewDTLSServerOptions(
-		dtls.WithPSK(func([]byte) ([]byte, error) { return n.key, nil }),
-		dtls.WithPSKIdentityHint([]byte("ra2a-server")),
-		dtls.WithCipherSuites(dtls.TLS_PSK_WITH_AES_128_GCM_SHA256),
-		dtls.WithExtendedMasterSecret(dtls.RequireExtendedMasterSecret),
-	)
-	listener, err := coapnet.NewDTLSListener("udp4", "0.0.0.0:0", dtlsOptions)
-	if err != nil {
-		return fmt.Errorf("listen CoAP/DTLS: %w", err)
-	}
-
 	router := mux.NewRouter()
 	if err := router.Handle("/v1/sessions", mux.HandlerFunc(n.handleSessions)); err != nil {
-		_ = listener.Close()
 		return fmt.Errorf("register sessions handler: %w", err)
 	}
 	if err := router.Handle("/v1/messages", mux.HandlerFunc(n.handleMessage)); err != nil {
-		_ = listener.Close()
 		return fmt.Errorf("register message handler: %w", err)
 	}
-	n.listener = listener
-	n.server = coapdtls.NewServer(
-		options.WithMux(router),
-		options.WithBlockwise(true, blockwise.SZX1024, sessionBlockwiseTimeout),
-	)
-	go func() { _ = n.server.Serve(listener) }()
+	bindings, err := newBoundServers(n.key, router, localIPv4)
+	if err != nil {
+		return err
+	}
+	n.bindings = bindings
 	return nil
 }
 
@@ -194,7 +166,9 @@ func (n *Node) handleMessage(w mux.ResponseWriter, request *mux.Message) {
 	}
 	if err := n.config.SendMessage(request.Context(), incoming); err != nil {
 		code := codes.InternalServerError
-		if strings.Contains(err.Error(), "SESSION_BUSY") {
+		if strings.HasPrefix(err.Error(), "TARGET_NOT_FOUND:") {
+			code = codes.NotFound
+		} else if strings.Contains(err.Error(), "SESSION_BUSY") {
 			code = codes.PreconditionFailed
 		}
 		_ = w.SetResponse(code, message.TextPlain, strings.NewReader(err.Error()))
@@ -204,23 +178,16 @@ func (n *Node) handleMessage(w mux.ResponseWriter, request *mux.Message) {
 }
 
 func (n *Node) handleSessions(w mux.ResponseWriter, request *mux.Message) {
-	response := sessionsResponse{Sessions: make([]Session, 0)}
+	sessions := make([]Session, 0)
 	var err error
 	if n.config.Sessions != nil {
-		response.Sessions, err = n.config.Sessions(request.Context())
+		sessions, err = n.config.Sessions(request.Context())
 	}
 	if err != nil {
 		_ = w.SetResponse(codes.InternalServerError, message.TextPlain, strings.NewReader(err.Error()))
 		return
 	}
-	if n.config.Endpoints != nil {
-		response.Endpoints, err = n.config.Endpoints(request.Context())
-		if err != nil {
-			_ = w.SetResponse(codes.InternalServerError, message.TextPlain, strings.NewReader(err.Error()))
-			return
-		}
-	}
-	payload, err := json.Marshal(response)
+	payload, err := json.Marshal(sessionsResponse{ProtocolVersion: ProtocolVersion, Sessions: sessions})
 	if err == nil {
 		err = w.SetResponse(codes.Content, message.AppJSON, bytes.NewReader(payload))
 	}
@@ -279,13 +246,19 @@ func peerFromService(service *zeroconf.Service, id, name string) (Peer, bool) {
 }
 
 func (n *Node) reloadDiscovery(ctx context.Context) {
-	ticker := time.NewTicker(discoveryReloadInterval)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	reload := time.NewTicker(discoveryReloadInterval)
+	defer reload.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if n.bindings.reconcile() {
+				n.advertiser.Reload()
+			}
+		case <-reload.C:
 			n.advertiser.Reload()
 		}
 	}
@@ -356,47 +329,28 @@ func (n *Node) Peer(id string) (Peer, bool) {
 }
 
 func (n *Node) ListSessions(ctx context.Context, peer Peer) ([]Session, error) {
-	decoded, err := n.fetchSessions(ctx, peer)
-	if err != nil {
-		return nil, err
-	}
-	return decoded.Sessions, nil
-}
-
-// ListEndpoints returns the agent-aware endpoint views of a peer. Peers that
-// predate endpoint addressing return no endpoints; callers fall back to
-// ListSessions (codex-app) for those.
-func (n *Node) ListEndpoints(ctx context.Context, peer Peer) ([]EndpointView, error) {
-	decoded, err := n.fetchSessions(ctx, peer)
-	if err != nil {
-		return nil, err
-	}
-	return decoded.Endpoints, nil
-}
-
-func (n *Node) fetchSessions(ctx context.Context, peer Peer) (sessionsResponse, error) {
 	client, err := n.dialPeer(ctx, peer)
 	if err != nil {
-		return sessionsResponse{}, fmt.Errorf("connect to %s: %w", peer.ID, err)
+		return nil, fmt.Errorf("connect to %s: %w", peer.ID, err)
 	}
 	defer client.Close()
 	response, err := client.Get(ctx, "/v1/sessions")
 	if err != nil {
-		return sessionsResponse{}, fmt.Errorf("request sessions from %s: %w", peer.ID, err)
+		return nil, fmt.Errorf("request sessions from %s: %w", peer.ID, err)
 	}
 	defer client.ReleaseMessage(response)
 	if response.Code() != codes.Content {
-		return sessionsResponse{}, fmt.Errorf("request sessions from %s: CoAP code %v", peer.ID, response.Code())
+		return nil, fmt.Errorf("request sessions from %s: CoAP code %v", peer.ID, response.Code())
 	}
 	body, err := io.ReadAll(response.Body())
 	if err != nil {
-		return sessionsResponse{}, fmt.Errorf("read sessions from %s: %w", peer.ID, err)
+		return nil, fmt.Errorf("read sessions from %s: %w", peer.ID, err)
 	}
 	var decoded sessionsResponse
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return sessionsResponse{}, fmt.Errorf("decode sessions from %s: %w", peer.ID, err)
+		return nil, fmt.Errorf("decode sessions from %s: %w", peer.ID, err)
 	}
-	return decoded, nil
+	return decoded.Sessions, nil
 }
 
 func (n *Node) SendMessage(ctx context.Context, peer Peer, outgoing Message) error {
@@ -416,6 +370,9 @@ func (n *Node) SendMessage(ctx context.Context, peer Peer, outgoing Message) err
 	defer client.ReleaseMessage(response)
 	if response.Code() != codes.Changed {
 		body, _ := io.ReadAll(response.Body())
+		if response.Code() == codes.NotFound {
+			return fmt.Errorf("%w: %s", ErrEndpointNotFound, strings.TrimSpace(string(body)))
+		}
 		return fmt.Errorf("send message to %s: CoAP code %v: %s", peer.ID, response.Code(), strings.TrimSpace(string(body)))
 	}
 	return nil
@@ -451,11 +408,8 @@ func (n *Node) Close() {
 		if n.advertiser != nil {
 			_ = n.advertiser.Close()
 		}
-		if n.server != nil {
-			n.server.Stop()
-		}
-		if n.listener != nil {
-			_ = n.listener.Close()
+		if n.bindings != nil {
+			n.bindings.close()
 		}
 	})
 }

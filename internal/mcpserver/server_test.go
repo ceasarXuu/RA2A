@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/ceasarXuu/RA2A/internal/control"
-	"github.com/ceasarXuu/RA2A/internal/lannode"
 )
 
 type fakeBackend struct {
@@ -26,42 +25,6 @@ func (backend *fakeBackend) Send(_ context.Context, request control.SendRequest)
 	return backend.sendErr
 }
 
-func TestListTargetsExposesAgentEndpoints(t *testing.T) {
-	backend := &fakeBackend{targets: []control.Target{{
-		ID: "node-b", Name: "Node B", Status: "ready",
-		Endpoints: []lannode.EndpointView{
-			{ID: "thread-1", AgentType: "codex-app", Capabilities: []string{"receiveText"}, Address: "ra2a://node-b/codex-app/thread-1"},
-		},
-	}}}
-	responses := serveRequests(t, backend,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_targets","arguments":{}}}`,
-	)
-	result := responses[0]["result"].(map[string]any)
-	target := result["structuredContent"].(map[string]any)["targets"].([]any)[0].(map[string]any)
-	endpoints := target["endpoints"].([]any)
-	if len(endpoints) != 1 {
-		t.Fatalf("endpoints = %#v", endpoints)
-	}
-	endpoint := endpoints[0].(map[string]any)
-	if endpoint["agentType"] != "codex-app" || endpoint["address"] != "ra2a://node-b/codex-app/thread-1" {
-		t.Fatalf("endpoint = %#v", endpoint)
-	}
-}
-
-func TestSendMessageAcceptsLegacyTwoSegmentAddress(t *testing.T) {
-	backend := &fakeBackend{}
-	responses := serveRequests(t, backend,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello"},"_meta":{"threadId":"thread-a"}}}`,
-	)
-	if backend.sent.To != "ra2a://node-b/thread-b" || backend.sent.SourceSessionID != "thread-a" {
-		t.Fatalf("sent = %#v", backend.sent)
-	}
-	result := responses[0]["result"].(map[string]any)
-	if result["isError"] != false {
-		t.Fatalf("result = %#v", result)
-	}
-}
-
 func TestServeListsOnlyProductionTools(t *testing.T) {
 	responses := serveRequests(t, &fakeBackend{},
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
@@ -70,12 +33,16 @@ func TestServeListsOnlyProductionTools(t *testing.T) {
 	)
 	result := responses[1]["result"].(map[string]any)
 	initialize := responses[0]["result"].(map[string]any)
-	if initialize["serverInfo"].(map[string]any)["version"] != "v0.0.14" {
+	if initialize["serverInfo"].(map[string]any)["version"] != "v0.0.18" {
 		t.Fatalf("serverInfo = %#v", initialize["serverInfo"])
 	}
 	tools := result["tools"].([]any)
 	if len(tools) != 2 || tools[0].(map[string]any)["name"] != "list_targets" || tools[1].(map[string]any)["name"] != "send_message" {
 		t.Fatalf("tools = %#v", tools)
+	}
+	schema := tools[1].(map[string]any)["inputSchema"].(map[string]any)
+	if _, exists := schema["properties"].(map[string]any)["from"]; !exists {
+		t.Fatal("send_message must expose its supported caller address parameter in the tool schema")
 	}
 	if description := tools[0].(map[string]any)["description"].(string); !strings.Contains(description, "discovered") || !strings.Contains(description, "status") {
 		t.Fatalf("list_targets description = %q", description)
@@ -103,8 +70,11 @@ func TestSendMessageUsesCallingThreadFromMetadata(t *testing.T) {
 	responses := serveRequests(t, backend,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello"},"_meta":{"threadId":"thread-a"}}}`,
 	)
-	if backend.sent.To != "ra2a://node-b/thread-b" || backend.sent.Text != "hello" || backend.sent.SourceSessionID != "thread-a" {
+	if backend.sent.To != "ra2a://node-b/thread-b" || backend.sent.Text != "hello" {
 		t.Fatalf("sent = %#v", backend.sent)
+	}
+	if backend.sent.Meta["threadId"] != "thread-a" {
+		t.Fatalf("caller metadata must be forwarded to the resolver, got %#v", backend.sent.Meta)
 	}
 	result := responses[0]["result"].(map[string]any)
 	if result["isError"] != false || result["structuredContent"].(map[string]any)["status"] != "accepted" {
@@ -112,17 +82,44 @@ func TestSendMessageUsesCallingThreadFromMetadata(t *testing.T) {
 	}
 }
 
-func TestSendMessageRejectsMissingCallingThread(t *testing.T) {
+// The MCP layer forwards whatever the host provided; whether that is enough to
+// identify the caller is the resolver's decision, reported through the backend.
+func TestSendMessageForwardsCallerMetadataToResolver(t *testing.T) {
 	backend := &fakeBackend{}
 	responses := serveRequests(t, backend,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello"},"_meta":{}}}`,
 	)
 	result := responses[0]["result"].(map[string]any)
-	if result["isError"] != true || !strings.Contains(result["content"].([]any)[0].(map[string]any)["text"].(string), "CALLER_SESSION_UNKNOWN") {
+	if result["isError"] != false {
 		t.Fatalf("result = %#v", result)
 	}
-	if backend.sent != (control.SendRequest{}) {
-		t.Fatalf("unexpected send = %#v", backend.sent)
+	if backend.sent.Meta != nil {
+		t.Fatalf("absent caller metadata must stay absent, got %#v", backend.sent.Meta)
+	}
+}
+
+func TestSendMessageSurfacesCallerResolutionFailure(t *testing.T) {
+	backend := &fakeBackend{sendErr: errors.New("CALLER_SESSION_UNKNOWN: caller identity could not be resolved")}
+	responses := serveRequests(t, backend,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello"},"_meta":{}}}`,
+	)
+	result := responses[0]["result"].(map[string]any)
+	if result["isError"] != true || result["structuredContent"].(map[string]any)["error"] != "CALLER_SESSION_UNKNOWN" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestSendMessageAcceptsDeclaredCallerAddress(t *testing.T) {
+	backend := &fakeBackend{}
+	responses := serveRequests(t, backend,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"ra2a://node-b/thread-b","text":"hello","from":"ra2a://node-a/cli-1"},"_meta":{}}}`,
+	)
+	result := responses[0]["result"].(map[string]any)
+	if result["isError"] != false {
+		t.Fatalf("result = %#v", result)
+	}
+	if backend.sent.From != "ra2a://node-a/cli-1" {
+		t.Fatalf("declared caller address must be forwarded, got %#v", backend.sent.From)
 	}
 }
 

@@ -5,3 +5,4 @@
 .cache/
 /coe/
 experiments/network/**/bin/
+/experiments/sandbox/__pycache__/

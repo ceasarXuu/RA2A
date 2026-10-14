@@ -3,10 +3,14 @@ package main
 import (
 	"encoding/json"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestClassifyPlainPromptInjects(t *testing.T) {
@@ -63,13 +67,169 @@ func TestClassifyExplicitRemoteNeverInjects(t *testing.T) {
 	}
 }
 
+func TestClassifyFlagOnlyInvocationInjects(t *testing.T) {
+	for _, args := range [][]string{
+		{"--yolo"},
+		{"-m", "gpt-6-sol"},
+		{"--model", "gpt-6-sol", "--yolo"},
+	} {
+		plan := classify(args)
+		if !plan.tuiMode || !plan.injectRemote {
+			t.Fatalf("args %v: plan = %#v", args, plan)
+		}
+	}
+}
+
 func TestClassifyHelpAndVersionPassThrough(t *testing.T) {
-	for _, args := range [][]string{{"--help"}, {"--version"}} {
+	for _, args := range [][]string{{"--help"}, {"-h"}, {"--version"}, {"-V"}, {"--yolo", "--help"}} {
 		plan := classify(args)
 		if plan.injectRemote || plan.tuiMode {
 			t.Fatalf("args %v: plan = %#v", args, plan)
 		}
 	}
+}
+
+func TestOfficialDaemonKeepsNativeTUI(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix fake CLI fixture")
+	}
+	native := fakeNativeCodex(t)
+	t.Setenv("CODEX_TEST_DAEMON_STATUS", "running")
+	args := []string{"--yolo"}
+	if got := managedArgs(native, "/tmp/managed.sock", args); len(got) != 1 || got[0] != "--yolo" {
+		t.Fatalf("native shared daemon must keep TUI untouched: %v", got)
+	}
+}
+
+func TestManagedFallbackRequiresUsableHost(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix fake CLI fixture")
+	}
+	native := fakeNativeCodex(t)
+	t.Setenv("CODEX_TEST_DAEMON_STATUS", "stopped")
+	args := []string{"--yolo"}
+
+	t.Run("usable host injects remote", func(t *testing.T) {
+		home := newShortDir(t)
+		t.Setenv("CODEX_HOME", home)
+		host := startFakeManagedHost(t, home, "")
+		got := managedArgs(native, host.socketPath, args)
+		want := []string{"--remote", "unix://" + host.socketPath, "--yolo"}
+		if len(got) != len(want) {
+			t.Fatalf("managed fallback args = %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("managed fallback args = %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("host without account access keeps native", func(t *testing.T) {
+		home := newShortDir(t)
+		t.Setenv("CODEX_HOME", home)
+		// The observed incident: the managed host inherits the RA2A service
+		// environment and cannot reach the account backend.
+		host := startFakeManagedHost(t, home, "failed to fetch codex rate limits")
+		if got := managedArgs(native, host.socketPath, args); len(got) != 1 || got[0] != "--yolo" {
+			t.Fatalf("unusable host must keep the native TUI: %v", got)
+		}
+	})
+
+	t.Run("host with foreign codex home keeps native", func(t *testing.T) {
+		t.Setenv("CODEX_HOME", newShortDir(t))
+		host := startFakeManagedHost(t, newShortDir(t), "")
+		if got := managedArgs(native, host.socketPath, args); len(got) != 1 || got[0] != "--yolo" {
+			t.Fatalf("host with another codex home must keep the native TUI: %v", got)
+		}
+	})
+
+	t.Run("unreachable host keeps native", func(t *testing.T) {
+		t.Setenv("CODEX_HOME", newShortDir(t))
+		host := startFakeManagedHost(t, codexHome(), "")
+		_ = host.listener.Close()
+		if got := managedArgs(native, host.socketPath, args); len(got) != 1 || got[0] != "--yolo" {
+			t.Fatalf("unreachable host must keep the native TUI: %v", got)
+		}
+	})
+}
+
+func fakeNativeCodex(t *testing.T) string {
+	t.Helper()
+	native := filepath.Join(t.TempDir(), "codex")
+	if err := os.WriteFile(native, []byte("#!/bin/sh\nprintf '{\"status\":\"%s\"}\\n' \"$CODEX_TEST_DAEMON_STATUS\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return native
+}
+
+// fakeManagedHost answers the two calls the managed-host gate performs:
+// initialize and account/rateLimits/read.
+type fakeManagedHost struct {
+	listener   net.Listener
+	socketPath string
+	codexHome  string
+	accountErr string
+}
+
+func startFakeManagedHost(t *testing.T, codexHome, accountErr string) *fakeManagedHost {
+	t.Helper()
+	socketPath := filepath.Join(newShortDir(t), "managed.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := &fakeManagedHost{listener: listener, socketPath: socketPath, codexHome: codexHome, accountErr: accountErr}
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		conn, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		host.serve(conn)
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	return host
+}
+
+func (host *fakeManagedHost) serve(conn *websocket.Conn) {
+	for {
+		_, payload, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var message struct {
+			ID     *int64 `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(payload, &message); err != nil || message.ID == nil {
+			continue
+		}
+		switch message.Method {
+		case "initialize":
+			host.reply(conn, map[string]any{"id": *message.ID, "jsonrpc": "2.0", "result": map[string]any{
+				"userAgent": "ra2a_codex_cli/0.159.2 (Ubuntu; x86_64)", "codexHome": host.codexHome,
+				"platformFamily": "unix", "platformOs": "linux",
+			}})
+		case "account/rateLimits/read":
+			if host.accountErr != "" {
+				host.reply(conn, map[string]any{"id": *message.ID, "jsonrpc": "2.0",
+					"error": map[string]any{"code": -32603, "message": host.accountErr}})
+				continue
+			}
+			host.reply(conn, map[string]any{"id": *message.ID, "jsonrpc": "2.0", "result": map[string]any{"rateLimits": map[string]any{}}})
+		}
+	}
+}
+
+func (host *fakeManagedHost) reply(conn *websocket.Conn, value any) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return
+	}
+	_ = conn.WriteMessage(websocket.TextMessage, payload)
 }
 
 func TestReadySocketAcceptsOnlyLiveManagedServer(t *testing.T) {
@@ -128,6 +288,66 @@ func TestReadySocketAcceptsOnlyLiveManagedServer(t *testing.T) {
 	})
 }
 
+func TestReadySocketResolvesRelocatedSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix socket fixture")
+	}
+	home := newShortDir(t)
+	t.Setenv("CODEX_HOME", home)
+	controlDir := filepath.Join(home, "app-server-control")
+	if err := os.MkdirAll(controlDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lease := filepath.Join(controlDir, "app-server-control.sock.ra2a-owner.json")
+
+	// Codex 0.159+ binds the real socket outside CODEX_HOME (AF_UNIX path
+	// limit workaround) and leaves a symlink behind in the control directory.
+	realDir := newShortDir(t)
+	realSocket := filepath.Join(realDir, "relocated.sock")
+	listener, err := net.Listen("unix", realSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	link := filepath.Join(controlDir, "app-server-control.sock.ra2a-1.sock")
+	if err := os.Symlink(realSocket, link); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("live symlink resolves to the real socket", func(t *testing.T) {
+		writeRecord(t, lease, ownerRecord{PID: os.Getpid(), SocketPath: link})
+		if got := readySocket(); got != realSocket {
+			t.Fatalf("readySocket = %q, want resolved %q", got, realSocket)
+		}
+	})
+
+	t.Run("dangling symlink rejected", func(t *testing.T) {
+		dangling := filepath.Join(controlDir, "dangling.sock")
+		if err := os.Symlink(filepath.Join(realDir, "gone.sock"), dangling); err != nil {
+			t.Fatal(err)
+		}
+		writeRecord(t, lease, ownerRecord{PID: os.Getpid(), SocketPath: dangling})
+		if got := readySocket(); got != "" {
+			t.Fatalf("readySocket = %q for a dangling symlink", got)
+		}
+	})
+
+	t.Run("symlink to a regular file rejected", func(t *testing.T) {
+		file := filepath.Join(realDir, "plain")
+		if err := os.WriteFile(file, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		linkToFile := filepath.Join(controlDir, "file-link.sock")
+		if err := os.Symlink(file, linkToFile); err != nil {
+			t.Fatal(err)
+		}
+		writeRecord(t, lease, ownerRecord{PID: os.Getpid(), SocketPath: linkToFile})
+		if got := readySocket(); got != "" {
+			t.Fatalf("readySocket = %q for a symlink to a plain file", got)
+		}
+	})
+}
+
 func TestRealCodexSkipsWrapperItself(t *testing.T) {
 	wrapper := filepath.Join(t.TempDir(), "codex")
 	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -162,12 +382,16 @@ func TestRealCodexPrefersSiblingBinary(t *testing.T) {
 
 func TestRealCodexFallsBackToPathExcludingWrapper(t *testing.T) {
 	dir := t.TempDir()
-	wrapper := filepath.Join(dir, "codex")
+	name := "codex"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	wrapper := filepath.Join(dir, name)
 	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	realDir := t.TempDir()
-	real := filepath.Join(realDir, "codex")
+	real := filepath.Join(realDir, name)
 	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

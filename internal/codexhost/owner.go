@@ -41,7 +41,7 @@ func writeOwnerRecord(path string, record ownerRecord) error {
 	if record.PID <= 0 || record.SocketPath == "" {
 		return errors.New("invalid managed Codex host owner record")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := prepareControlDirectory(filepath.Dir(path)); err != nil {
 		return err
 	}
 	data, err := json.Marshal(record)

@@ -55,8 +55,8 @@ func main() {
 	var timeout time.Duration
 	flag.StringVar(&opts.threadID, "thread-id", "", "Desktop-owned target thread ID")
 	flag.StringVar(&opts.message, "message", "", "text to inject")
-	flag.StringVar(&opts.messageID, "message-id", "", "stable message ID")
 	flag.StringVar(&opts.model, "model", "", "model for the Desktop-owned turn")
+	flag.StringVar(&opts.messageID, "message-id", "", "stable message ID")
 	flag.StringVar(&socketPath, "socket", "", "override Codex Desktop IPC socket path")
 	flag.DurationVar(&timeout, "timeout", 15*time.Second, "connection and request timeout")
 	flag.BoolVar(&opts.allowWrite, "allow-write", false, "allow the probe to start a Desktop turn")

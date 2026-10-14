@@ -1,0 +1,79 @@
+# RA2A 已支持 Harness 自动安装与核验
+
+适用：源码 `install.sh` / `install.ps1`，以及自 v0.0.17 起的发布资产 `install-ra2a.sh` / `install-ra2a.ps1`。旧版 Release 安装器不具备自动 wrapper 安装能力。
+
+## 安装契约
+
+| 本机可运行的宿主 | 正常安装后的行为 | 初始化要求 |
+| --- | --- | --- |
+| Codex CLI | 安装 `codex` wrapper；原生命令保留为 `codex.bin` 或记入 native-path 文件；非 TUI 透传 | 可单独初始化 |
+| Codex standalone 安装 | 本机存在 standalone 安装时优先记入 native-path（唯一支持 `codex update` 的布局）；显式 `-Codex` 仍然优先 | 可单独初始化 |
+| OpenCode | 安装 `opencode` wrapper；普通 TUI 自动连接共享 server、建立会话租约，子命令透传 | 可单独初始化，不要求 Codex |
+| Codex App 内置的 Codex 可执行文件 | 注册 Codex MCP 并启动适配器；无独立 CLI 时不需要 CLI wrapper | 可单独初始化 |
+| 无可用宿主 | 安装 RA2A 命令，但提示尚无接入对象 | setup 明确失败，不报告服务就绪 |
+
+首次设置后，重复安装会重新检测当前宿主并刷新配套；已有配置的 daemon 重启后也会注册新检测到的适配器。Codex App 与 OpenCode 混用时两者独立接入。已经运行的 TUI 不会因更换 wrapper 而自行升级，必须由用户主动重开。
+Codex CLI 有健康的官方共享 daemon 时，自动安装的 wrapper 仍让普通 TUI 走原生启动；仅官方 daemon 不可用且 RA2A managed socket 可用时注入 managed 连接，并记录 `codex_wrapper_managed_fallback` 日志。纯 flag 启动（如 `codex --yolo`）同样按 TUI 处理；`--help`/`--version` 一类信息 flag 始终透传。
+注入前必须通过可用性门禁：托管 host 需报告与调用方一致的 Codex home，并在限时内完成一次账号读取（`account/rateLimits/read`）。门禁失败或 socket 不可用时保持原生启动并记录 `codex_wrapper_managed_skipped`。这样当 RA2A 服务环境与用户 shell 环境不一致（典型为代理变量只导出在 `~/.bashrc`）时，用户 TUI 不会被静默切到连不上账号后端的 host。Codex 0.159+ 将真实 UDS 放在 `/tmp/codex-daemon-<uid>/` 并在控制目录留下符号链接，wrapper 读取 owner lease 时先解析符号链接，再校验 socket 类型与连通性，并把这个解析后的路径交给 `--remote`。
+曾经检测到的宿主若后来被卸载，下一次安装会将没有 backing native 的 RA2A launcher 移入带时间戳的备份，而不是阻止其他宿主；daemon 配置只保留仍能运行的可执行文件。
+
+Windows 安装器额外遵守一条 Codex 自身的约束：只有 standalone managed install、npm shim 和 Homebrew formula 能被 `codex update` 更新，其余布局一律返回 `Could not detect the Codex installation method`；Codex App 每次更新都会在 `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\` 解包一个新的版本目录，记入那里的路径会随 App 更新静默失效。因此 `install.ps1` / `install-remote.ps1` 在自动检测时优先选择 `$CODEX_HOME/packages/standalone/current/` 下的安装（四种已观察到的 `bin/codex[.exe]` 与 `codex[.exe]` 组合逐一探测，未知布局退回原有检测而不是静默钉空），替换已有 native-path 时打印旧路径和新路径。macOS/Linux 不做同样偏好：那里记录的 `codex.bin` 是指向 `packages/standalone/current/` 这一可轮转指针的符号链接，App 自带的 CLI 是原地替换，npm shim 也能用 npm 自更新，没有可复现的同类失效。
+
+## 发布资产和入口一致性
+
+发布流水线为 linux/darwin/windows 的 amd64/arm64 同时构建 `ra2a`、`codex-wrapper`、`opencode-wrapper`，分别附 SHA256。Release 下载器先验证所有将安装的资产再替换本地文件；校验失败保留旧二进制。只有检测到对应宿主才下载 wrapper，用户不必安装 Go。
+源码安装也在替换现有 RA2A 可执行文件前先完成所有要安装的 wrapper 构建，避免 wrapper 构建失败造成半升级。
+
+Windows npm 安装可能只有 `.cmd` shim；安装器记录原生 `.exe`/`.cmd` 路径，wrapper 调用 `.cmd` 时使用 `cmd.exe`。已经安装 Codex App、但 CLI 不在 PATH 时，Windows 安装器还尝试读取官方 Desktop App Server 进程的真实可执行文件路径。无法发现实际可运行命令时应解释原因，不能把检测成功当作凭空存在的二进制。
+Windows 共享 OpenCode server 若经 `.cmd` shim 启动，结束服务时须通过 `taskkill /T` 回收整个原生子进程树，不能只终止 `cmd.exe` 父进程。
+
+卸载通过对应安装器的 `--uninstall` / `-Uninstall` 恢复已保存的原生命令、移除本次安装的 wrapper 和 RA2A 服务。Windows 正在被调用的可执行映像先重命名为 retired 备份，再恢复原生命令；不要通过覆盖正在运行的映像碰运气。
+
+## 验证方法
+
+```sh
+/home/zhangxu/sdk/go/bin/go test -count=1 ./...
+/home/zhangxu/sdk/go/bin/go test -race -count=1 ./installer ./internal/operator ./cmd/ra2a ./cmd/oc-wrapper ./cmd/codex-wrapper ./internal/control ./internal/mcpserver
+GOOS=windows GOARCH=amd64 /home/zhangxu/sdk/go/bin/go build ./cmd/ra2a ./cmd/oc-wrapper ./cmd/codex-wrapper
+sh -n install.sh && sh -n install-remote.sh
+```
+
+`installer` 用隔离 HOME、假宿主命令、假 Go 构建器、HTTP Release 服务器模拟本地/远程下载、重复升级、SHA256 失败与卸载；Linux 上安装了 `pwsh` 时还通过真实 PowerShell 执行两个 Windows 安装脚本的安装/重复安装/卸载分支，Windows 服务命令在测试进程中被桩替换。跨平台构建只证明可编译，不代替 Windows 原生进程生命周期验收。
+
+## 操作经验
+
+- 本机 `go` 位于 `/home/zhangxu/sdk/go/bin/go`，shell PATH 中找不到 `go` 时先查 SDK，不要误判为未安装。
+- Go 测试缓存不会追踪被 shell 测试调用的外部安装脚本。改动 `install*.sh` 后要用 `go test -count=1 ./installer`，不能以 `(cached)` 结果为准。
+- `list_targets` 的会话 ID 不是供 Agent 拼接的地址；返回数据现在包含完整 `address`，MCP `send_message` schema 也允许传 `from`。多 OpenCode 会话时必须提供本会话的 `from`，否则来源无法自动识别。
+- 每次升级后以运行进程的可执行路径、PID 和构建提交核验；仅看磁盘二进制、版本字符串或任务启动命令的成功输出都可能误判。
+- `codex update` 报 `Could not detect the Codex installation method` 时，先看 `codex` 实际解析到哪个二进制：`Get-Command codex -All`，再读 `~/.local/bin/.ra2a-codex-native-path`。RA2A wrapper 优先读该文件，其次才是 PATH，所以一条指向 Codex App 版本目录的旧记录会同时造成“无法更新”和“升级后版本不变”。2026-10-03 本机实测：App 自带 bin 为 `AppData\Local\OpenAI\Codex\bin\<hash>\codex.exe`（`0.159.0`），而 standalone 安装在 `%USERPROFILE%\.codex\packages\standalone\current\bin\codex.exe`，`current` 是指向 `releases\<version>-x86_64-pc-windows-msvc` 的 junction；把 native-path 指向它之后 `codex update` 正常执行并把 `current` 从 `0.159.3` 轮转到 `0.160.0`。修复前先备份旧文件（`Copy-Item` 到 `.bak-<时间戳>`），改完执行 `ra2a restart` 让托管 app-server 重新解析。
+- daemon 的 `~/.config/ra2a/config.json` 里 `codex` 记的是 launcher 本身时，托管 host 每次启动都重新读 native-path，`codex update` 后只需 `ra2a restart` 即可生效；若那里记的是某个原生命令的绝对路径，则该路径消失前 daemon 会继续使用旧版本，`DetectHarnesses` 只在二进制不可运行时才重新发现，不会主动追新版本。
+
+## Linux Codex App 登录地区错误的诊断边界
+
+2026-10-01 在 Ubuntu、App `26.924.22138` 上确认过以下组合：CLI 和网页可用，但 App 在浏览器授权返回后提示地区不符合条件。App 的 Chromium 使用 GNOME 系统代理，独立 Rust 后端却没有继承 shell 中的 `HTTP_PROXY` / `HTTPS_PROXY`。原生日志记录 `oauth token exchange returned non-success status`、HTTP 403 和 `unsupported_country_region_territory`；浏览器 callback 的 `state_valid=true`、`has_error=false`。不能把此错误自动归因于 RA2A。
+
+按以下顺序收集证据：
+
+1. 比较 App、其 bundled `codex app-server` 和正常 CLI 后端的**代理变量存在性**、实际连接路径。桌面系统代理设置不能证明原生子进程也使用代理。
+2. 用 App `stdio_transport_spawned` 日志、父 PID 与 `/proc/<pid>/exe` 确认后端是否来自 App 自带路径，或确实经过 RA2A wrapper/managed host。
+3. 在原生日志中区分浏览器 callback 失败、token 兑换失败与账号读取失败；按 App 后端 PID 和时间筛选，避免混入 CLI 的日志。当前安装的原生日志为 `~/.codex/logs_2.sqlite`，以只读方式查询；日志格式和位置需随版本核实。
+4. 可对公开无凭据认证元数据端点作正常路径与直连对照，记录 HTTP 状态即可。公开 GET 的拒绝页不能替代 OAuth 错误 code 的证据。不要输出 OAuth code、token、Authorization 或完整认证文件。
+5. 若确认 App 未继承用户正常 CLI 的现有网络环境，保存当前工作、正常关闭 App 后使用该网络环境启动，再验证实际登录及消息执行。账号读取成功不足以完成验收，不要删除 `auth.json` 或会话缓存。
+
+本次进程树确认 App 直接启动 `/usr/lib/chatgpt/resources/codex`，不经过 RA2A wrapper；未发现 RA2A 产品代码写认证文件或调用登录/退出接口。共享后端可能自动刷新凭据，因此结论限于当前有证据的失败路径。官方认证缓存说明见 [OpenAI Docs](https://learn.chatgpt.com/docs/auth)。
+
+### 本机入口修复与验证（2026-10-01）
+
+- 在 `~/.local/share/applications/chatgpt.desktop` 新建同 ID 的用户入口，保留系统入口其余字段，只将 `Exec` 改为 `/usr/bin/env` 携带当前正常 CLI 的 `HTTP_PROXY`、`HTTPS_PROXY`、小写同名键和 localhost `NO_PROXY`，再执行原 `/usr/bin/chatgpt %U`。本机现有代理为 `http://127.0.0.1:7890`；不得把此地址当成所有设备的默认值。用户入口优先级依据 [Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry/latest-single/#desktop-file-id)。
+- `desktop-file-validate` 通过。移除启动 GIO 进程的代理变量后，用该入口正常启动 App；原生后端仍携带代理并实际连接 `127.0.0.1:7890`。`Gio.DesktopAppInfo.new('chatgpt.desktop').get_filename()` 解析到用户入口，验证了后续菜单启动所用文件。本地 `getAuthStatus` 从约 15 秒缩短到 5–30 毫秒。
+- App 已正常重启；RA2A 服务和正常 CLI daemon 的 PID 保持。认证文件与配置文件 metadata 保持，未复制、删除或直接改写凭据。
+- App 的 durable 云端 WebSocket 使用另一条 Node 网络路径。`NODE_USE_ENV_PROXY=1` 实测无效并已移除；后续使用仅由 App 用户入口加载的 Ubuntu `libproxychains4=4.17-1` TCP 代理库，使真实 durable 握手恢复：`initialize_handshake_result outcome=success transportKind=websocket`、`initialized=true`、`state=connected`，主进程连接现有 `127.0.0.1:7890`。未改 ASAR、TLS、全局 DNS/代理或系统安装。
+- 该库仅提取到 `~/.local/lib/codex-app-network/proxychains-4.17/`，配置为 `~/.config/codex-app-network/proxychains.conf`，入口额外设置 `LD_PRELOAD`、`PROXYCHAINS_CONF_FILE`。包 SHA256 为 `0a8c84d04961c474129697b0ceb9cd77bc9226c65f8ad16fc432824a3cfc6164`，与 apt 元数据核对；来源保存在同目录 `source.txt`。使用 strict chain、现有 SOCKS5 代理和回环/私网排除；不启用库内 DNS 线程。本机原有 DNS 配合该代理已完成真实云端握手，不据此推断其他设备也适用。
+- 默认 `proxy_dns` 在真实 App 中产生四次 FD 关闭警告及 zygote fatal；移除该选项的同库对照可以正常启动并连接云端。不能用普通 Node 探针替代多进程 App 验证，也不能关闭沙箱绕过错误。上游 [配置说明](https://github.com/rofl0r/proxychains-ng/blob/v4.17/src/proxychains.conf) 已说明线程 DNS 对复杂程序的兼容边界。
+- `/proc/<main-pid>/environ` 原始缓冲在这个 App 中会被清空，不能据全 NUL 推断 JavaScript `process.env` 没有代理。应结合子进程环境、代码路径和实际连接判断。
+- **本机问题已于 2026-10-02 由用户确认恢复。** 升级前用户两次反馈卡在启动；后台未见对应 `turn/start`。旧版真实 App 的进程跟踪证明 Git 检查已执行 `/usr/bin/git --version` 并 exit 0，App 内部仍报 `Git is unavailable`；此错误在增加 TCP 代理前也存在。不能据此重装 Git 或把它直接当成已确认的提交阻塞根因。临时 `CODEX_MAX_LOG_LEVEL=debug` 和进程跟踪已结束。
+- 用户明确要求升级后，已通过正常系统管理员认证执行 APT 原位升级：App 从 `26.924.22138` 升到 `26.928.31416`，bundled 后端为 `0.159.2`。新包 SHA256 为 `c463727f1ed5dced78338c8e2a65d889bd153276ff373fd77698ccb9af32d181`；`dpkg -V chatgpt` 和 `dpkg --audit` 正常，实际主进程二进制与校验过的包一致。`app_server.client_version` 确认运行新版；本地握手 67ms、durable 握手 180ms 成功。
+- 升级仅更新 App 包，无新增或移除其他包；用户桌面代理入口保持，认证与配置文件在启动新版前 metadata 保持，用户 profile/会话目录未删除。旧版本原始安装包保留在 `/var/cache/apt/archives/chatgpt_26.924.22138_amd64.deb`。新版启动了本地 `exec-server`，启动日志不再出现旧版 `Git is unavailable`。在保留已验证网络配置并升级后，用户明确反馈“修复了”，完成本机实际使用验收；没有单独证明升级或代理配置中的任一项可以独立解决全部症状。
+- 若仅回退 TCP 库接入，恢复 `~/.config/codex-app-network/chatgpt.before-tcp-proxy.desktop` 到用户入口；失败的线程 DNS 配置及入口另有备份。库和备份保留，不删除用户数据。
+- 回退该本机入口时，将新建用户文件移到带时间戳的 `.disabled` 备份名，使菜单恢复系统入口；保留文件便于再恢复。若 App 包升级改变了系统入口字段，应重新核对用户副本。

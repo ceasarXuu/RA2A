@@ -1,129 +1,113 @@
-package codexapp
+package codexapp_test
 
 import (
 	"context"
-	"errors"
+	"io"
 	"testing"
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
-	"github.com/ceasarXuu/RA2A/internal/appserverprobe"
+	"github.com/ceasarXuu/RA2A/internal/codexapp"
 )
 
-type fakeHost struct {
-	threads      []appserverprobe.ThreadSummary
-	listErr      error
-	resolveErr   error
-	resolveCalls []string
-	closed       bool
+type ownershipSource struct {
+	sessions []codexapp.Session
+	targets  []string
 }
 
-func (host *fakeHost) ListThreadSummaries(context.Context) ([]appserverprobe.ThreadSummary, error) {
-	if host.listErr != nil {
-		return nil, host.listErr
-	}
-	return append([]appserverprobe.ThreadSummary(nil), host.threads...), nil
+func (source *ownershipSource) ListSessions(context.Context) ([]codexapp.Session, error) {
+	return source.sessions, nil
 }
 
-func (host *fakeHost) ResolveThreadModel(_ context.Context, threadID string) (string, error) {
-	host.resolveCalls = append(host.resolveCalls, threadID)
-	if host.resolveErr != nil {
-		return "", host.resolveErr
-	}
-	return "gpt-test", nil
-}
-
-func (host *fakeHost) Close() error {
-	host.closed = true
+func (source *ownershipSource) SendMessage(_ context.Context, target, _ string) error {
+	source.targets = append(source.targets, target)
 	return nil
 }
 
-func TestDescriptorIdentifiesCodexApp(t *testing.T) {
-	adapter := newAdapter(&fakeHost{}, true)
-	descriptor := adapter.Descriptor()
-	if descriptor.AgentType != "codex-app" || descriptor.DisplayName == "" {
-		t.Fatalf("descriptor = %#v", descriptor)
-	}
+func (*ownershipSource) Close() error { return nil }
+
+type ownershipCLI struct {
+	endpoints []agentbridge.Endpoint
+	targets   []string
 }
 
-func TestEndpointForThreadUsesAgentPrefixedAddress(t *testing.T) {
-	endpoint := endpointForThread(appserverprobe.ThreadSummary{
-		ID: "01abc", Title: "Fix bug", Status: "idle",
-	})
-	if endpoint.EndpointID != "01abc" || endpoint.NativeSessionID != "01abc" {
-		t.Fatalf("identity not equal: %#v", endpoint)
-	}
-	if endpoint.Address != "codex-app/01abc" {
-		t.Fatalf("address = %q, want agent-prefixed local address", endpoint.Address)
-	}
-	if endpoint.AgentType != AgentTypeCodexApp {
-		t.Fatalf("agent type = %q", endpoint.AgentType)
-	}
-	if endpoint.Status != agentbridge.StatusReady {
-		t.Fatalf("status = %q, want ready", endpoint.Status)
-	}
-	if endpoint.NativeStatus != "idle" {
-		t.Fatalf("native status = %q", endpoint.NativeStatus)
-	}
-	if !endpoint.Capabilities[agentbridge.CapabilityReceiveText] {
-		t.Fatal("receiveText capability missing")
-	}
+func (*ownershipCLI) Kind() agentbridge.AgentKind { return agentbridge.AgentCodexCLI }
+
+func (cli *ownershipCLI) ListEndpoints(context.Context) ([]agentbridge.Endpoint, error) {
+	return cli.endpoints, nil
 }
 
-func TestEndpointForThreadMapsBusyAndUnknown(t *testing.T) {
-	busy := endpointForThread(appserverprobe.ThreadSummary{ID: "1", Status: "working"})
-	if busy.Status != agentbridge.StatusBusy || busy.NativeStatus != "working" {
-		t.Fatalf("busy endpoint = %#v", busy)
-	}
-	unknown := endpointForThread(appserverprobe.ThreadSummary{ID: "2", Status: "error"})
-	if unknown.Status != agentbridge.StatusUnknown {
-		t.Fatalf("error endpoint = %#v", unknown)
-	}
+func (cli *ownershipCLI) Deliver(_ context.Context, address agentbridge.Address, _ agentbridge.MessageEnvelope) agentbridge.DeliveryResult {
+	cli.targets = append(cli.targets, address.EndpointID)
+	return agentbridge.Delivered("cli-turn")
 }
 
-func TestListEndpointsProjectsHostThreads(t *testing.T) {
-	host := &fakeHost{threads: []appserverprobe.ThreadSummary{
-		{ID: "b", Title: "Two", Status: "idle"},
-		{ID: "a", Title: "One", Status: "working"},
+func (*ownershipCLI) Health(context.Context) agentbridge.Health { return agentbridge.Ready() }
+func (*ownershipCLI) Close() error                              { return nil }
+
+func TestExplicitCLIOwnershipIsNotShadowedByAppHistory(t *testing.T) {
+	ctx := context.Background()
+	threadID := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	address := agentbridge.Address{NodeID: "node-a", EndpointID: threadID}
+	source := &ownershipSource{sessions: []codexapp.Session{
+		{ID: threadID, Title: "CLI in shared history", Status: "idle"},
+		{ID: "desktop-thread", Title: "Desktop", Status: "idle"},
 	}}
-	adapter := newAdapter(host, true)
-	endpoints, err := adapter.ListEndpoints(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	app := codexapp.New("node-a", source, io.Discard, threadID)
+	cli := &ownershipCLI{endpoints: []agentbridge.Endpoint{{
+		ID: threadID, NativeSessionID: threadID, Status: agentbridge.EndpointReady,
+		Capabilities: []agentbridge.Capability{agentbridge.CapabilityReceiveText}, Address: address,
+	}}}
+	registry := agentbridge.NewRegistry("node-a")
+	for _, adapter := range []agentbridge.Adapter{app, cli} {
+		if err := registry.Register(adapter); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if len(endpoints) != 2 {
-		t.Fatalf("endpoints = %d", len(endpoints))
-	}
-	if endpoints[0].EndpointID != "b" || endpoints[1].EndpointID != "a" {
-		t.Fatalf("projection order = %#v", endpoints)
-	}
-}
+	t.Cleanup(func() { _ = registry.Close() })
 
-func TestListEndpointsPropagatesHostError(t *testing.T) {
-	host := &fakeHost{listErr: errors.New("host down")}
-	adapter := newAdapter(host, true)
-	if _, err := adapter.ListEndpoints(context.Background()); err == nil {
-		t.Fatal("expected list error")
-	}
-}
+	t.Run("loaded CLI owns lookup and delivery", func(t *testing.T) {
+		endpoints, problems := registry.Endpoints(ctx)
+		if len(problems) != 0 || len(endpoints) != 2 {
+			t.Fatalf("expected two unambiguous endpoints: endpoints=%+v problems=%v", endpoints, problems)
+		}
+		endpoint, adapter, err := registry.Lookup(ctx, address)
+		if err != nil || endpoint.Agent != agentbridge.AgentCodexCLI || adapter != cli {
+			t.Fatalf("CLI ownership lost: endpoint=%+v adapter=%v err=%v", endpoint, adapter, err)
+		}
+		result := registry.Deliver(ctx, agentbridge.MessageEnvelope{
+			ID: "msg-cli", ProtocolVersion: agentbridge.ProtocolVersion,
+			TargetAddress: address.String(), Text: "hello CLI",
+		})
+		if !result.Delivered() || len(cli.targets) != 1 || cli.targets[0] != threadID || len(source.targets) != 0 {
+			t.Fatalf("CLI delivery used wrong writer: result=%+v cli=%v app=%v", result, cli.targets, source.targets)
+		}
+	})
 
-func TestHealthChecksHost(t *testing.T) {
-	adapter := newAdapter(&fakeHost{}, true)
-	if err := adapter.Health(context.Background()); err != nil {
-		t.Fatalf("health: %v", err)
-	}
-	broken := newAdapter(&fakeHost{listErr: errors.New("host down")}, true)
-	if err := broken.Health(context.Background()); err == nil {
-		t.Fatal("expected health failure")
-	}
-}
+	t.Run("unloaded CLI never falls back to App", func(t *testing.T) {
+		cli.endpoints = nil
+		endpoints, problems := registry.Endpoints(ctx)
+		if len(problems) != 0 || len(endpoints) != 1 || endpoints[0].ID != "desktop-thread" {
+			t.Fatalf("unloaded CLI became App: endpoints=%+v problems=%v", endpoints, problems)
+		}
+		if _, _, err := registry.Lookup(ctx, address); err == nil {
+			t.Fatal("unloaded CLI must not have a routable App endpoint")
+		}
+		result := registry.Deliver(ctx, agentbridge.MessageEnvelope{
+			ID: "msg-unloaded", ProtocolVersion: agentbridge.ProtocolVersion,
+			TargetAddress: address.String(), Text: "do not send to Desktop",
+		})
+		if result.Delivered() || len(source.targets) != 0 || len(cli.targets) != 1 {
+			t.Fatalf("unloaded CLI reached a writer: result=%+v cli=%v app=%v", result, cli.targets, source.targets)
+		}
+	})
 
-func TestCloseDelegatesToHost(t *testing.T) {
-	host := &fakeHost{}
-	adapter := newAdapter(host, true)
-	if err := adapter.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if !host.closed {
-		t.Fatal("host was not closed")
-	}
+	t.Run("unregistered Desktop still receives", func(t *testing.T) {
+		result := registry.Deliver(ctx, agentbridge.MessageEnvelope{
+			ID: "msg-desktop", ProtocolVersion: agentbridge.ProtocolVersion,
+			TargetAddress: "ra2a://node-a/desktop-thread", Text: "hello Desktop",
+		})
+		if !result.Delivered() || len(source.targets) != 1 || source.targets[0] != "desktop-thread" {
+			t.Fatalf("Desktop delivery changed: result=%+v app=%v", result, source.targets)
+		}
+	})
 }

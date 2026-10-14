@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,9 +17,15 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/ceasarXuu/RA2A/internal/codexcli"
 )
 
 const remoteFlag = "--remote"
+
+// managedHostTimeout bounds the usability gate that must pass before the
+// wrapper points a TUI at the RA2A-managed app-server.
+const managedHostTimeout = 3 * time.Second
 
 var subcommands = map[string]bool{
 	"agents": true, "exec": true, "review": true, "login": true, "logout": true,
@@ -56,6 +63,7 @@ func classify(args []string) plan {
 			return result
 		}
 	}
+	sawPositional := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--remote-auth-token-env" || strings.HasPrefix(arg, "--remote-auth-token-env=") {
@@ -77,7 +85,13 @@ func classify(args []string) plan {
 			continue
 		}
 		result.tuiMode = !subcommands[arg]
+		sawPositional = true
 		break
+	}
+	// A flags-only invocation is still a TUI launch (`codex --yolo`); only the
+	// informational flags pass through untouched.
+	if !sawPositional && !hasInfoFlag(args) {
+		result.tuiMode = true
 	}
 	result.injectRemote = result.tuiMode && !result.explicitRemote && len(args) > 0
 	// A bare `codex` opens the interactive composer and is also a TUI launch.
@@ -86,6 +100,16 @@ func classify(args []string) plan {
 		result.injectRemote = true
 	}
 	return result
+}
+
+func hasInfoFlag(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--help", "-h", "--version", "-V":
+			return true
+		}
+	}
+	return false
 }
 
 func codexHome() string {
@@ -121,44 +145,75 @@ func readySocket() string {
 	if err := json.Unmarshal(raw, &record); err != nil || record.SocketPath == "" {
 		return ""
 	}
-	if info, err := os.Lstat(record.SocketPath); err != nil || info.Mode()&os.ModeSocket == 0 {
+	// Codex 0.159+ may relocate the real socket outside CODEX_HOME to work
+	// around the AF_UNIX path limit and leave a symlink behind, so resolve the
+	// recorded path before the socket type check and hand the resolved path to
+	// --remote.
+	resolved := record.SocketPath
+	if target, err := filepath.EvalSymlinks(record.SocketPath); err == nil && target != "" {
+		resolved = target
+	}
+	if info, err := os.Stat(resolved); err != nil || info.Mode()&os.ModeSocket == 0 {
 		return ""
 	}
-	conn, err := net.DialTimeout("unix", record.SocketPath, 750*time.Millisecond)
+	conn, err := net.DialTimeout("unix", resolved, 750*time.Millisecond)
 	if err != nil {
 		return ""
 	}
 	_ = conn.Close()
-	return record.SocketPath
+	return resolved
 }
 
 func realCodex(exe string) (string, error) {
 	if path := os.Getenv("CODEX_WRAPPER_REAL_BIN"); path != "" {
-		return path, nil
+		if !sameExecutable(exe, path) {
+			return path, nil
+		}
+		return "", errors.New("CODEX_WRAPPER_REAL_BIN points to the wrapper itself")
 	}
-	sibling := filepath.Join(filepath.Dir(exe), "codex.bin")
-	if info, err := os.Stat(sibling); err == nil && !info.IsDir() {
-		return sibling, nil
+	directory := filepath.Dir(exe)
+	for _, name := range []string{"codex.bin", "codex.bin.exe", "codex.bin.cmd", "codex.bin.bat"} {
+		candidate := filepath.Join(directory, name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && !sameExecutable(exe, candidate) {
+			return candidate, nil
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(directory, ".ra2a-codex-native-path")); err == nil {
+		candidate := strings.TrimSpace(string(data))
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && !sameExecutable(exe, candidate) {
+			return candidate, nil
+		}
 	}
 	// Official standalone managed install layout (chatgpt.com/codex/install.sh).
 	standalone := filepath.Join(codexHome(), "packages", "standalone", "current", "bin", "codex")
 	if info, err := os.Stat(standalone); err == nil && !info.IsDir() {
 		return standalone, nil
 	}
-	resolved, err := exec.LookPath("codex")
-	if err != nil {
-		return "", err
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		for _, name := range []string{"codex", "codex.exe", "codex.cmd"} {
+			candidate := filepath.Join(dir, name)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() && !sameExecutable(exe, candidate) &&
+				!(runtime.GOOS == "windows" && strings.EqualFold(candidate, filepath.Join(directory, "codex.cmd"))) {
+				return candidate, nil
+			}
+		}
 	}
-	self, selfErr := filepath.EvalSymlinks(exe)
-	probe, probeErr := filepath.EvalSymlinks(resolved)
-	if selfErr == nil && probeErr == nil && self == probe {
-		return "", errors.New("wrapper resolved to itself; install the real codex as a sibling named codex.bin or set CODEX_WRAPPER_REAL_BIN")
-	}
-	return resolved, nil
+	return "", errors.New("native Codex not found outside RA2A wrapper; reinstall to restore its native path")
+}
+
+func sameExecutable(self, candidate string) bool {
+	selfPath, selfErr := filepath.EvalSymlinks(self)
+	candidatePath, candidateErr := filepath.EvalSymlinks(candidate)
+	return selfErr == nil && candidateErr == nil && selfPath == candidatePath
 }
 
 func run(exe string, args []string) error {
-	cmd := exec.Command(exe, args...)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" && (strings.EqualFold(filepath.Ext(exe), ".cmd") || strings.EqualFold(filepath.Ext(exe), ".bat")) {
+		cmd = exec.Command("cmd.exe", append([]string{"/d", "/c", exe}, args...)...)
+	} else {
+		cmd = exec.Command(exe, args...)
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -180,21 +235,22 @@ func main() {
 	}
 	args := os.Args[1:]
 	plan := classify(args)
-	if plan.injectRemote {
-		socket := readySocket()
-		if socket == "" {
-			fmt.Fprintln(os.Stderr, "codex-wrapper: RA2A managed app-server unavailable; starting native codex")
-		} else {
-			args = append([]string{remoteFlag, "unix://" + socket}, args...)
-		}
-	}
 	real, err := realCodex(exe)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "codex-wrapper:", err)
 		os.Exit(1)
 	}
-	if runtime.GOOS == "windows" {
-		real = appendExeSuffix(real)
+	if plan.injectRemote {
+		socket := readySocket()
+		if socket == "" {
+			fmt.Fprintln(os.Stderr, "codex-wrapper: RA2A managed app-server unavailable; starting native codex")
+		} else {
+			originalCount := len(args)
+			args = managedArgs(real, socket, args)
+			if len(args) > originalCount {
+				fmt.Fprintf(os.Stderr, "codex_wrapper_managed_fallback socket=%s reason=official_daemon_unavailable\n", socket)
+			}
+		}
 	}
 	if err := run(real, args); err != nil {
 		fmt.Fprintln(os.Stderr, "codex-wrapper:", err)
@@ -202,11 +258,24 @@ func main() {
 	}
 }
 
-// appendExeSuffix is a no-op stub kept for future Windows shim parity; the
-// wrapper binary itself is cross-platform and exec works with exact paths.
-func appendExeSuffix(path string) string {
-	if strings.EqualFold(filepath.Ext(path), ".exe") {
-		return path
+func managedArgs(real, socket string, args []string) []string {
+	// A current official CLI shares its own daemon. Only proxy through RA2A
+	// when that native ownership path is unavailable.
+	probeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	state, err := codexcli.DetectDaemon(probeCtx, real)
+	if err == nil && state.Running {
+		return args
 	}
-	return path + ".exe"
+	// The managed host runs with the RA2A service environment, not the caller's
+	// shell environment. Capturing the TUI into a host that cannot serve the
+	// caller (missing proxy settings, different CODEX_HOME, unreachable
+	// backend) silently breaks the user's session, so require a usable host.
+	gateCtx, gateCancel := context.WithTimeout(context.Background(), managedHostTimeout)
+	defer gateCancel()
+	if err := codexcli.CheckManagedHost(gateCtx, socket, codexHome()); err != nil {
+		fmt.Fprintf(os.Stderr, "codex_wrapper_managed_skipped socket=%s reason=%q\n", socket, err.Error())
+		return args
+	}
+	return append([]string{remoteFlag, "unix://" + socket}, args...)
 }

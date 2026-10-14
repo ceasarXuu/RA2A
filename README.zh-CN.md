@@ -37,11 +37,11 @@ flowchart LR
 | Agent / App | 状态 | 说明 |
 |---|---|---|
 | **Codex App** | ✅ 当前支持 | macOS 与 Windows 跨设备真实验收通过 |
-| Codex CLI | 🧭 计划支持 | 接入 CLI session |
+| Codex CLI | 🧪 预览支持 | 适配器与启动器已发布，全交叉互通矩阵仍待验收 |
 | Claude Code | 🧭 计划支持 | 接入对应会话接口 |
 | Claude Desktop App | 🧭 计划支持 | 支持桌面会话定向投递 |
-| OpenCode | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
-| Pi | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
+| OpenCode | 🧪 预览支持 | 普通 TUI 自动附着、OpenCode-only 可用；全交叉互通矩阵仍待验收 |
+| Pi | 🚧 开发中 | [原生扩展接入](docs/pi-support/plan.md)；Linux 隔离验证通过，多平台验收待完成 |
 | DeepSeek Harness | 🧭 计划支持 | 接入 RA2A 发现与消息协议 |
 
 ### 平台
@@ -61,7 +61,7 @@ flowchart LR
 
 ## 快速开始
 
-无需 Git、Go、源码目录或管理员权限。目标设备需要已安装 Codex App。
+无需 Git、Go、源码目录或管理员权限。目标设备需有至少一种可用的已支持宿主（Codex App、Codex CLI 或 OpenCode）。
 
 ### macOS / Linux
 
@@ -80,6 +80,11 @@ ra2a
 ```
 
 首次运行：设置设备名称 → 保存自动生成的 6 位 PIN → 在其他设备执行 `ra2a pin <PIN>`。看到 `status: running` 后服务已转入后台，Codex 会自动获得 RA2A MCP 工具。
+
+安装器自动发现已安装的 Codex CLI 和 OpenCode，安装对应 wrapper；已有配置的设备
+会自动重启 daemon。普通 `opencode` TUI 会接入 RA2A，无需传入额外 wrapper 开关或
+`--ra2a`。只安装 OpenCode 的设备同样可完成首次 `ra2a` 引导；已经打开的 TUI 需要
+用户主动重开以加载新 wrapper。
 
 Windows 正式版安装在 `$HOME\.local\bin`，配置保存在 `$HOME\.config\ra2a`。daemon 由当前登录用户的计划任务托管，关闭安装终端或 Codex 工具终端不会停止服务；daemon 异常退出后会由健康触发器自动恢复。
 
@@ -112,7 +117,7 @@ Mac / Planner
 | `ra2a name [名称]` | 设置设备名称 |
 | `ra2a pin [6位PIN]` | 设置共享 PIN |
 | `ra2a version` | 查看版本 |
-| `ra2a update` | 校验并更新到最新正式 Release |
+| `ra2a update` | 更新主命令；从 v0.0.15 升级后需重新运行正式安装器以安装宿主 launcher |
 
 `ra2a stop` 可恢复：执行 `ra2a` 或 `ra2a restart` 即可重新启动。`ra2a exit` 还会移除平台服务定义和 Codex MCP 注册，但不会删除二进制或配置。Codex 负责管理 stdio MCP 子进程，已打开的 MCP 进程会在 Codex 关闭连接后退出。
 
@@ -185,3 +190,4 @@ GitHub Release 是正式发版流程。推送 `v*` tag 后，[Release 工作流]
 - [极简闭环设计](prd/2026-08-31-ra2a-minimal-model.md)
 - [Codex App 可行性实验](experiments/README.md)
 - [局域网发现与握手实验](experiments/network/README.md)
+- [Linux 单机矩阵沙盒设计（Draft，未实现）](docs/matrix-sandbox/plan.md)

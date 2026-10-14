@@ -199,7 +199,6 @@ func TestHostRestartsManagedProcessWithoutWaitingForRequest(t *testing.T) {
 	}
 }
 
-
 func TestReportManagedExitRecordsUnexpectedExit(t *testing.T) {
 	var output bytes.Buffer
 	reportManagedExit(&output, 4312, errors.New("exit status 7"), nil)

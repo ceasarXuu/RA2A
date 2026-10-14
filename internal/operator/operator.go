@@ -11,19 +11,78 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
+	"github.com/ceasarXuu/RA2A/internal/ochost"
+	"github.com/ceasarXuu/RA2A/internal/pi"
 )
 
-const Version = "v0.0.14"
+const Version = "v0.0.18"
 
 type Config struct {
-	NodeID string `json:"nodeId"`
-	Name   string `json:"name"`
-	PIN    string `json:"pin"`
-	Codex  string `json:"codex"`
+	NodeID   string `json:"nodeId"`
+	Name     string `json:"name"`
+	PIN      string `json:"pin"`
+	Codex    string `json:"codex,omitempty"`
+	OpenCode string `json:"opencode,omitempty"`
+	Pi       string `json:"pi,omitempty"`
+	// CLISessions lists the Codex CLI thread IDs this node publishes. Ownership
+	// of a CLI thread cannot be read back from the host, so adoption is an
+	// explicit operator decision recorded here rather than a guess.
+	CLISessions []string `json:"cliSessions,omitempty"`
+	// OpenCodeURL is the shared OpenCode server both RA2A and the user's TUI
+	// attach to. It must stay on loopback.
+	OpenCodeURL string `json:"opencodeUrl,omitempty"`
+}
+
+// AdoptCLISession records a Codex CLI thread ID as published by this node.
+func AdoptCLISession(threadID string) (Config, error) {
+	config, err := Load()
+	if err != nil {
+		return Config{}, err
+	}
+	for _, existing := range config.CLISessions {
+		if existing == threadID {
+			return config, nil
+		}
+	}
+	config.CLISessions = append(config.CLISessions, threadID)
+	sort.Strings(config.CLISessions)
+	if err := Save(config); err != nil {
+		return Config{}, err
+	}
+	return config, nil
+}
+
+// ReleaseCLISession stops publishing a Codex CLI thread ID.
+func ReleaseCLISession(threadID string) (Config, error) {
+	config, err := Load()
+	if err != nil {
+		return Config{}, err
+	}
+	remaining := config.CLISessions[:0]
+	for _, existing := range config.CLISessions {
+		if existing != threadID {
+			remaining = append(remaining, existing)
+		}
+	}
+	config.CLISessions = remaining
+	if err := Save(config); err != nil {
+		return Config{}, err
+	}
+	return config, nil
+}
+
+// MailboxPath returns the directory holding per-recipient mailboxes.
+func MailboxPath() (string, error) {
+	path, err := ConfigPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(path), "mailbox"), nil
 }
 
 func ConfigPath() (string, error) {
@@ -106,8 +165,8 @@ func Save(config Config) error {
 }
 
 func Validate(config Config) error {
-	if config.NodeID == "" || strings.TrimSpace(config.Name) == "" || config.Codex == "" {
-		return errors.New("node ID, name, and Codex path are required")
+	if config.NodeID == "" || strings.TrimSpace(config.Name) == "" || (config.Codex == "" && config.OpenCode == "" && config.Pi == "") {
+		return errors.New("node ID, name, and at least one supported harness are required")
 	}
 	if len(config.PIN) != 6 || strings.IndexFunc(config.PIN, func(r rune) bool {
 		return r > 127 || !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
@@ -131,6 +190,10 @@ func SetupInteractive(input io.Reader, output io.Writer) error {
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	config = DetectHarnesses(Config{})
+	if config.Codex == "" && config.OpenCode == "" && config.Pi == "" {
+		return errors.New("no supported harness found: install Codex, OpenCode or Pi, then run ra2a again")
+	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		return err
@@ -148,11 +211,7 @@ func SetupInteractive(input io.Reader, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	codex, err := findCodex()
-	if err != nil {
-		return err
-	}
-	config = Config{NodeID: hostname, Name: name, PIN: pin, Codex: codex}
+	config.NodeID, config.Name, config.PIN = hostname, name, pin
 	if err := Save(config); err != nil {
 		return err
 	}
@@ -165,6 +224,7 @@ func SetupInteractive(input io.Reader, output io.Writer) error {
 }
 
 func Setup(config Config) error {
+	config = DetectHarnesses(config)
 	if err := Save(config); err != nil {
 		return err
 	}
@@ -207,6 +267,11 @@ func Stop() (Config, error) {
 	if err := codexhost.CleanupManaged(codexhost.DefaultSocketPath()); err != nil {
 		return config, fmt.Errorf("cleanup managed Codex host: %w", err)
 	}
+	// The shared OpenCode server is owned by this daemon, not by whichever TUI
+	// happened to start it, so it is reclaimed alongside the Codex host.
+	if err := ochost.CleanupShared(OpenCodeOwnerPath()); err != nil {
+		return config, fmt.Errorf("cleanup shared OpenCode server: %w", err)
+	}
 	return config, nil
 }
 
@@ -221,10 +286,20 @@ func Exit() (Config, error) {
 	if err := codexhost.CleanupManaged(codexhost.DefaultSocketPath()); err != nil {
 		return config, fmt.Errorf("cleanup managed Codex host: %w", err)
 	}
+	// The shared OpenCode server is owned by this daemon, not by whichever TUI
+	// happened to start it, so it is reclaimed alongside the Codex host.
+	if err := ochost.CleanupShared(OpenCodeOwnerPath()); err != nil {
+		return config, fmt.Errorf("cleanup shared OpenCode server: %w", err)
+	}
 	// The MCP process is owned by Codex and exits with its stdio connection. Removing
 	// the registration prevents Codex from starting another RA2A MCP process.
-	_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
-	return config, nil
+	if config.Codex != "" {
+		_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
+	}
+	if err := UnregisterOpenCodeMCP(); err != nil {
+		return config, err
+	}
+	return config, pi.Uninstall()
 }
 
 func serviceRunning() error {
@@ -310,40 +385,6 @@ func generatePIN() (string, error) {
 		raw[i] = alphabet[int(raw[i])%len(alphabet)]
 	}
 	return string(raw), nil
-}
-
-func findCodex() (string, error) {
-	if path, err := exec.LookPath("codex"); err == nil {
-		return filepath.Abs(path)
-	}
-	if runtime.GOOS == "darwin" {
-		path := "/Applications/ChatGPT.app/Contents/Resources/codex"
-		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-			return path, nil
-		}
-	}
-	return "", errors.New("Codex executable not found in PATH")
-}
-
-func InstallAndStart(config Config) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	_ = exec.Command(config.Codex, "mcp", "remove", "ra2a").Run()
-	if output, err := exec.Command(config.Codex, "mcp", "add", "ra2a", "--", executable, "mcp").CombinedOutput(); err != nil {
-		return fmt.Errorf("register Codex MCP: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		return installDarwin(executable)
-	case "linux":
-		return installLinux(executable)
-	case "windows":
-		return installWindows(executable)
-	default:
-		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
-	}
 }
 
 func installDarwin(executable string) error {

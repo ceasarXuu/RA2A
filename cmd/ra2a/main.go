@@ -7,30 +7,60 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/ceasarXuu/RA2A/internal/agentbridge"
 	"github.com/ceasarXuu/RA2A/internal/codexapp"
 	"github.com/ceasarXuu/RA2A/internal/codexhost"
 	"github.com/ceasarXuu/RA2A/internal/control"
+	"github.com/ceasarXuu/RA2A/internal/desktopipc"
 	"github.com/ceasarXuu/RA2A/internal/lannode"
+	"github.com/ceasarXuu/RA2A/internal/mailbox"
 	"github.com/ceasarXuu/RA2A/internal/mcpserver"
+	"github.com/ceasarXuu/RA2A/internal/ochost"
 	"github.com/ceasarXuu/RA2A/internal/operator"
 )
 
 type sessionSource interface {
 	ListSessions(context.Context) ([]lannode.Session, error)
-	ListEndpoints(context.Context) ([]lannode.EndpointView, error)
 	SendMessage(context.Context, string, string) error
 	Close() error
 }
 
 type sessionSourceFactory func(context.Context, string, string, io.Writer) (sessionSource, error)
+
+type codexSessionSource struct {
+	host        *codexhost.Host
+	desktopSend desktopMessageSender
+}
+
+// codexAppBridge adapts the injected Codex App session source to the adapter
+// contract, keeping the existing source factory as the single injection point.
+type codexAppBridge struct{ source sessionSource }
+
+func (bridge codexAppBridge) ListSessions(ctx context.Context) ([]codexapp.Session, error) {
+	sessions, err := bridge.source.ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	converted := make([]codexapp.Session, 0, len(sessions))
+	for _, session := range sessions {
+		converted = append(converted, codexapp.Session{ID: session.ID, Title: session.Title, Status: session.Status})
+	}
+	return converted, nil
+}
+
+func (bridge codexAppBridge) SendMessage(ctx context.Context, target, prompt string) error {
+	return bridge.source.SendMessage(ctx, target, prompt)
+}
+
+func (bridge codexAppBridge) Close() error { return bridge.source.Close() }
+
+type messageSender func(context.Context, string, string) error
+type desktopMessageSender func(context.Context, string, string, desktopipc.StartModelResolver) error
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -39,7 +69,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "mcp" {
 		err = runMCP(ctx, os.Args[2:], os.Stdin, os.Stdout)
 	} else {
-		err = run(ctx, os.Args[1:], os.Stdout, startRegistrySessionSource)
+		err = run(ctx, os.Args[1:], os.Stdout, startCodexSessionSource)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -98,6 +128,28 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		}
 		fmt.Fprintf(output, "name: %s\nstatus: exited\n", config.Name)
 		return nil
+	case "opencode-mcp-unregister":
+		return operator.UnregisterOpenCodeMCP()
+	case "opencode-server-cleanup":
+		return ochost.CleanupShared(operator.OpenCodeOwnerPath())
+	case "mailbox":
+		return runMailbox(args[1:], output)
+	case "adopt-cli", "release-cli":
+		if len(args) != 2 || args[1] == "" {
+			return fmt.Errorf("%s requires an id", args[0])
+		}
+		config, err := applySessionCommand(args[0], args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "cli-session=%s published=%d\n", args[1], len(config.CLISessions))
+		return nil
+	case "pi-unregister":
+		return unregisterPi()
+	case "pi":
+		return runPi(ctx, args[1:])
+	case "opencode":
+		return runOpencodeAttach(ctx, args[1:], output)
 	case "setup":
 		flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 		flags.SetOutput(io.Discard)
@@ -105,10 +157,12 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		id := flags.String("node-id", "", "stable node ID")
 		name := flags.String("name", "", "display name")
 		codex := flags.String("codex", "", "Codex executable")
+		opencodePath := flags.String("opencode", "", "OpenCode executable")
+		piPath := flags.String("pi", "", "Pi executable")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		config := operator.Config{NodeID: *id, Name: *name, PIN: *pin, Codex: *codex}
+		config := operator.Config{NodeID: *id, Name: *name, PIN: *pin, Codex: *codex, OpenCode: *opencodePath, Pi: *piPath}
 		if err := operator.Setup(config); err != nil {
 			return err
 		}
@@ -142,7 +196,7 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		return run(ctx, []string{"serve", "--pin", config.PIN, "--id", config.NodeID, "--name", config.Name, "--codex", config.Codex, "--control-address", controlAddress}, output, startSource)
 	}
 	if len(args) == 0 || (args[0] != "selftest" && args[0] != "serve" && args[0] != "send") {
-		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|selftest|serve|send> [options]")
+		return errors.New("usage: ra2a <setup|restart|stop|exit|name|pin|version|update|adopt-cli|release-cli|mailbox|opencode|pi|selftest|serve|send> [options]")
 	}
 
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
@@ -170,27 +224,23 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 		*name = *id
 	}
 
-	source, err := startSource(ctx, *codexPath, *appServerSocket, os.Stderr)
+	adopted, err := adoptedCLISessions()
 	if err != nil {
-		return fmt.Errorf("start managed Codex App Server: %w", err)
+		return err
 	}
-	defer source.Close()
+	store, err := openMailboxStore()
+	if err != nil {
+		return err
+	}
+	registry, err := buildRegistry(ctx, *id, *codexPath, *appServerSocket, os.Stderr, startSource, adopted)
+	if err != nil {
+		return err
+	}
+	defer registry.Close()
 	node, err := lannode.Start(ctx, lannode.Config{
-		ID: *id, Name: *name, PIN: *pin, Sessions: source.ListSessions,
-		Endpoints: func(ctx context.Context) ([]lannode.EndpointView, error) {
-			views, err := source.ListEndpoints(ctx)
-			if err != nil {
-				return nil, err
-			}
-			prefixed := make([]lannode.EndpointView, 0, len(views))
-			for _, view := range views {
-				view.Address = "ra2a://" + *id + "/" + view.Address
-				prefixed = append(prefixed, view)
-			}
-			return prefixed, nil
-		},
+		ID: *id, Name: *name, PIN: *pin, Sessions: registryAdapter{registry: registry}.ListSessions,
 		SendMessage: func(ctx context.Context, message lannode.Message) error {
-			return source.SendMessage(ctx, message.TargetSessionID, formatIncomingMessage(message))
+			return deliverOverLAN(ctx, *id, registry, store, message)
 		},
 	})
 	if err != nil {
@@ -199,7 +249,13 @@ func run(ctx context.Context, args []string, output io.Writer, startSource sessi
 	defer node.Close()
 
 	if args[0] == "serve" {
-		if err := control.Start(ctx, *controlAddress, control.NewCoordinator(*id, node)); err != nil {
+		coordinator := control.NewAdapterCoordinator(*id, node, registryAdapter{registry: registry})
+		store, err := openMailboxStore()
+		if err != nil {
+			return err
+		}
+		coordinator = coordinator.WithMailbox(store)
+		if err := control.Start(ctx, *controlAddress, coordinator, store); err != nil {
 			return err
 		}
 		fmt.Fprintf(output, "node=ra2a://%s status=running\n", *id)
@@ -256,161 +312,172 @@ func commandValue(args []string, input io.Reader, output io.Writer) (string, err
 	return strings.TrimSpace(value), nil
 }
 
-func formatIncomingMessage(message lannode.Message) string {
-	var prompt strings.Builder
-	prompt.WriteString("[RA2A message]\n")
-	if message.Source != "" {
-		fmt.Fprintf(&prompt, "from: %s\n", message.Source)
+// buildRegistry wires one adapter per supported agent. Adding an agent means
+// registering one more adapter here; the router, LAN layer and MCP layer stay
+// unchanged.
+// runMailbox is the client side of the mailbox. It deliberately uses only the
+// loopback control plane, so any harness can read its mail without an adapter,
+// a live session or a model call.
+func runMailbox(args []string, output io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("mailbox requires read, send or list")
 	}
-	if message.MessageID != "" {
-		fmt.Fprintf(&prompt, "message-id: %s\n", message.MessageID)
+	flags := flag.NewFlagSet("mailbox", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	controlURL := flags.String("control-url", control.DefaultEndpoint, "local RA2A daemon control URL")
+	recipient := flags.String("to", "", "mailbox recipient")
+	from := flags.String("from", "", "sender address recorded on the message")
+	text := flags.String("message", "", "message text (send only)")
+	peek := flags.Bool("peek", false, "read without marking messages as read")
+	limit := flags.Int("limit", 0, "maximum messages to return")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
 	}
-	prompt.WriteString("\n")
-	prompt.WriteString(message.Text)
-	return prompt.String()
+	client := control.NewClient(*controlURL)
+	switch args[0] {
+	case "list":
+		names, err := client.ListMailboxes(context.Background())
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			fmt.Fprintln(output, name)
+		}
+		return nil
+	case "read":
+		if *recipient == "" {
+			return errors.New("mailbox read requires --to")
+		}
+		result, err := client.ReadMailbox(context.Background(), control.MailboxReadRequest{
+			To: *recipient, Limit: *limit, Peek: *peek,
+		})
+		if err != nil {
+			return err
+		}
+		for _, message := range result.Messages {
+			fmt.Fprintf(output, "--- %s from %s at %s\n%s\n",
+				message.ID, message.From, message.SentAt.Format(time.RFC3339), message.Text)
+		}
+		fmt.Fprintf(output, "pending=%d returned=%d\n", result.Pending, len(result.Messages))
+		return nil
+	case "send":
+		if *recipient == "" || *text == "" {
+			return errors.New("mailbox send requires --to and --message")
+		}
+		return client.SendMailbox(context.Background(), control.MailboxSendRequest{
+			To: *recipient, Text: *text, From: *from,
+		})
+	default:
+		return fmt.Errorf("unknown mailbox command %q", args[0])
+	}
+}
+
+func applySessionCommand(command, id string) (operator.Config, error) {
+	switch command {
+	case "adopt-cli":
+		return operator.AdoptCLISession(id)
+	case "release-cli":
+		return operator.ReleaseCLISession(id)
+	}
+	return operator.Config{}, fmt.Errorf("unknown session command %q", command)
+}
+
+// openMailboxStore places the mailbox under the RA2A config directory so it
+// survives restarts and inherits the config directory's private permissions.
+func openMailboxStore() (*mailbox.Store, error) {
+	path, err := operator.MailboxPath()
+	if err != nil {
+		return nil, err
+	}
+	store, err := mailbox.OpenStore(path)
+	if err != nil {
+		return nil, fmt.Errorf("open mailbox store: %w", err)
+	}
+	return store, nil
+}
+
+// adoptedCLISessions reads the operator-recorded CLI thread IDs. A missing or
+// unreadable config simply publishes nothing rather than failing daemon start.
+func adoptedCLISessions() ([]string, error) {
+	config, err := operator.Load()
+	if err != nil {
+		return nil, nil
+	}
+	return config.CLISessions, nil
 }
 
 func defaultAppServerSocket() string {
 	return codexhost.DefaultSocketPath()
 }
 
-func startRegistrySessionSource(ctx context.Context, codexPath, appServerSocket string, stderr io.Writer) (sessionSource, error) {
-	adapter, err := codexapp.New(ctx, codexhost.Config{
+func startCodexSessionSource(ctx context.Context, codexPath, appServerSocket string, stderr io.Writer) (sessionSource, error) {
+	host, err := codexhost.Start(ctx, codexhost.Config{
 		CodexPath: codexPath, SocketPath: appServerSocket, Stderr: stderr,
-	}, true /* desktopEnabled */)
+	})
 	if err != nil {
 		return nil, err
 	}
-	registry := agentbridge.NewRegistry()
-	if err := registry.Register(adapter); err != nil {
-		_ = adapter.Close()
-		return nil, err
-	}
-	return &registrySessionSource{registry: registry}, nil
+	return &codexSessionSource{host: host, desktopSend: sendDesktopMessage}, nil
 }
 
-// sourceRegistry is the slice of agentbridge.Registry the session source
-// needs; it is an interface so main tests can inject a fake.
-type sourceRegistry interface {
-	ListEndpoints(context.Context) ([]agentbridge.EndpointRef, error)
-	Deliver(context.Context, string, string) (agentbridge.DeliveryResult, error)
-	Close() error
-}
-
-// registrySessionSource adapts the agentbridge Registry world to the legacy
-// LAN sessionSource seam. Endpoint addresses are adapter-local
-// ("<agent>/<id>"); they gain a node prefix only when published over the LAN
-// and lose it again when a message arrives for this node.
-type registrySessionSource struct {
-	registry sourceRegistry
-}
-
-func (source *registrySessionSource) ListSessions(ctx context.Context) ([]lannode.Session, error) {
-	refs, err := source.registry.ListEndpoints(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return sessionsFromRefs(refs), nil
-}
-
-// ListEndpoints projects registry endpoints onto LAN endpoint views with
-// adapter-local addresses ("<agent>/<id>"). The daemon adds its node prefix
-// when publishing the views over the LAN.
-func (source *registrySessionSource) ListEndpoints(ctx context.Context) ([]lannode.EndpointView, error) {
-	refs, err := source.registry.ListEndpoints(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return endpointViewsFromRefs(refs), nil
-}
-
-func (source *registrySessionSource) SendMessage(ctx context.Context, target, prompt string) error {
-	address := localAddress(target)
-	result, err := source.registry.Deliver(ctx, address, prompt)
-	if err != nil {
-		return err
-	}
-	return deliveryResultToError(result, target)
-}
-
-func (source *registrySessionSource) Close() error {
-	return source.registry.Close()
-}
-
-// endpointViewsFromRefs projects registry endpoints onto LAN endpoint views.
-// Each address stays adapter-local ("<agent>/<id>"); the daemon prefixes its
-// node ID before publishing so peers can round-trip the full target.
-func endpointViewsFromRefs(refs []agentbridge.EndpointRef) []lannode.EndpointView {
-	views := make([]lannode.EndpointView, 0, len(refs))
-	for _, ref := range refs {
-		capabilities := make([]string, 0, len(ref.Endpoint.Capabilities))
-		for capability := range ref.Endpoint.Capabilities {
-			capabilities = append(capabilities, string(capability))
+func (source *codexSessionSource) SendMessage(ctx context.Context, target, prompt string) error {
+	var desktop messageSender
+	if source.desktopSend != nil {
+		desktop = func(ctx context.Context, target, prompt string) error {
+			return source.desktopSend(ctx, target, prompt, source.host.ResolveThreadModel)
 		}
-		views = append(views, lannode.EndpointView{
-			ID:           ref.Endpoint.EndpointID,
-			AgentType:    string(ref.Endpoint.AgentType),
-			Capabilities: capabilities,
-			Address:      ref.Endpoint.Address,
-		})
 	}
-	return views
+	return sendWithDesktopPreference(ctx, target, prompt, source.host.SendMessage, desktop)
 }
 
-// localAddress normalizes an incoming target into the adapter-local address
-// space. Full LAN addresses (ra2a://<node>/<agent>/<id>) shed their node
-// prefix; legacy bare session IDs (from older peers or the CLI --session
-// flag) fall back to the default agent family.
-func localAddress(target string) string {
-	parsed, err := url.Parse(target)
-	if err != nil || parsed.Scheme != "ra2a" || parsed.Host == "" {
-		if target == "" {
-			return target
-		}
-		return string(codexapp.AgentTypeCodexApp) + "/" + target
+func sendWithDesktopPreference(ctx context.Context, target, prompt string, managed, desktop messageSender) error {
+	if desktop == nil {
+		return fmt.Errorf("%w: start Codex Desktop and retry", control.ErrDesktopOwnerUnavailable)
 	}
-	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/"), "/")
-	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
-		return parts[0] + "/" + parts[1]
-	}
-	return target
-}
-
-// sessionsFromRefs projects registry endpoints onto the legacy LAN session
-// model. Identity stays native (Session.ID == thread ID).
-func sessionsFromRefs(refs []agentbridge.EndpointRef) []lannode.Session {
-	sessions := make([]lannode.Session, 0, len(refs))
-	for _, ref := range refs {
-		status := ref.Endpoint.NativeStatus
-		if status == "" {
-			status = string(ref.Endpoint.Status)
-		}
-		sessions = append(sessions, lannode.Session{
-			ID: ref.Endpoint.EndpointID, Title: ref.Endpoint.Title, Status: status,
-			AgentType: string(ref.Endpoint.AgentType),
-		})
-	}
-	return sessions
-}
-
-// deliveryResultToError converts an agentbridge outcome back into the
-// LAN/control error vocabulary that lannode and the MCP control HTTP handler
-// key on (sentinel wrapping plus SESSION_BUSY / TARGET_NOT_FOUND substrings).
-func deliveryResultToError(result agentbridge.DeliveryResult, target string) error {
-	switch result.Code {
-	case agentbridge.Delivered:
+	desktopErr := desktop(ctx, target, prompt)
+	if desktopErr == nil {
 		return nil
-	case agentbridge.StartRequired:
-		return fmt.Errorf("%w: %s", control.ErrDesktopOwnerUnavailable, result.Detail)
-	case agentbridge.DeliveryUnknown:
-		return fmt.Errorf("%w: %s", control.ErrDeliveryUnknown, result.Detail)
-	case agentbridge.Busy:
-		return fmt.Errorf("%w: %s", codexhost.ErrSessionBusy, result.Detail)
-	case agentbridge.NotFound:
-		return fmt.Errorf("TARGET_NOT_FOUND: no session %q: %s", target, result.Detail)
-	default: // unreachable, unsupported, adapter_failed
-		return fmt.Errorf("%s: %s", result.Code, result.Detail)
 	}
+	if desktopipc.IsDeliveryUnknown(desktopErr) {
+		return fmt.Errorf("%w: %v", control.ErrDeliveryUnknown, desktopErr)
+	}
+	if !desktopipc.IsNotDelivered(desktopErr) {
+		return desktopErr
+	}
+	return fmt.Errorf("%w: start Codex Desktop and retry: %v", control.ErrDesktopOwnerUnavailable, desktopErr)
 }
 
-var _ sessionSource = (*registrySessionSource)(nil)
+func sendDesktopMessage(ctx context.Context, target, prompt string, resolveModel desktopipc.StartModelResolver) error {
+	connection, _, err := desktopipc.DialContext(ctx, "")
+	if err != nil {
+		return &desktopipc.NotDeliveredError{Cause: err}
+	}
+	defer connection.Close()
+	client := desktopipc.New(connection)
+	if err := client.Initialize(ctx); err != nil {
+		return &desktopipc.NotDeliveredError{Cause: err}
+	}
+	_, err = client.SendMessage(ctx, target, prompt, desktopipc.NewMessageID(), resolveModel)
+	return err
+}
+
+func (source *codexSessionSource) ListSessions(ctx context.Context) ([]lannode.Session, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	threads, err := source.host.ListThreadSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessions := make([]lannode.Session, 0, len(threads))
+	for _, thread := range threads {
+		sessions = append(sessions, lannode.Session{
+			ID: thread.ID, Title: thread.Title, Status: thread.Status,
+		})
+	}
+	return sessions, nil
+}
+
+func (source *codexSessionSource) Close() error {
+	return source.host.Close()
+}

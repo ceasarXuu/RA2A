@@ -1,128 +1,126 @@
-// Package codexapp implements the codex-app agentbridge adapter: it owns the
-// managed Codex App Server host (session discovery and thread-model
-// resolution) and delivers messages through Codex Desktop IPC, which is the
-// verified writer owner of App sessions. LAN/control data models
-// intentionally stay outside this package.
+// Package codexapp isolates the Codex App host integration behind the agent
+// adapter boundary. It owns the Desktop IPC writer and the managed App Server
+// fallback that RA2A already ships, without the router or the MCP layer learning
+// anything about either host path.
 package codexapp
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"log/slog"
 
 	"github.com/ceasarXuu/RA2A/internal/agentbridge"
-	"github.com/ceasarXuu/RA2A/internal/appserverprobe"
-	"github.com/ceasarXuu/RA2A/internal/codexhost"
+	"github.com/ceasarXuu/RA2A/internal/desktopipc"
 )
 
-// AgentTypeCodexApp is the agentbridge identity of this adapter.
-const AgentTypeCodexApp agentbridge.AgentType = "codex-app"
-
-// sessionHost is the slice of codexhost.Host this adapter needs; it is an
-// interface so adapter tests never start a managed process.
-type sessionHost interface {
-	ListThreadSummaries(context.Context) ([]appserverprobe.ThreadSummary, error)
-	ResolveThreadModel(context.Context, string) (string, error)
+// SessionSource is the pre-adapter Codex App surface. Keeping it as an injected
+// dependency lets the adapter be tested without a live host and lets the daemon
+// decide, at wiring time, which managed host backs it.
+type SessionSource interface {
+	ListSessions(context.Context) ([]Session, error)
+	SendMessage(context.Context, string, string) error
 	Close() error
 }
 
-// Adapter implements agentbridge.AgentAdapter for the Codex App / Desktop
-// host family. Deliver goes through Desktop IPC (desktop-first policy); the
-// managed host is used for discovery and model resolution only and is never a
-// write fallback, matching the verified v0.0.10-v0.0.14 semantics.
+type Session struct {
+	ID     string
+	Title  string
+	Status string
+}
+
 type Adapter struct {
-	host           sessionHost
-	desktopEnabled bool
+	nodeID          string
+	source          SessionSource
+	logger          *slog.Logger
+	excludedThreads map[string]struct{}
 }
 
-// New eagerly starts the managed Codex App Server host (same lifecycle as the
-// historical daemon session source) and returns a ready adapter.
-// desktopEnabled=false disables Desktop IPC delivery: Deliver then reports
-// start_required without dialing, for future headless installs.
-func New(ctx context.Context, hostConfig codexhost.Config, desktopEnabled bool) (*Adapter, error) {
-	host, err := codexhost.Start(ctx, hostConfig)
-	if err != nil {
-		return nil, err
+// Excluded thread IDs retain another adapter's explicit ownership even when that
+// adapter does not currently publish them. App history includes CLI threads too.
+func New(nodeID string, source SessionSource, stderr io.Writer, excludedThreadIDs ...string) *Adapter {
+	excluded := make(map[string]struct{}, len(excludedThreadIDs))
+	for _, threadID := range excludedThreadIDs {
+		excluded[threadID] = struct{}{}
 	}
-	return newAdapter(host, desktopEnabled), nil
-}
-
-// newAdapter builds an adapter over an injected host; used by New and tests.
-func newAdapter(host sessionHost, desktopEnabled bool) *Adapter {
-	return &Adapter{host: host, desktopEnabled: desktopEnabled}
-}
-
-// Descriptor returns the static identity of this adapter.
-func (adapter *Adapter) Descriptor() agentbridge.AdapterDescriptor {
-	return agentbridge.AdapterDescriptor{
-		AgentType:   AgentTypeCodexApp,
-		DisplayName: "Codex App",
+	return &Adapter{
+		nodeID: nodeID, source: source,
+		logger:          slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		excludedThreads: excluded,
 	}
 }
 
-// ListEndpoints projects every discovered App thread onto the uniform
-// endpoint model. The endpoint identity is transitional: endpointID,
-// nativeSessionID and address all equal the native thread ID until Phase 2
-// introduces typed endpoint addresses.
+func (adapter *Adapter) Kind() agentbridge.AgentKind { return agentbridge.AgentCodexApp }
+
 func (adapter *Adapter) ListEndpoints(ctx context.Context) ([]agentbridge.Endpoint, error) {
-	threads, err := adapter.host.ListThreadSummaries(ctx)
+	sessions, err := adapter.source.ListSessions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	endpoints := make([]agentbridge.Endpoint, 0, len(threads))
-	for _, thread := range threads {
-		endpoints = append(endpoints, endpointForThread(thread))
+	endpoints := make([]agentbridge.Endpoint, 0, len(sessions))
+	for _, session := range sessions {
+		if _, excluded := adapter.excludedThreads[session.ID]; excluded {
+			continue
+		}
+		status := agentbridge.EndpointReady
+		if session.Status != "" && session.Status != "idle" {
+			status = agentbridge.EndpointBusy
+		}
+		title := session.Title
+		if title == "" {
+			title = session.ID
+		}
+		endpoints = append(endpoints, agentbridge.Endpoint{
+			ID: session.ID, Agent: agentbridge.AgentCodexApp, NativeSessionID: session.ID,
+			Title: title, Status: status,
+			Capabilities: []agentbridge.Capability{
+				agentbridge.CapabilityReceiveText,
+				agentbridge.CapabilityReplyAddress,
+				agentbridge.CapabilityInteractiveSafe,
+			},
+			Address: agentbridge.Address{NodeID: adapter.nodeID, EndpointID: session.ID},
+		})
 	}
 	return endpoints, nil
 }
 
-// Deliver sends one text message to the endpoint's native thread through the
-// Codex Desktop owner.
-func (adapter *Adapter) Deliver(ctx context.Context, endpoint agentbridge.Endpoint, text string) (agentbridge.DeliveryResult, error) {
-	if err := ctx.Err(); err != nil {
-		return agentbridge.DeliveryResult{}, err
+func (adapter *Adapter) Deliver(ctx context.Context, address agentbridge.Address, envelope agentbridge.MessageEnvelope) agentbridge.DeliveryResult {
+	err := adapter.source.SendMessage(ctx, address.EndpointID, agentbridge.RenderIncomingText(envelope))
+	if err == nil {
+		return agentbridge.Delivered("")
 	}
-	return adapter.deliverDesktop(ctx, endpoint.NativeSessionID, text)
+	return mapHostError(err)
 }
 
-// Health reports whether the adapter can serve discovery; best effort through
-// the managed host.
-func (adapter *Adapter) Health(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	_, err := adapter.host.ListThreadSummaries(ctx)
-	return err
-}
-
-// Close shuts down the managed Codex App Server host.
-func (adapter *Adapter) Close() error {
-	if adapter.host == nil {
-		return nil
-	}
-	return adapter.host.Close()
-}
-
-// endpointForThread is the pure thread-to-endpoint projection.
-func endpointForThread(thread appserverprobe.ThreadSummary) agentbridge.Endpoint {
-	status := agentbridge.StatusBusy
-	switch thread.Status {
-	case "idle":
-		status = agentbridge.StatusReady
-	case "error", "unknown", "":
-		status = agentbridge.StatusUnknown
-	}
-	return agentbridge.Endpoint{
-		EndpointID:      thread.ID,
-		AgentType:       AgentTypeCodexApp,
-		NativeSessionID: thread.ID,
-		Title:           thread.Title,
-		Status:          status,
-		Capabilities:    map[agentbridge.Capability]bool{agentbridge.CapabilityReceiveText: true},
-		// Address is the adapter-local opaque target "<agent>/<id>". The node
-		// prefix is added by the daemon when the address crosses the LAN; it is
-		// never part of the adapter's own address space.
-		Address:      string(AgentTypeCodexApp) + "/" + thread.ID,
-		NativeStatus: thread.Status,
+// mapHostError keeps the Desktop owner's availability and delivery-uncertainty
+// semantics intact while presenting them through the unified result codes.
+func mapHostError(err error) agentbridge.DeliveryResult {
+	switch {
+	case desktopipc.IsDeliveryUnknown(err):
+		return agentbridge.DeliveryResult{
+			Code: agentbridge.ResultUnknown, NativeErrorClass: "delivery_unknown", Detail: err.Error(),
+		}
+	case desktopipc.IsNotDelivered(err):
+		return agentbridge.DeliveryResult{
+			Code: agentbridge.ResultStartRequired, NativeErrorClass: "owner_unavailable", Detail: err.Error(),
+		}
+	default:
+		return agentbridge.DeliveryResult{
+			Code: agentbridge.ResultUnknown, NativeErrorClass: "host_error", Detail: fmt.Sprint(err),
+		}
 	}
 }
 
-var _ agentbridge.AgentAdapter = (*Adapter)(nil)
+func (adapter *Adapter) Health(context.Context) agentbridge.Health { return agentbridge.Ready() }
+
+func (adapter *Adapter) Close() error { return adapter.source.Close() }
+
+// ResolveCaller recognises Codex Desktop MCP calls, which carry the calling
+// thread in `_meta`. The identity is accepted only when this node publishes it.
+func (adapter *Adapter) ResolveCaller(_ context.Context, caller agentbridge.CallerContext) (agentbridge.Address, error) {
+	threadID, _ := caller.Meta["threadId"].(string)
+	if threadID == "" {
+		return agentbridge.Address{}, agentbridge.CallerHint("Codex Desktop call metadata did not include threadId")
+	}
+	return agentbridge.Address{NodeID: adapter.nodeID, EndpointID: threadID}, nil
+}
