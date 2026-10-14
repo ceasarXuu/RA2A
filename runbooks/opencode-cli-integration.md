@@ -8,6 +8,9 @@
 - Owner 选择先恢复原生启动：包装器检测到 v2 或更高版本时，普通 TUI 启动显示兼容提示并完整透传原生参数；显式 `--ra2a` 或 `ra2a opencode` 返回暂不支持的明确错误。daemon 不注册已识别的 v2 适配器；共享宿主健康检查要求会话 JSON 数组，拒绝网页、null 和损坏的响应。未识别的版本输出保持原有路径，再由实际接口校验就绪。
 - 检查用户实际 shell 的 `type -a opencode` / `whence -va opencode`，本机同时有 `~/.opencode/bin/opencode` 原生路径及 `~/.local/bin/opencode` RA2A wrapper。部署只替换已安装的 RA2A 二进制，备份旧版本；原生 OpenCode 和会话数据保持原样。完整 v2 接入仍待独立实现。
 - 一手资料：[v2 API](https://dev.opencode.ai/v2/docs/api)、[CLI 命令](https://dev.opencode.ai/v2/docs/cli/commands/)、[插件配置](https://dev.opencode.ai/v2/docs/cli/plugins/)。
+- 本机部署修复 `9c3d44a` 后，普通包装器启动实测进入原生 `2.0.28` TUI，未发送业务 prompt，随后正常退出；两种显式 RA2A 接入命令均返回暂不支持。daemon PID `98467`，本机节点 `ready`、57 个现有会话、0 个 OpenCode 端点，日志明确记录 `opencode integration unavailable`。
+- launchd 的默认 PATH 不含 Homebrew；配置若指向 RA2A wrapper 且没有原生路径记录，`--version` 会失败。使用包装器已有的 `~/.local/bin/.ra2a-opencode-native-path` 机制记录 `/opt/homebrew/bin/opencode`，并以 launchd 的精简 PATH 验证 `--version`，不要把探测失败当作版本识别成功。旧二进制备份为 `opencode.pre-v2-recovery-9c3d44a` / `ra2a.pre-v2-recovery-9c3d44a`。
+- 验证：`TMPDIR=/private/tmp go test ./cmd/oc-wrapper ./internal/ochost ./cmd/ra2a`、版本格式矩阵、`go vet` 对应包均通过；真实 v2 TUI smoke 通过。完整 v2 消息投递不在本次恢复范围内。
 
 适用范围：`opencode --ra2a`、`opencode --yolo --ra2a`、OpenCode wrapper 升级和卸载。
 
