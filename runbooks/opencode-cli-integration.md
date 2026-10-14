@@ -5,7 +5,8 @@
 - `v2.0.28` 与当前 v1 适配器不兼容。现场旧 wrapper（`38589fb`）创建会话时报 `select OpenCode session: create OpenCode session: 405 Method Not Allowed`。
 - 旧 `GET /session` 在 v2 返回 `200 text/html`（网页入口），不能仅根据状态码判断共享服务就绪；无效 JSON 的 `POST /session` 返回 405，可在不创建会话的情况下验证此故障。用 `curl --noproxy '*'` 排除代理因素，并用监听 PID 与 owner 文件核对服务归属。
 - v2 会话接口改为 `/api/session`，现场该接口返回 `401 Authentication required`。同时原生 CLI 改用 `--server`，旧 `attach` 子命令消失；旧 `OPENCODE_TUI_CONFIG` focus 插件不可假定仍有效。因此只增加 `/api` 前缀不足以修复。
-- 恢复原生启动与完成 RA2A v2 接入是两个不同验收范围；当前仅完成诊断，尚未部署修复。检查用户实际 shell 的 `type -a opencode` / `whence -va opencode`，本机同时有 `~/.opencode/bin/opencode` 原生路径及 `~/.local/bin/opencode` RA2A wrapper。
+- Owner 选择先恢复原生启动：包装器检测到 v2 或更高版本时，普通 TUI 启动显示兼容提示并完整透传原生参数；显式 `--ra2a` 或 `ra2a opencode` 返回暂不支持的明确错误。daemon 不注册已识别的 v2 适配器；共享宿主健康检查要求会话 JSON 数组，拒绝网页、null 和损坏的响应。未识别的版本输出保持原有路径，再由实际接口校验就绪。
+- 检查用户实际 shell 的 `type -a opencode` / `whence -va opencode`，本机同时有 `~/.opencode/bin/opencode` 原生路径及 `~/.local/bin/opencode` RA2A wrapper。部署只替换已安装的 RA2A 二进制，备份旧版本；原生 OpenCode 和会话数据保持原样。完整 v2 接入仍待独立实现。
 - 一手资料：[v2 API](https://dev.opencode.ai/v2/docs/api)、[CLI 命令](https://dev.opencode.ai/v2/docs/cli/commands/)、[插件配置](https://dev.opencode.ai/v2/docs/cli/plugins/)。
 
 适用范围：`opencode --ra2a`、`opencode --yolo --ra2a`、OpenCode wrapper 升级和卸载。

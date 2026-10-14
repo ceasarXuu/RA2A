@@ -92,8 +92,12 @@ func Reachable(ctx context.Context, rawURL string) bool {
 		return false
 	}
 	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-	return response.StatusCode == http.StatusOK
+	if response.StatusCode != http.StatusOK {
+		return false
+	}
+	payload, err := io.ReadAll(io.LimitReader(response.Body, 16<<20))
+	var sessions []json.RawMessage
+	return err == nil && json.Unmarshal(payload, &sessions) == nil && sessions != nil
 }
 
 // Start supervises an OpenCode server. If a healthy server already answers on

@@ -55,12 +55,22 @@ func startOpencodeAdapter(ctx context.Context, nodeID string, stderr io.Writer) 
 	if url == "" {
 		return nil, errOpenCodeDisabled
 	}
+	executable := opencodeExecutable()
+	if config, err := operator.Load(); err == nil && config.OpenCode != "" {
+		executable = config.OpenCode
+	}
+	if err := ochost.CheckCompatibility(ctx, executable); err != nil {
+		return nil, err
+	}
 	adapter := opencode.New(nodeID, opencode.Config{BaseURL: url, Stderr: stderr, ClientName: "ra2a"}, stderr)
 	adapter.Watch(ctx)
 	return adapter, nil
 }
 
 func runOpencodeAttach(ctx context.Context, args []string, output io.Writer) error {
+	if err := ochost.CheckCompatibility(ctx, opencodeExecutable()); err != nil {
+		return err
+	}
 	url, _ := opencodeSettings()
 	host, err := ochost.Start(ctx, ochost.Config{
 		Executable: opencodeExecutable(), URL: url, Stderr: os.Stderr,

@@ -95,6 +95,13 @@ func run(ctx context.Context, args []string, stdout, stderr *os.File) error {
 	if settings.executable == "" {
 		return errors.New("native OpenCode binary not found outside the RA2A wrapper")
 	}
+	if err := ochost.CheckCompatibility(ctx, settings.executable); err != nil {
+		if containsRA2A(args) {
+			return err
+		}
+		fmt.Fprintf(stderr, "opencode: %v; launching native OpenCode\n", err)
+		return passthrough(args, stdout, stderr)
+	}
 	attach, autoApprove, err := translateAttachArgs(withoutRA2A(args))
 	if err != nil {
 		return err
