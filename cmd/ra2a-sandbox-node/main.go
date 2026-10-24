@@ -1,4 +1,6 @@
-// ra2a-sandbox-node is an explicit Linux test worker, not an installer or daemon.
+//go:build linux || darwin
+
+// ra2a-sandbox-node is an explicit test worker, not an installer or daemon.
 package main
 
 import (
@@ -23,7 +25,6 @@ import (
 	"github.com/ceasarXuu/RA2A/internal/opencode"
 	"github.com/ceasarXuu/RA2A/internal/pi"
 	"github.com/ceasarXuu/RA2A/internal/sandbox"
-	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -32,27 +33,10 @@ func main() {
 	}
 }
 
-func validateIsolation() error {
-	current, err := os.Readlink("/proc/self/ns/net")
-	if err != nil || os.Getenv("RA2A_SANDBOX_HOST_NETNS") == "" || current == os.Getenv("RA2A_SANDBOX_HOST_NETNS") {
-		return fmt.Errorf("sandbox requires a private network namespace")
-	}
-	for _, name := range []string{"HOME", "CODEX_HOME", "RA2A_PI_SESSION_DIR", "RA2A_OC_SESSION_DIR"} {
-		value := filepath.Clean(os.Getenv(name))
-		if value != "/home/sandbox" && !strings.HasPrefix(value, "/home/sandbox/") {
-			return fmt.Errorf("%s must be under private /home/sandbox", name)
-		}
-	}
-	if os.Getenv("RA2A_SANDBOX_BUDGET_SOCKET") != "/run/budget.sock" {
-		return fmt.Errorf("sandbox budget socket must be exclusively mounted at /run/budget.sock")
-	}
-	return nil
-}
-
 func run() error {
 	// Same-PID-namespace lease observation remains possible; accessing this
 	// worker's private mount namespace via /proc/PID/root or fd is prohibited.
-	if err := unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0); err != nil {
+	if err := hardenController(); err != nil {
 		return err
 	}
 	if err := validateIsolation(); err != nil {
@@ -63,22 +47,42 @@ func run() error {
 	id := os.Getenv("RA2A_SANDBOX_NODE_ID")
 	kind := agentbridge.AgentKind(os.Getenv("RA2A_SANDBOX_KIND"))
 	var adapter agentbridge.Adapter
+	var extra []agentbridge.Adapter
 	var cli *codexcli.Adapter
-	switch kind {
-	case agentbridge.AgentCodexCLI:
-		if !filepath.IsAbs(os.Getenv("RA2A_SANDBOX_CODEX_BIN")) {
-			return fmt.Errorf("sandbox requires an explicit absolute native Codex binary")
+	if os.Getenv("RA2A_SANDBOX_DIAGNOSTIC") == "1" {
+		diagnostic, err := newDiagnosticAdapter(id, kind, os.Getenv("RA2A_SANDBOX_DIAGNOSTIC_OUT"))
+		if err != nil {
+			return err
 		}
-		cli = codexcli.New(id, codexcli.Config{CodexPath: os.Getenv("RA2A_SANDBOX_CODEX_BIN"), CodexHome: os.Getenv("CODEX_HOME"), Stderr: os.Stderr})
-		adapter = cli
-	case agentbridge.AgentOpenCode:
-		oc := opencode.New(id, opencode.Config{BaseURL: "http://127.0.0.1:4099"}, os.Stderr)
-		oc.Watch(ctx)
-		adapter = oc
-	case agentbridge.AgentPi:
-		adapter = pi.New(id, pi.Directory())
-	default:
-		return fmt.Errorf("sandbox Agent kind %q unsupported; no substitute endpoint", kind)
+		adapter = diagnostic
+		if kind == agentbridge.AgentCodexCLI && os.Getenv("RA2A_SANDBOX_APP_DIAGNOSTIC") == "1" {
+			appDiagnostic, err := newDiagnosticAdapter(id, agentbridge.AgentCodexApp, os.Getenv("RA2A_SANDBOX_DIAGNOSTIC_OUT"))
+			if err != nil {
+				return err
+			}
+			extra = append(extra, appDiagnostic)
+		}
+	} else {
+		switch kind {
+		case agentbridge.AgentCodexCLI:
+			if !filepath.IsAbs(os.Getenv("RA2A_SANDBOX_CODEX_BIN")) {
+				return fmt.Errorf("sandbox requires an explicit absolute native Codex binary")
+			}
+			cli = codexcli.New(id, codexcli.Config{CodexPath: os.Getenv("RA2A_SANDBOX_CODEX_BIN"), CodexHome: os.Getenv("CODEX_HOME"), Stderr: os.Stderr})
+			adapter = cli
+		case agentbridge.AgentOpenCode:
+			baseURL := os.Getenv("RA2A_SANDBOX_OPENCODE_URL")
+			if baseURL == "" {
+				baseURL = "http://127.0.0.1:4099"
+			}
+			oc := opencode.New(id, opencode.Config{BaseURL: baseURL}, os.Stderr)
+			oc.Watch(ctx)
+			adapter = oc
+		case agentbridge.AgentPi:
+			adapter = pi.New(id, pi.Directory())
+		default:
+			return fmt.Errorf("sandbox Agent kind %q unsupported; no substitute endpoint", kind)
+		}
 	}
 	guarded, err := sandbox.Wrap(adapter, os.Getenv("RA2A_SANDBOX_BUDGET_SOCKET"))
 	if err != nil {
@@ -88,15 +92,17 @@ func run() error {
 	if err := registry.Register(guarded); err != nil {
 		return err
 	}
-	if directory := os.Getenv("RA2A_SANDBOX_APP_SOCKET_DIR"); directory != "" {
-		if kind != agentbridge.AgentCodexCLI || directory != "/run/app-bridges" {
-			return fmt.Errorf("private shared Codex App bridge directory required")
-		}
-		app, err := sandbox.Wrap(&sandbox.App{NodeID: id, Directory: directory}, os.Getenv("RA2A_SANDBOX_BUDGET_SOCKET"))
+	for _, additional := range extra {
+		wrapped, err := sandbox.Wrap(additional, os.Getenv("RA2A_SANDBOX_BUDGET_SOCKET"))
 		if err != nil {
 			return err
 		}
-		if err := registry.Register(app); err != nil {
+		if err := registry.Register(wrapped); err != nil {
+			return err
+		}
+	}
+	if directory := os.Getenv("RA2A_SANDBOX_APP_SOCKET_DIR"); directory != "" {
+		if err := registerAppBridge(registry, id, kind, directory, os.Getenv("RA2A_SANDBOX_BUDGET_SOCKET")); err != nil {
 			return err
 		}
 	}
@@ -104,6 +110,9 @@ func run() error {
 	view := registryView{registry}
 	var withheld sync.Map
 	node, err := lannode.Start(ctx, lannode.Config{ID: id, Name: id, PIN: os.Getenv("RA2A_SANDBOX_PIN"), Sessions: view.sessions,
+		ServiceName:        os.Getenv("RA2A_SANDBOX_SERVICE_NAME"),
+		BindAddresses:      sandboxBindAddresses(),
+		AdvertiseAddresses: sandboxAdvertiseAddresses(),
 		SendMessage: func(ctx context.Context, message lannode.Message) error {
 			result := registry.Deliver(ctx, agentbridge.MessageEnvelope{ID: message.MessageID, ProtocolVersion: agentbridge.ProtocolVersion,
 				SourceAddress: message.Source, TargetAddress: "ra2a://" + id + "/" + message.TargetSessionID, Text: message.Text, CreatedAt: time.Now().UTC()})
@@ -128,7 +137,7 @@ func run() error {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"pid": os.Getpid(), "start": sandbox.AppProcessStart(os.Getpid())})
+		_ = json.NewEncoder(w).Encode(map[string]any{"pid": os.Getpid(), "start": appProcessStart(os.Getpid())})
 	})
 	mux.HandleFunc("/sandbox/withhold", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -168,7 +177,7 @@ func run() error {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"registered":true}`))
 	})
-	server := &http.Server{Addr: "127.0.0.1:47321", Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: controlAddress(), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, stop := context.WithTimeout(context.Background(), 3*time.Second)

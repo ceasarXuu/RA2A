@@ -42,6 +42,13 @@ type Config struct {
 	PIN         string
 	Sessions    func(context.Context) ([]Session, error)
 	SendMessage func(context.Context, Message) error
+
+	// Test-only overrides. Empty values keep the production mDNS service type
+	// and the per-interface IPv4 address set. Sandbox callers use them to keep a
+	// same-host matrix off the production _ra2a._udp namespace.
+	ServiceName        string
+	BindAddresses      func() ([]string, error)
+	AdvertiseAddresses []string
 }
 
 type Peer struct {
@@ -110,7 +117,11 @@ func Start(parent context.Context, config Config) (*Node, error) {
 	}
 	port := n.bindings.port
 	n.peers[config.ID] = Peer{ID: config.ID, Name: config.Name, Address: net.JoinHostPort("127.0.0.1", fmt.Sprint(port))}
-	serviceType := zeroconf.NewType(serviceName)
+	name := config.ServiceName
+	if name == "" {
+		name = serviceName
+	}
+	serviceType := zeroconf.NewType(name)
 	service := zeroconf.NewService(serviceType, config.ID, uint16(port))
 	service.Text = []string{"version=1", "id=" + config.ID, "name=" + config.Name}
 	advertiser, err := zeroconf.New().
@@ -142,7 +153,11 @@ func (n *Node) startServer() error {
 	if err := router.Handle("/v1/messages", mux.HandlerFunc(n.handleMessage)); err != nil {
 		return fmt.Errorf("register message handler: %w", err)
 	}
-	bindings, err := newBoundServers(n.key, router, localIPv4)
+	list := n.config.BindAddresses
+	if list == nil {
+		list = localIPv4
+	}
+	bindings, err := newBoundServersAdvertised(n.key, router, list, n.config.AdvertiseAddresses)
 	if err != nil {
 		return err
 	}

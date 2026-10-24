@@ -23,17 +23,22 @@ type boundServer struct {
 // Each socket is bound to its advertised IP, so DTLS replies cannot acquire
 // another interface's source address through the wildcard routing path.
 type boundServers struct {
-	mu     sync.Mutex
-	port   int
-	closed bool
-	key    []byte
-	router *mux.Router
-	list   func() ([]string, error)
-	active map[string]boundServer
+	mu        sync.Mutex
+	port      int
+	closed    bool
+	key       []byte
+	router    *mux.Router
+	list      func() ([]string, error)
+	advertise []string
+	active    map[string]boundServer
 }
 
 func newBoundServers(key []byte, router *mux.Router, list func() ([]string, error)) (*boundServers, error) {
-	b := &boundServers{key: key, router: router, list: list, active: make(map[string]boundServer)}
+	return newBoundServersAdvertised(key, router, list, nil)
+}
+
+func newBoundServersAdvertised(key []byte, router *mux.Router, list func() ([]string, error), advertise []string) (*boundServers, error) {
+	b := &boundServers{key: key, router: router, list: list, advertise: advertise, active: make(map[string]boundServer)}
 	if err := b.bind("127.0.0.1"); err != nil {
 		return nil, err
 	}
@@ -99,6 +104,20 @@ func (b *boundServers) reconcile() bool {
 }
 
 func (b *boundServers) interfaceAddrs(iface *net.Interface) ([]net.Addr, error) {
+	if len(b.advertise) > 0 {
+		// The sandbox runs several nodes on one host. Publish only the loopback
+		// address on every multicast interface so peers dial the shared host
+		// address while their DTLS ports remain distinct.
+		var published []net.Addr
+		for _, raw := range b.advertise {
+			ip := net.ParseIP(raw)
+			if ip == nil || ip.To4() == nil {
+				continue
+			}
+			published = append(published, &net.IPNet{IP: ip.To4(), Mask: net.CIDRMask(32, 32)})
+		}
+		return published, nil
+	}
 	addrs, err := iface.Addrs()
 	if err != nil {
 		return nil, err

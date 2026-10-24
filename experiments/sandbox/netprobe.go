@@ -1,3 +1,5 @@
+//go:build linux
+
 // Diagnostic only: run inside a private network namespace. No Agent or model.
 package main
 

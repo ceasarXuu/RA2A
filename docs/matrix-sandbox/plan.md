@@ -2,8 +2,8 @@
 
 - Product Authority：[PRD Confirmed Product Decisions](prd.md#confirmed-product-decisions)。
 - Applicable Decisions：PD1、PD2、PD3、PD4、PD5；Codex 所有权语义引用既有 PD36/PD37。
-- 状态：Linux隔离预检查与真实矩阵运行器已交付；真实验收结果INCOMPLETE，App适配、CLI恢复及人工观察仍有资格限制。
-- 更新：2026-10-12。基础设施主题独立于版本目录，不自行指定发布版本。
+- 状态：Linux隔离预检查与真实矩阵运行器已交付；真实验收结果INCOMPLETE，App适配、CLI恢复及人工观察仍有资格限制。macOS 平台基础与零模型预检已交付；真实 macOS 四端矩阵尚未执行，App 仍 BLOCKED_ADAPTER。
+- 更新：2026-10-25。基础设施主题独立于版本目录，不自行指定发布版本。
 
 ## Execution Contract
 
@@ -259,3 +259,11 @@
 - 第7轮脚本自身原始结果NOT_RUN/RuntimeError，CLI1/App1/OC0/Pi0，没有内部人工结果；保留原始失败，不伪造manual标记或改判脚本PASS。Owner人工确认另列；原PID已退出，自有资源引用检查及账本原字节门禁后移除残留私有凭据树，恢复清理证据另存。共启7/10轮，无超额/退款/旧标记重放。
 - 监督失败诊断缺口已原地修复：report保存既有safe pid/returncode/timed_out；零模型三路故障边界PASS，runtime5PASS/2SKIP，生产总行数不增加。第7轮历史退出原因UNKNOWN，不据新诊断追认。
 - Linux本轮验收收口；Mac/Windows矩阵、真实跨设备网络验收、生产Issue2及版本发布不由此自动计作通过。
+
+### 2026-10-25 macOS 平台基础与零模型预检
+
+- 平台差异：macOS 无 unprivileged network/mount namespace，`127.0.0.2` 需 root，loopback 组播不可达；因此未复用 Linux namespace/bwrap/Xephyr 启动器。原生路径采用 `sandbox-exec` 文件边界、每节点私有 HOME/XDG/TMP、测试专用 mDNS 类型 `_ra2a-sandbox._udp`、只通告 `127.0.0.1`、独立 DTLS 端口与独立控制端口；不声称内核级网络隔离。
+- 生产代码仅增加测试专用开关：`lannode.Config.ServiceName`、`BindAddresses`、`AdvertiseAddresses`，默认值保持正式 `_ra2a._udp` 与逐接口 IPv4 行为。`cmd/ra2a-sandbox-node` 共享主逻辑拆到 `main.go`/`env.go`/`diagnostic.go`，Linux 校验保留在 `isolation_linux.go`，macOS 校验在 `isolation_darwin.go`；macOS App stdio 桥未实现，继续返回 `BLOCKED_ADAPTER`。
+- 新增 `experiments/sandbox/macos_preflight.py` 一条命令：构建 Darwin worker；验证 sandbox-exec 私有写入/正式读取与写入拒绝；私有 HOME 下探测 codex/opencode/pi 版本；真实 mDNS+DTLS/CoAP 三节点发现；4 类 Agent 的 16 向诊断投递；重复 message-id 不重投；每类第 11 条预算拒绝；模型 relay 非白名单 CONNECT 拒绝；正式 8 项认证/配置终点哈希不变。全程 `credentialsImported=false`、`paidInputs=0`、`modelCalls=0`。
+- 本机实际结果（2026-10-25，`.cache/sandbox-macos/preflight-004`，源码 `0cbe20b` + 本阶段未提交修改）：`preflightStatus=PASS_WITH_LIMITATIONS`、`matrixStatus=DRY_RUN_PASS`、16/16 诊断格 PASS、重复/预算/relay/隔离 PASS、正式认证配置终点哈希相同；worker、私有凭据树和临时根目录已回收，正式 RA2A daemon 与 ChatGPT 未停止或重启。
+- 资格边界：诊断接收器不是真实客户端；真实 Codex CLI/App、OpenCode、Pi 的 TUI/GUI、真实模型、工具回环、恢复与人工继续均未执行。mDNS 仍会向宿主 LAN 发出测试类型组播，正式 `_ra2a._udp` 服务不被加入；真实 macOS 矩阵需另起一轮并单独批准额度。
