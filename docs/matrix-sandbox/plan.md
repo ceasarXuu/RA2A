@@ -2,7 +2,7 @@
 
 - Product Authority：[PRD Confirmed Product Decisions](prd.md#confirmed-product-decisions)。
 - Applicable Decisions：PD1、PD2、PD3、PD4、PD5；Codex 所有权语义引用既有 PD36/PD37。
-- 状态：Linux隔离预检查与真实矩阵运行器已交付；真实验收结果INCOMPLETE，App适配、CLI恢复及人工观察仍有资格限制。macOS 平台基础与零模型预检已交付；真实 macOS 四端矩阵尚未执行，App 仍 BLOCKED_ADAPTER。
+- 状态：Linux隔离预检查与真实矩阵运行器已交付；真实验收结果INCOMPLETE，App适配、CLI恢复及人工观察仍有资格限制。macOS 平台基础与零模型预检已交付；OpenCode v2 当前 BLOCKED_ADAPTER，真实 macOS 四端矩阵尚未执行，App 仍 BLOCKED_ADAPTER。
 - 更新：2026-10-25。基础设施主题独立于版本目录，不自行指定发布版本。
 
 ## Execution Contract
@@ -267,3 +267,10 @@
 - 新增 `experiments/sandbox/macos_preflight.py` 一条命令：构建 Darwin worker；验证 sandbox-exec 私有写入/正式读取与写入拒绝；私有 HOME 下探测 codex/opencode/pi 版本；真实 mDNS+DTLS/CoAP 三节点发现；4 类 Agent 的 16 向诊断投递；重复 message-id 不重投；每类第 11 条预算拒绝；模型 relay 非白名单 CONNECT 拒绝；正式 8 项认证/配置终点哈希不变。全程 `credentialsImported=false`、`paidInputs=0`、`modelCalls=0`。
 - 本机实际结果（2026-10-25，`.cache/sandbox-macos/preflight-004`，源码 `0cbe20b` + 本阶段未提交修改）：`preflightStatus=PASS_WITH_LIMITATIONS`、`matrixStatus=DRY_RUN_PASS`、16/16 诊断格 PASS、重复/预算/relay/隔离 PASS、正式认证配置终点哈希相同；worker、私有凭据树和临时根目录已回收，正式 RA2A daemon 与 ChatGPT 未停止或重启。
 - 资格边界：诊断接收器不是真实客户端；真实 Codex CLI/App、OpenCode、Pi 的 TUI/GUI、真实模型、工具回环、恢复与人工继续均未执行。mDNS 仍会向宿主 LAN 发出测试类型组播，正式 `_ra2a._udp` 服务不被加入；真实 macOS 矩阵需另起一轮并单独批准额度。
+
+### 2026-10-25 OpenCode v2 兼容性缺口修正
+
+- 本机三个 OpenCode 入口均为 `v2.0.28`：`~/.local/bin/opencode` 是 RA2A 的 Go wrapper，`/opt/homebrew/bin/opencode` 与 `~/.opencode/bin/opencode` 是原生 v2。RA2A 配置的 `opencode` 指向 wrapper；`ochost.CheckCompatibility` 对 `>=2` 返回 `ErrUnsupportedVersion`，正式 daemon 日志已记录 `opencode integration unavailable: ... (detected opencode v2.0.28)`，因此当前节点没有 OpenCode adapter。
+- 原 `preflight-004` 的 `opencode` 项只执行 `--version`，把退出码 0 记为 PASS，未启动 `opencode serve`、未经过 `ochost` 版本门禁、也未读取官方 `service.json` 的 remote 状态；这是预检覆盖缺口，不是 OpenCode 启动成功。Linux 套件使用的 v1 `serve+attach` 语义也不适用于 v2 的 background service/remote 模式。
+- 修正后 `preflight-006`：`preflightStatus=FAIL`、`blockingAdapters=["opencode"]`、`clientVersionProbes=BLOCKED_ADAPTER`；同一预检中 `opencode serve` 在私有 HOME/独立端口真实启动 PASS，说明原生 v2 本身可启动，阻塞点是 RA2A 的 v2 门禁而非端口占用。官方 `~/.config/opencode/service.json` 报告 `remoteConfigured=true`、`remoteAccepted=true`、`passwordConfigured=true`，但只记录布尔值，未复制 route/password；该 remote 状态未投影到沙盒，因此 remote 配对冲突仍不能在当前沙盒中复现。
+- 结论：macOS 真实四端矩阵当前不能包含 OpenCode；需先完成 RA2A 对 OpenCode v2 的适配，或在该平台显式使用 v1 二进制并重新验证。后续预检不得仅凭 `--version` 判定客户端可用。

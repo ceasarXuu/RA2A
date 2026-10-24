@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import signal
@@ -25,7 +26,6 @@ import uuid
 import budget
 import relay
 
-
 PROJECT = Path(__file__).resolve().parents[2]
 HOME = Path.home()
 KINDS = ('codex-cli', 'codex-app', 'opencode', 'pi')
@@ -36,18 +36,14 @@ PROTECTED = ('.codex/auth.json', '.codex/config.toml', '.config/ra2a/config.json
 SENSITIVE = ('.codex', '.config/ra2a', '.config/opencode', '.local/share/opencode',
              '.local/state/opencode', '.cache/opencode', '.pi')
 
-
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
 
 def protected(home):
     return {name: digest(home/name) for name in PROTECTED if (home/name).is_file()}
 
-
 def quote(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"') + '"'
-
 
 def sandbox_profile(root, home):
     denied = ' '.join('(subpath '+quote(home/name)+')' for name in SENSITIVE)
@@ -58,12 +54,10 @@ def sandbox_profile(root, home):
             f'(allow file-read* (subpath {quote(root)}))\n'
             f'(allow file-write* (subpath {quote(root)}))\n')
 
-
 def free_port():
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         return listener.getsockname()[1]
-
 
 def http_json(port, path, body=None, timeout=10):
     data = None if body is None else json.dumps(body).encode()
@@ -74,14 +68,12 @@ def http_json(port, path, body=None, timeout=10):
     with opener.open(request, timeout=timeout) as response:
         return json.loads(response.read() or b'{}')
 
-
 def make_dirs(root, label):
     base = root/'nodes'/label
     for name in ('home', 'tmp', 'work', 'xdg/config', 'xdg/data', 'xdg/state', 'xdg/cache',
                  'pi-sessions', 'oc-sessions'):
         (base/name).mkdir(mode=0o700, parents=True, exist_ok=True)
     return base
-
 
 def client_env(root, label):
     base = make_dirs(root, 'client-'+label)
@@ -94,7 +86,6 @@ def client_env(root, label):
             'CODEX_HOME': str(base/'home'/'.codex'), 'RA2A_PI_SESSION_DIR': str(base/'pi-sessions'),
             'RA2A_OC_SESSION_DIR': str(base/'oc-sessions'), 'PATH': path,
             'LANG': 'en_US.UTF-8', 'NO_COLOR': '1'}
-
 
 def node_env(root, label, kind, node_id, port):
     base = make_dirs(root, label)
@@ -115,7 +106,6 @@ def node_env(root, label, kind, node_id, port):
             'RA2A_SANDBOX_ADVERTISE_ADDRESSES': '127.0.0.1',
             'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}
 
-
 def wait_for_targets(port, deadline):
     last = None
     while time.monotonic() < deadline:
@@ -128,7 +118,6 @@ def wait_for_targets(port, deadline):
         time.sleep(0.25)
     return last
 
-
 def session_map(targets):
     sessions = {}
     for target in targets.get('targets', []):
@@ -136,7 +125,6 @@ def session_map(targets):
             sessions.setdefault(item.get('agent'), []).append(
                 {'address': item['address'], 'node': target['id'], 'session': item})
     return sessions
-
 
 def receipts(path):
     rows = []
@@ -148,7 +136,6 @@ def receipts(path):
                 continue
     return rows
 
-
 def wait_receipt(path, message_id, deadline):
     while time.monotonic() < deadline:
         matches = [row for row in receipts(path)
@@ -158,7 +145,6 @@ def wait_receipt(path, message_id, deadline):
         time.sleep(0.1)
     return []
 
-
 def version_probe(profile, env, cwd, executable):
     result = subprocess.run(['sandbox-exec', '-p', profile, executable, '--version'],
                             env=env, cwd=cwd, capture_output=True, text=True, timeout=30)
@@ -166,6 +152,73 @@ def version_probe(profile, env, cwd, executable):
     return {'exit': result.returncode, 'version': text[0][:160] if text else '',
             'status': 'PASS' if result.returncode == 0 else 'FAIL'}
 
+def version_major(text):
+    match = re.match(r'^(?:opencode\s+)?v?([0-9]+)\.', str(text).strip())
+    return int(match.group(1)) if match else None
+
+def startup_probe(profile, env, cwd, executable, port, log_path):
+    log = log_path.open('wb')
+    process = subprocess.Popen(['sandbox-exec', '-p', profile, executable, 'serve',
+                                '--port', str(port), '--hostname', '127.0.0.1'],
+                               env=env, cwd=cwd, stdin=subprocess.DEVNULL,
+                               stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    log.close()
+    listening = False
+    deadline = time.monotonic() + 12
+    try:
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                break
+            with socket.socket() as client:
+                client.settimeout(0.5)
+                if client.connect_ex(('127.0.0.1', port)) == 0:
+                    listening = True
+                    break
+            time.sleep(0.2)
+    finally:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except OSError:
+                    pass
+                process.wait(timeout=5)
+    tail = ''
+    if log_path.is_file():
+        lines = log_path.read_text(errors='replace').strip().splitlines()
+        if lines:
+            tail = lines[-1][:240]
+            if any(word in tail.lower() for word in ('password', 'secret', 'token')):
+                tail = '<redacted generated service output>'
+        log_path.unlink(missing_ok=True)
+    # A one-shot private server may generate a service password. Never retain
+    # those ephemeral files when the preflight fails and keeps its root.
+    for key in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME'):
+        base = Path(env.get(key, ''))/'opencode'
+        if str(base) != 'opencode' and base.exists():
+            shutil.rmtree(base, ignore_errors=True)
+    for name in ('.config/opencode', '.local/share/opencode', '.local/state/opencode'):
+        path = Path(env.get('HOME', ''))/name
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+    return {'status': 'PASS' if listening else 'FAIL', 'listening': listening,
+            'exit': process.returncode, 'lastLogLine': tail, 'ephemeralStateRemoved': True}
+
+def opencode_official_state(home):
+    path = home/'.config/opencode/service.json'
+    if not path.is_file():
+        return {'status': 'INFO', 'present': False}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {'status': 'INFO', 'present': True, 'parseable': False}
+    return {'status': 'INFO', 'present': True, 'parseable': True,
+            'remoteConfigured': bool(data.get('remote')),
+            'remoteAccepted': bool(data.get('remoteAccepted')),
+            'passwordConfigured': bool(data.get('password'))}
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -186,6 +239,8 @@ def main():
                   'macOS has no unprivileged network namespace; sandbox nodes share the host network.',
                   'mDNS uses the test-only _ra2a-sandbox._udp type and advertises 127.0.0.1; it still emits multicast on the host LAN.',
                   'The dry-run receivers are diagnostic adapters, not real clients; App private stdio remains BLOCKED_ADAPTER.',
+                  'OpenCode v2 is rejected by RA2A ochost before server startup; the sandbox reports it as BLOCKED_ADAPTER.',
+                  'The official ~/.config/opencode/service.json remote state is not projected into private homes, so remote-pairing conflicts are not reproduced.',
                   'sandbox-exec is process-level isolation, not a kernel network/mount namespace.']}
     source_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=PROJECT, text=True).strip()
     source_dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=PROJECT, text=True))
@@ -235,12 +290,28 @@ def main():
                                  ('pi', str(home/'.local/bin/pi'))):
             env = client_env(root, kind)
             try:
-                clients[kind] = version_probe(profile, env, str(root/'nodes'/('client-'+kind)), executable)
+                probe = version_probe(profile, env, str(root/'nodes'/('client-'+kind)), executable)
+                if kind == 'opencode':
+                    probe['major'] = version_major(probe['version'])
+                    probe['nativeStart'] = startup_probe(
+                        profile, env, str(root/'nodes'/('client-'+kind)), executable,
+                        free_port(), root/'opencode-serve.log')
+                    if probe['major'] is not None and probe['major'] >= 2:
+                        probe['status'] = 'BLOCKED_ADAPTER'
+                        probe['reason'] = ('RA2A ochost rejects OpenCode v2 or later before '
+                                           'starting the shared server; native opencode only works without --ra2a')
+                    elif probe['nativeStart']['status'] != 'PASS':
+                        probe['status'] = 'FAIL'
+                clients[kind] = probe
             except (OSError, subprocess.TimeoutExpired) as error:
                 clients[kind] = {'status': 'FAIL', 'error': type(error).__name__}
-        probes_ok = all(item.get('status') == 'PASS' for item in clients.values())
-        report['checks']['clientVersionProbes'] = {
-            'status': 'PASS' if probes_ok else 'FAIL', 'clients': clients}
+        statuses = [item.get('status') for item in clients.values()]
+        probes_status = ('FAIL' if 'FAIL' in statuses else
+                         'BLOCKED_ADAPTER' if 'BLOCKED_ADAPTER' in statuses else 'PASS')
+        report['checks']['clientVersionProbes'] = {'status': probes_status, 'clients': clients}
+        report['checks']['opencodeOfficialState'] = opencode_official_state(home)
+        if probes_status == 'BLOCKED_ADAPTER':
+            report['blockingAdapters'] = ['opencode']
 
         app_bundle = Path('/Applications/ChatGPT.app')
         app_native = app_bundle/'Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex'
@@ -405,6 +476,7 @@ def main():
                 rows.append(f'| {name} | {check.get("status", "INFO")} |')
         rows += ['', f'- 矩阵空跑：{report.get("matrixStatus")}',
                  f'- 正式认证/配置终点哈希不变：{report.get("officialAuthConfigUnchanged")}',
+                 f'- 阻塞适配器：{", ".join(report.get("blockingAdapters", [])) or "无"}',
                  '- App 真实私有实例与真实 4 端付费矩阵仍未执行，继续标 BLOCKED_ADAPTER。', '',
                  '限制：']
         rows += ['- '+item for item in report['limitations']]
@@ -413,7 +485,6 @@ def main():
                       'matrixStatus': report['matrixStatus'],
                       'paidInputs': 0, 'report': str(output/'report.md')}))
     return 0 if report['preflightStatus'] == 'PASS_WITH_LIMITATIONS' else 1
-
 
 if __name__ == '__main__':
     raise SystemExit(main())

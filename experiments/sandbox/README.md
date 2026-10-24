@@ -10,7 +10,7 @@ python3 experiments/sandbox/macos_preflight.py --output .cache/sandbox-macos/pre
 
 目录必须不存在；本命令不导入 Auth、不调用模型、不启动正式服务。它构建 Darwin `ra2a-sandbox-node`，验证 `sandbox-exec` 私有写入与正式 `~/.codex`/OpenCode/Pi 配置读取拒绝，在私有 HOME 下探测 codex/opencode/pi 版本，并用测试专用 `_ra2a-sandbox._udp` 服务类型、`127.0.0.1` 通告和独立控制端口运行三个真实 `lannode` 节点：真实 mDNS 发现、DTLS/CoAP 会话查询、4 类 Agent（codex-cli/codex-app/opencode/pi）16 向诊断投递、重复 message-id 不重投、每类第 11 条预算拒绝、relay 非白名单 CONNECT 拒绝。退出码 0 仅表示 `PASS_WITH_LIMITATIONS` + `DRY_RUN_PASS`；`summary.json`、`report.md`、`ledger.jsonl` 和各节点 receipts 可核对。
 
-本机 2026-10-25 结果（`.cache/sandbox-macos/preflight-004`，未提交）：16/16 诊断格、重复/预算/relay/隔离均 PASS，正式 8 项认证/配置终点哈希不变，临时根目录与自有进程已回收。macOS 无 unprivileged network namespace，节点共享宿主网络并会向 LAN 发出测试类型组播；诊断接收器不是真实客户端，App 私有实例仍 `BLOCKED_ADAPTER`，真实四端 TUI/GUI、模型与人工继续未执行。设计与边界见 [macOS Plan Delta](../../docs/matrix-sandbox/plan.md#2026-10-25-macos-平台基础与零模型预检)。
+本机 2026-10-25 结果（`.cache/sandbox-macos/preflight-006`，未提交）：4x4 诊断空跑 16/16、重复/预算/relay/隔离 PASS，正式 8 项认证/配置终点哈希不变，临时根目录与自有进程已回收。修正后的预检对 OpenCode v2.0.28 给出 `BLOCKED_ADAPTER`，整体 `FAIL`：RA2A `ochost` 在启动共享 server 前明确拒绝 v2；原 `preflight-004` 只跑 `--version` 并误报 PASS，是覆盖缺口。`opencode` 的私有隔离启动本身 PASS，官方 `service.json` 的 remote 状态未被投影，因此 remote 冲突不在当前沙盒内复现。macOS 无 unprivileged network namespace，节点共享宿主网络并会向 LAN 发出测试类型组播；诊断接收器不是真实客户端，App 私有实例仍 `BLOCKED_ADAPTER`。设计与边界见 [macOS Plan Delta](../../docs/matrix-sandbox/plan.md#2026-10-25-macos-平台基础与零模型预检)。
 
 ## 真实矩阵
 
