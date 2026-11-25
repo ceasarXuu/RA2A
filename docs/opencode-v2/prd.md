@@ -10,9 +10,10 @@
 ## Requester Review Summary
 
 - 已确认：完整适配 OpenCode V2，保留 V1 路径；RA2A 复用本机官方共享服务，不启动私有 server，不修改官方 remote/pairing 配置。
-- 已确认：发布 TUI、Desktop、Web 中所有打开 tab 的 session，包括后台 tab；同一 session 只发布一个 endpoint，最后一个客户端关闭后撤销。
-- 已确认：没有客户端打开 session 时不启动官方服务、不发布 endpoint；忙碌消息立即 steer；权限默认遵循 OpenCode。
+- 已确认：自动接管 TUI、Desktop、Web 中所有打开 tab 的 session，无需用户添加后缀；同一 session 只发布一个 endpoint，最后一个客户端关闭后撤销。
+- 已确认：没有客户端打开 session 时不启动官方服务、不发布 endpoint；忙碌消息立即 steer。
 - 已确认：安装并维护 V2 TUI+GUI 在线状态插件；插件被禁用时，对应客户端不发布 endpoint。
+- 已确认：V2 不提供 RA2A `--yolo` / `--auto`，权限完全遵循 OpenCode 默认规则。
 - 实施前必须确认：无阻塞产品决策；测试范围仍需按仓库规则另行申请。
 - 状态原因：影响用户可见行为的接入范围、生命周期、投递和权限规则均已直接确认。
 
@@ -42,7 +43,8 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 
 ### 成功标准
 
-- 在至少一台真实 OpenCode V2 环境中完成 TUI、Desktop、Web 的打开、发现、投递、关闭验证。
+- 用户无需改变 OpenCode 命令或添加 `--ra2a`；正常 `opencode` 及 Desktop/Web 中打开的 session 自动发布。
+- 在真实 OpenCode V2 环境中完成 TUI、Desktop、Web 的打开、发现、投递、关闭验证。
 - 忙碌、多客户端、权限、服务中断、版本升级和 remote 开启状态均有明确行为与证据。
 - `accepted` 只表示宿主已接收消息，不被宣称为模型执行或任务完成。
 - 未取得明确收件结果时不自动重放，避免重复消息。
@@ -64,7 +66,7 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 - TUI、Desktop、Web 客户端在线状态插件及安装、升级、卸载。
 - 所有打开 tab 的 session 发布、多客户端去重和最后关闭撤销。
 - V2 session 消息投递、busy steer、收件确认和未知结果处理。
-- V2 权限请求的默认透传策略；保留显式 `--yolo` / `--auto` 的既有窄范围。
+- V2 权限完全遵循 OpenCode 默认规则，不实现 RA2A 自动批准。
 - V1/V2 版本识别与实际 server 版本校验。
 - 安装器、文档、预检和 v0.0.20 发布准备。
 
@@ -74,13 +76,13 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 - 修改官方 remote/pairing、密码、CORS、hostname、port 或隧道配置。
 - 跟随 `opencode --server <远程URL>` 连接远程服务；RA2A 节点仍只代表本机官方服务。
 - 发布没有客户端打开的历史、后台或 headless session。
-- 默认自动批准 RA2A 消息触发的工具权限。
+- V2 `--yolo` / `--auto` 自动批准、capability/ACK/授权 lease 或权限 fence。
 - 删除 V1 接入路径。
 - 文件传输、工作流编排、公网中继或新的任务模型。
 
 ## 5. Core User Journey
 
-1. 用户正常启动 OpenCode V2 TUI、Desktop 或 Web，并打开一个或多个 session tab。
+1. 用户照常执行 `opencode`，或正常打开 Desktop/Web，无需添加 `--ra2a`；打开一个或多个 session tab。
 2. RA2A V2 客户端插件枚举本客户端打开的 session，向本机 RA2A 上报在线状态。
 3. RA2A daemon 从官方共享服务读取 session 摘要，按 `ra2a://<node-id>/<session-id>` 发布 endpoint。
 4. 其他节点通过 `list_targets()` 看到这些 OpenCode endpoint。
@@ -95,7 +97,7 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 - endpoint 的 agent 类型为 `opencode`；能力声明必须以真实验证为准，不使用未证明的 `interactiveSafe` 或忙碌安全承诺。
 - session 标题、忙碌状态和在线状态来自官方服务与在线插件的合并结果。
 - 官方服务不可达、认证失败或版本未知时，不发布虚假的可投递 endpoint；已有结果按现有 stale/degraded 规则明确标记。
-- 在线插件只上报本机客户端已打开 session 与可选权限范围，不传输 prompt、消息正文或模型输出。
+- 在线插件只上报本机客户端已打开 session 与清理状态，不传输 prompt、消息正文、权限策略或模型输出。
 
 ## 7. Product Rules And State Logic
 
@@ -124,8 +126,9 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 
 ### 权限
 
-- 默认遵循 OpenCode 的权限规则和用户交互，RA2A 不自动批准。
-- `--yolo` / `--auto` 只对显式 RA2A attach 的当前 session 生效，不扩大为整个官方服务或所有打开 session。
+- V2 完全遵循 OpenCode 的权限规则和用户交互，RA2A 不监听、不转发、不自动批准权限请求。
+- V2 不提供 RA2A `--yolo` / `--auto`；wrapper 遇到这些旧 RA2A 参数时明确提示暂不支持，不改变权限行为。
+- 为兼容旧调用，V2 `--ra2a` 可作为无操作标记剥离；是否添加它都不改变自动接管结果。
 - RA2A 不保存、复制或打印官方服务密码、OAuth 凭据和 token。
 
 ## 8. Edge Cases, Errors, And Recovery
@@ -137,7 +140,7 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 - **客户端崩溃**：心跳超时后撤销 endpoint；不长期保留虚假在线状态。
 - **同一 session 多客户端**：单 endpoint；关闭其中一个客户端不撤销，关闭最后一个才撤销。
 - **busy steer**：消息被接收且不终止当前工作；不得以排队替代已确认的 steer 行为。
-- **权限请求**：默认等待 OpenCode 用户策略；RA2A 不静默放行。
+- **权限请求**：完全由 OpenCode 默认策略处理；RA2A 不参与。
 - **HTTP 响应丢失**：保持 unknown，不自动重放。
 - **服务重启或升级**：先撤销不可信 endpoint，重新完成版本与认证检查后再发布。
 - **V1 环境**：继续使用现有 V1 adapter，不改变其 server、attach 和投递行为。
@@ -152,14 +155,14 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 
 ## 10. Acceptance Criteria
 
-1. Given TUI、Desktop、Web 分别打开多个 session tab，When 调用 `list_targets()`，Then 每个已打开 session 只出现一个 OpenCode endpoint，后台 tab 也包含在内。
+1. Given 用户照常执行 `opencode` 或打开 Desktop/Web，且分别打开多个 session tab，When 调用 `list_targets()`，Then 每个已打开 session 只出现一个 OpenCode endpoint，后台 tab 也包含在内，无需 `--ra2a`。
 2. Given 同一 session 被多个客户端打开，When 关闭其中一个客户端，Then endpoint 仍存在；关闭最后一个客户端后撤销。
 3. Given 没有客户端打开 session，When RA2A 启动或刷新，Then 不启动官方服务、不创建后台 session、不发布 endpoint。
 4. Given 官方服务 remote 已开启，When 安装、启动和投递，Then 官方 service/remote 配置内容与状态不被 RA2A 修改。
 5. Given 用户显式连接远程 `--server`，When RA2A 刷新本机 adapter，Then 不连接该远程 URL，也不修改其配置。
 6. Given 目标 session 忙碌，When 发送一条 RA2A 消息，Then 官方服务以 steer 接收一次，目标界面可见且当前工作不被终止。
 7. Given 默认权限策略，When RA2A 消息触发工具权限，Then RA2A 不自动批准，遵循 OpenCode 的用户交互。
-8. Given 显式 `--yolo` / `--auto`，When 发生权限请求，Then 只作用于该显式 attach 的当前 session，不波及其他 session。
+8. Given V2 wrapper 收到旧 RA2A `--yolo` / `--auto`，When 启动 OpenCode，Then 明确提示暂不支持且不改变 OpenCode 权限行为；普通 `opencode` 与 `opencode --ra2a` 的自动接管结果相同。
 9. Given HTTP 响应超时，When 无法确认是否写入，Then 返回 `DELIVERY_UNKNOWN` 且不自动重发。
 10. Given 官方服务重启或 OpenCode 原地升级，When 服务恢复，Then RA2A 重新校验实际 server 版本并恢复正确适配。
 11. Given 版本探测失败，When daemon 选择 adapter，Then 不把未知/V2 服务误交给 V1 路径。
@@ -172,7 +175,8 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 - [x] 接入范围与版本目标已确认。
 - [x] Session 发布、多客户端和关闭规则已确认。
 - [x] 服务生命周期与 remote 边界已确认。
-- [x] busy、权限和未知投递规则已确认。
+- [x] 自动接管无需后缀、busy 和未知投递规则已确认。
+- [x] V2 不实现 RA2A `--yolo` / `--auto`，权限遵循 OpenCode 默认。
 - [x] 在线状态插件的安装与维护责任已确认。
 - [ ] 定向测试与真实客户端验证范围按仓库规则另行申请。
 - [ ] 全平台与全 Agent 交叉验收完成后，再讨论正式支持状态。
@@ -191,10 +195,12 @@ RA2A 当前对 OpenCode V1 的接入采用“RA2A 启动并监督一个 `opencod
 | PD3 | 发布 TUI、Desktop、Web 所有打开 tab 的 session，单 endpoint，最后关闭撤销 | 包含后台 tab，按 session 去重，最后一个客户端关闭后撤销 | 只发布当前 focus、历史 session，或按客户端重复发布 | 匹配用户对“前台打开”的实际使用方式 | 后台 tab 缺失、同 session 多地址、关闭后仍可投递 | user-confirmed-direct：2026-11-24 确认“终端与官方 App/Web”“所有打开的 tab”“单 endpoint，最后关闭撤销” | active |
 | PD4 | 没有在线客户端时不启动服务、不发布 | 保持 OpenCode endpoint 为空，让原生 OpenCode 自行管理服务生命周期 | 自动启动官方服务或创建后台 session | 避免 RA2A 接管官方服务 | 无 TUI 时服务被启动或出现 headless endpoint | user-confirmed-direct：2026-11-24 选择“不启动、不发布（推荐）” | active |
 | PD5 | 忙碌消息立即 steer | 使用 V2 steer admission，保留明确收件 | 排队、拒绝或终止当前工作 | 延续现有忙碌追加体验 | busy 消息未进入、被延迟或当前工作中断 | user-confirmed-direct：2026-11-24 选择“立即 steer（推荐）” | active |
-| PD6 | 权限默认遵循 OpenCode，不自动批准 | 保持用户权限交互；`--yolo`/`--auto` 仅限显式 attach 当前 session | 默认为 RA2A 消息放行工具权限 | 保持权限边界与用户控制 | RA2A 静默批准或作用范围扩大 | user-confirmed-direct：2026-11-24 选择“遵循 OpenCode 默认（推荐）” | active |
+| PD6 | 权限默认遵循 OpenCode，不自动批准 | 保持用户权限交互；`--yolo`/`--auto` 仅限显式 attach 当前 session | 默认为 RA2A 消息放行工具权限 | 保持权限边界与用户控制 | RA2A 静默批准或作用范围扩大 | user-confirmed-direct：2026-11-24 选择“遵循 OpenCode 默认（推荐）” | superseded |
 | PD7 | 只连接本机官方服务，不跟随显式远程 `--server` | 将 RA2A 节点绑定本机官方服务 | 连接用户显式远程 URL 或改变官方 remote 配置 | RA2A 当前是局域网本机节点，远程 OpenCode 接入由官方管理 | RA2A 流量跟随远程 URL 或 remote 配置变化 | user-confirmed-direct：2026-11-24 选择“只连本机官方服务（推荐）” | active |
 | PD8 | 安装并维护 V2 TUI+GUI 在线状态插件 | 由 RA2A 安装、升级、卸载专属插件；插件禁用时停止发布对应客户端 session | 依赖无法证明关闭时机的服务端近似事件 | 可靠覆盖 TUI、Desktop、Web 的打开 tab 生命周期 | App/Web 无法枚举或最后一个客户端关闭后 endpoint 残留 | user-confirmed-direct：2026-11-24 选择“接受常驻插件（推荐）” | active |
 | PD9 | 完整 V2 适配独立纳入 v0.0.20 | 独立跟踪、验收和发布 | 将其并入 v0.0.19 并阻塞当前版本 | v0.0.19 已有独立目标，V2 适配需要完整验收 | V2 适配被混入 v0.0.19 发布门禁 | user-confirmed-direct：2026-11-24 选择“独立 v0.0.20（推荐）” | active |
+| PD10 | V2 自动接管所有前台会话，无需后缀 | 正常 `opencode`、Desktop、Web 打开 tab 即发布；`--ra2a` 仅作兼容 no-op | 要求用户添加后缀才接入，或改变普通 OpenCode 用法 | 用户要求原用法不变且前台活跃即可投递 | 普通 opencode 不发布，或文档要求添加 `--ra2a` | user-confirmed-direct：2026-11-25 选择“自动接管所有前台会话（推荐）” | active |
+| PD11 | V2 不实现 RA2A `--yolo` / `--auto` | 权限完全由 OpenCode 默认策略处理；旧参数明确提示不支持 | 引入自动批准、capability/ACK/lease/fence 或改变权限 | 避免可选便利功能破坏权限边界和核心接入 | V2 仍出现 RA2A 自动批准逻辑 | user-confirmed-direct：2026-11-25 用户明确“不要折腾别的”，并确认 V2 不提供 auto | active |
 
 ## 12. Open Questions And Risks
 
